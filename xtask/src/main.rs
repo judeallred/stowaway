@@ -129,7 +129,9 @@ fn ci(root: &Path) -> Result<(), String> {
                 "lint",
                 "--strict",
                 "--recursive",
-                "macos-app",
+                "macos-app/Sources",
+                "macos-app/Tests",
+                "macos-app/Package.swift",
             ],
             &[],
         )?;

@@ -144,11 +144,19 @@ pub fn bench(engine: &mut Engine, quick: bool) -> Result<BenchReport> {
     let drive = engine.drive().ok_or(Error::DriveOffline)?;
     let internal = engine.layout.state_dir.join("bench");
     let external = drive.layout.trash_dir();
-    let sizes = if quick {
+    let mut sizes = if quick {
         BenchSizes::QUICK
     } else {
         BenchSizes::FULL
     };
+    // Never use more than 5% of the drive's free space for the test file.
+    let free = stowaway_macos::fs_stats(&drive.mount_point).map_or(0, |s| s.available_bytes);
+    sizes.sequential_bytes = sizes.sequential_bytes.min(free / 20);
+    if sizes.sequential_bytes < 8_000_000 {
+        return Err(Error::Invalid(
+            "the drive is too full to run a speed test".to_owned(),
+        ));
+    }
     let report = bench::run(&internal, &external, &drive.mount_point, sizes)?;
     let _ignored = std::fs::remove_dir(&internal);
     if let Some(uuid) = engine.config.volume_uuid.as_deref() {
