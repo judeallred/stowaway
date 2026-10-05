@@ -3,3 +3,4 @@
 /macos-app/build
 /macos-app/*.xcodeproj/xcuserdata
 /macos-app/*.xcodeproj/project.xcworkspace/xcuserdata
+/macos-app/.build

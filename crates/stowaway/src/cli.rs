@@ -267,7 +267,7 @@ fn run(command: Command) -> Result<()> {
             Ok(())
         }
         Command::Bench { json, quick } => {
-            let (_lock, mut engine) = locked_engine(&layout)?;
+            let mut engine = Engine::open(layout)?;
             if !json {
                 eprintln!("Running the speed test on your internal disk and the external drive…");
             }

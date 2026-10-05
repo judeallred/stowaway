@@ -141,7 +141,7 @@ pub fn run(layout: &Layout) -> Result<()> {
         fs_dirty: AtomicBool::new(true),
         wake: Mutex::new(wake_tx),
     });
-    let listener = bind_socket(&layout.socket_path())?;
+    let listener = bind_socket(layout)?;
     {
         let shared = Arc::clone(&shared);
         std::thread::Builder::new()
@@ -168,11 +168,11 @@ fn init_logging(layout: &Layout) -> Result<()> {
     Ok(())
 }
 
-fn bind_socket(path: &Path) -> Result<UnixListener> {
-    if let Some(dir) = path.parent()
-        && dir.starts_with("/tmp")
-    {
-        prepare_private_dir(dir)?;
+fn bind_socket(layout: &Layout) -> Result<UnixListener> {
+    let path = &layout.socket_path();
+    let private = layout.private_tmp_dir();
+    if path.parent() == Some(private.as_path()) {
+        prepare_private_dir(&private)?;
     }
     if path.exists() {
         if UnixStream::connect(path).is_ok() {
@@ -392,15 +392,17 @@ impl AgentLoop {
             self.timers.gc = Instant::now();
         }
         if !self.bench_attempted && first_bench_needed(engine) {
-            self.bench_attempted = with_lock(&self.shared, "first speed test", || {
-                let report = ops::bench(engine, false)?;
-                info!(
+            // The speed test only writes scratch files, so it runs without the engine lock and
+            // doesn't hold up adoption or CLI commands.
+            self.bench_attempted = true;
+            match ops::bench(engine, false) {
+                Ok(report) => info!(
                     read = report.external.seq_read_mbps,
                     write = report.external.seq_write_mbps,
                     "speed test"
-                );
-                Ok(())
-            });
+                ),
+                Err(e) => warn!(error = %e, "speed test failed"),
+            }
             self.shared.status_dirty.store(true, Ordering::Relaxed);
         }
     }
@@ -600,10 +602,13 @@ fn dispatch(call: Call, shared: &Arc<Shared>) -> Result<Option<serde_json::Value
             let problems = ops::doctor(engine, fix)?;
             Ok(Some(serde_json::to_value(problems)?))
         }),
-        Call::Bench { quick } => locked(&mut |engine| {
-            let report = ops::bench(engine, quick)?;
+        Call::Bench { quick } => {
+            let mut engine = open_engine(shared)?;
+            let report = ops::bench(&mut engine, quick)?;
+            shared.status_dirty.store(true, Ordering::Relaxed);
+            shared.wake();
             Ok(Some(serde_json::to_value(report)?))
-        }),
+        }
         Call::SetUsage { usage } => {
             locked(&mut |engine| ops::set_usage(engine, usage).map(|()| None))
         }

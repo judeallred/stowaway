@@ -311,7 +311,7 @@ gc_orphan_days = 14
 drive_low_space_percent = 10       # "nearly full" warning threshold
 ```
 
-Only the agent writes this file. The CLI and the menu bar app ask the agent to make changes over IPC (§9.1). If the user edits the file by hand, the agent notices and reloads it. If the agent isn't running, the CLI edits the file directly and the agent picks up the change when it starts.
+Every change to entries or this file happens under `~/.stowaway/engine.lock`, whether it comes from the agent, the CLI or the menu bar app (which goes through the agent over IPC, §9.1). The CLI makes its changes directly under the lock and then asks the agent to refresh. When the file changes, including hand edits, the agent notices and reloads it.
 
 ### Menu bar app
 
@@ -319,7 +319,7 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 
 **Icon**
 
-- A monochrome template image, so it fits light mode, dark mode and tinted menu bars.
+- A monochrome template image, so it fits light mode, dark mode and tinted menu bars. v1 uses SF Symbols (`shippingbox`, alternating with `shippingbox.and.arrow.backward` while transferring); the custom crate glyph from §14.6 replaces them before release.
 - Variants for each state:
 
 | State | Icon |
