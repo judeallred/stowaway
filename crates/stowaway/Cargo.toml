@@ -1,0 +1,36 @@
+[package]
+name = "stowaway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+globset = "0.4.20"
+notify = "8.2.0"
+plist = "1.10.1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+stowaway-macos = { version = "0.1.0", path = "../stowaway-macos" }
+thiserror = "2.0.21"
+toml = "1.1.6"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+ulid = "3.0.0"
+walkdir = "2.5.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"

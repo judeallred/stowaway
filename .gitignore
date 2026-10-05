@@ -1,0 +1,5 @@
+/target
+.DS_Store
+/macos-app/build
+/macos-app/*.xcodeproj/xcuserdata
+/macos-app/*.xcodeproj/project.xcworkspace/xcuserdata
