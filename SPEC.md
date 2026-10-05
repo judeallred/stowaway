@@ -8,7 +8,7 @@
 
 Internal storage on a Mac costs a lot. A developer with many repositories checked out piles up gigabytes of *re-creatable* data in each one, mostly `node_modules/` and Rust `target/` directories. That data can be regenerated from the network or by rebuilding, but it's slow to regenerate, so people keep it on disk.
 
-A fast external SSD is a good place for this data. A plain symlink to the external drive is fragile, though. Unplug the drive and every symlink dangles, so `npm install` and `cargo build` fail with confusing errors.
+A fast external SSD is a good place for this data. A plain symlink to the external drive doesn't work, though. Unplug the drive and every symlink dangles, and current npm and pnpm refuse a symlinked `node_modules` in the first place (§4.0).
 
 ## 2. Goal
 
@@ -67,76 +67,113 @@ There are also two **global** kinds. Each one is a single machine-wide cache rat
 
 ## 4. Core design
 
-### 4.1 Two levels of symlinks
+### 4.0 What prototyping changed (2026-10-04)
 
-The naive approach links `project/node_modules → /Volumes/Drive/...` directly. That would mean rewriting thousands of symlinks inside working trees every time the drive comes or goes, which is slow and not atomic.
+The first draft of this spec put each managed folder behind a symlink that pointed at the external drive. Testing that against real tools on an APFS disk image ruled it out for `node_modules`:
 
-Stowaway instead uses a **stable symlink in the project** that points to a **switchable symlink owned by Stowaway**:
+| Experiment | Result |
+|---|---|
+| `npm install` (npm 11.3) with `node_modules` as a symlink to the drive | npm prints "Removing non-directory node_modules", deletes the symlink and reinstalls everything into a real local folder, **on every install**, even when nothing changed. |
+| `pnpm install` (pnpm 10.17) with `node_modules` as a symlink | Fails with `ENOTDIR: not a directory, mkdir node_modules`. Node's own recursive `mkdir` rejects a symlinked directory. |
+| `cargo build` with `target/` as a symlink | Works, but `cargo clean` deletes the symlink ("Removed 1 file"), so the next build writes to the internal disk. |
+| pnpm with `--store-dir` pointing at a symlink | Works. |
+| An APFS volume or disk image **mounted at** `node_modules` | npm, `npm ci`, pnpm and Node resolution all work, and a second `npm install` says "up to date". Tools see a real directory. |
+| Force-detaching the drive while a project image is mounted | The mount disappears and the empty local folder underneath shows through. `npm install` then works offline into the local folder. |
+| APFS volumes per container | About one per 512 MiB of container size, capped at 100 (a 2 GB test container allowed 4). Too few for one volume per project. |
+| Sparse-bundle disk images per project | No count limit found. Each costs ~1 s to create, ~0.5 s to attach, ~8 MB on disk when empty, and one `diskimagesiod` process (~10 MB RSS). 60 attached at once worked. |
+| Deleting files inside an image | The image doesn't shrink, and `hdiutil compact` reports "Function not implemented" for both APFS and HFS+ images on macOS 26. |
+| Renaming a repository that contains a mounted image | Works; the mount follows the rename. |
+| `rm -rf node_modules` or `cargo clean` on a mounted folder | All contents are deleted, then removing the folder itself fails with "Resource busy" (exit code 1 / 101). |
+| Force-detaching the drive with images attached | The images' mounts vanish, but the image devices stay attached as stale entries and block re-attaching until they're detached with `hdiutil detach -force`. |
+
+**Consequences:**
+
+- Every managed folder becomes a **disk image stored on the external drive and mounted at the folder's own path**.
+- There are no symlinks in working trees. That removes most of the compatibility problems found in review: module resolution, relative symlinks in workspaces, hoisting, Vite/Turbopack refusing paths outside the project, and `.gitignore` not matching a symlink.
+
+### 4.1 Mounted entry images
+
+Each managed folder (an **entry**) has its own sparse-bundle disk image on the external drive:
 
 ```
-~/code/my-app/node_modules
-    → ~/.stowaway/links/<entry-id>                      (never changes)
-
-~/.stowaway/links/<entry-id>
-    → /Volumes/FastSSD/.stowaway/<machine-id>/store/<entry-id>   (drive online)
-    → ~/.stowaway/local/<entry-id>                               (drive offline)
+/Volumes/FastSSD/.stowaway/<machine-id>/images/<entry-id>.sparsebundle
 ```
 
-- The symlink in the project is created once, when the directory is adopted, and isn't touched again.
-- Switching an entry between external and local is one atomic `rename(2)` of a freshly created symlink over `links/<entry-id>`. No process ever sees a missing path.
-- The entry ID is embedded in the project symlink. If a repository is moved or renamed, it keeps working, and Stowaway can rebuild its registry by reading the link.
+- **Drive online:** the image is attached with `hdiutil attach -nobrowse -mountpoint <folder>`, so `~/code/my-app/node_modules` is the image's volume. Tools, Node's module resolution, git and Time Machine all see an ordinary directory. Time Machine skips mount points, so these folders also stop being backed up.
+- **Drive offline:** nothing is mounted, and the real folder on the internal disk underneath the mount point is what tools see. It starts empty, so the next `npm install` or `cargo build` fills it from the network or by compiling. **This needs no action from the agent.** If the agent isn't running or crashes, the fallback still works.
+- **Image format:** each image is created as APFS, sized to the external volume's capacity. It's sparse, so it only takes the space actually written. It matches the internal disk's case sensitivity. A `.metadata_never_index` file at the image's volume root keeps Spotlight out.
+- **Identity:** the entry ID is the image's filename. The agent can match mounts to entries by reading the mount table (`hdiutil info`), so if a repository is moved, the agent picks up its new path automatically.
 
 ### 4.2 Entry lifecycle
 
 ```
-            adopt                     drive unmounts
- [real dir] ─────► [external] ◄────────────────────► [local]
-     ▲                  │       drive mounts (+ migrate)
-     │ release          │
-     └──────────────────┘
+ [real folder] ──adopt──► [mounted] ◄──drive gone / drive back──► [local fallback]
+       ▲                      │
+       └────── release ───────┘
 ```
 
-- **Adopt:** move an existing real directory into the store, or create an empty store entry. Then replace the directory with the project symlink.
-- **Go offline** (drive removed): point every `links/<id>` at `local/<id>`, creating it empty if needed. This must finish in under a second for hundreds of entries.
-- **Go online** (drive mounted), for each entry:
-  - If `local/<id>` is empty or missing, point the link back at the external store right away.
-  - If `local/<id>` has content, it is newer than the external copy because the user worked offline. **Local wins.** Copy it to `store/<id>.incoming` on the external drive. Once the copy is complete, swap it in place of the stale `store/<id>` and switch the link. Then delete `local/<id>` and the stale copy in the background. While the migration runs, the entry keeps pointing at local, so the project is never in a half-copied state.
-- **Release:** turn the entry back into a real local directory. The default is to recreate it empty, because the data can be regenerated; `--copy` brings the contents back. Then remove the store entry.
+- **Adopt an existing folder:**
+  1. Create the image, then attach it at a private staging mount point (`~/.stowaway/staging/<id>`).
+  2. Copy the folder's contents into the image. Before and after the copy, take a fingerprint of the source (file count, total size, newest modification time). If anything changed during the copy, discard the copy and retry later.
+  3. Empty the original folder, detach the image from staging, and attach it at the folder's path.
+
+  This only happens when the folder is idle (§4.4).
+- **Pre-adopt a new project:** create an empty image and mount it at a new, empty folder, so the very first install writes straight to the drive.
+- **Drive disappears:** the mounts vanish by themselves. The agent detaches the stale image devices (`hdiutil detach -force`) so the images can be re-attached later.
+- **Drive comes back:** for each entry, look at the local folder underneath the mount point:
+  - **Empty:** attach the image.
+  - **Not empty**, meaning the user worked offline: apply the kind's reconnect policy (§4.8). The image is attached at the staging point, the policy is applied, the local folder is emptied, and the image is moved to the project path. This only happens once the local folder is idle; until then the entry stays local.
+
+  | Policy | Used by | What happens |
+  |---|---|---|
+  | `local-wins-if-complete` | `node` | If the local folder holds a finished install (`.package-lock.json`, `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), the image's contents are replaced with the local ones. Otherwise the local folder is discarded. This prevents a half-finished or tool-cache-only offline folder from wiping a complete install on the drive. |
+  | `external-wins` | `cargo-target`, DerivedData, Go build cache | The local folder is discarded. Rebuilding on top of the older, complete build on the drive is incremental and cheap. |
+  | `merge-no-clobber` | content-addressed global caches | Files that exist locally but not in the image are copied in; nothing in the image is overwritten. |
+- **Release:**
+  1. Detach the image.
+  2. Optionally copy its contents back (`--copy`).
+  3. Delete the image.
+  4. The folder becomes a plain local folder again.
 
 ### 4.3 Detecting the drive
 
-- The volume is identified by **volume UUID**, not by name or mount path. This guards against "FastSSD 1" style renames and against impostor volumes.
-- Use DiskArbitration callbacks for appear, disappear and unmount-approval events.
-  - On a **normal eject** (the unmount-approval callback fires), switch every entry to local *before* approving the unmount. The agent must not hold any files open on the volume.
-  - On a **surprise removal** (the disappeared callback fires), switch to local immediately. Builds that are running at that moment will fail with I/O errors. That's expected; the user re-runs them.
-- As a fallback, poll the mount state every few seconds in case a callback is missed. The same handling applies around sleep and wake, when macOS sometimes unmounts external drives.
-- **At startup**, reconcile everything: work out whether the drive is present and correct every link to match.
+- **Identity:** the volume is identified by **volume UUID**, recorded at `init` and checked against `.stowaway/volume.json` on the drive. The volume name and mount path are never trusted, which guards against renames like "FastSSD 1" and against a different drive with the same name.
+- **Polling:** the agent polls the mounted volumes every two seconds. It's cheap, and it covers sleep/wake and missed notifications. DiskArbitration callbacks can replace polling later. The unmount-approval callback is what will let a Finder eject detach the images first.
+- **Ejecting:** an eject has to detach every image first, because otherwise their open backing files block it. `stowaway eject`, and the menu bar's Eject command, detach the images (naming any process that is holding files open), then eject the drive.
+- **At startup**, the agent reconciles everything: it attaches images for entries whose local folders are empty, and queues reconnect work for the rest.
 
 ### 4.4 Discovery and auto-adoption
 
-- Use FSEvents to watch the configured roots, and run a full scan at startup and on `stowaway scan`.
-- **Pre-adopt new projects.** When a project root appears that has a manifest but no `node_modules`/`target` yet, create the symlink right away. That way the first install writes straight to the store and never touches the local disk.
-  - Node: a directory with `package.json` and a lockfile (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`/`bun.lockb`). A `node_modules` that appears later in a workspace member is adopted when it shows up.
-  - Cargo: a `Cargo.toml` that isn't a member of a workspace in a parent directory. Workspace members don't get a `target/`.
-- **Adopt existing real directories only when they're idle.** Wait until there have been no FSEvents under the directory for a set period (default 2 minutes) and no process has files open in it (check with `lsof +D` or equivalent). Moving a `node_modules` in the middle of `npm install` is never acceptable.
-- **Skip:**
+- **Scanning:** the agent watches the configured roots with FSEvents, and also runs a full scan at startup and on `stowaway scan`. The scan never descends into `node_modules`, `target`, `.git` or mounted entries.
+- **Node candidates:** a `node_modules` next to a `package.json`, adopted only when no ancestor folder up to the root has its own `node_modules`.
+  - Workspace members' nested `node_modules` depend on finding packages hoisted to the root, so they stay local; they're usually small. With mounts this would technically work, but each extra image costs a process and an attach.
+  - **Pre-adoption** happens when the folder doesn't exist yet and a lockfile is present (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`).
+- **Cargo candidates:** a `target` next to a `Cargo.toml`, adopted when it contains Cargo's `CACHEDIR.TAG`.
+  - Pre-adoption only happens where `Cargo.lock` exists. That skips test fixtures and workspace members.
+  - Projects are skipped if `CARGO_TARGET_DIR` (recorded at `init`) or `build.target-dir` in any `.cargo/config.toml` up the folder tree redirects the target folder.
+- **Never adopt:**
+  - a folder that contains files tracked by git (checked with `git ls-files`), e.g. GitHub Actions repositories that commit `node_modules`
   - anything matched by `exclude` globs in the config
-  - directories that contain a `.stowaway-ignore` file
-  - nested `node_modules` inside another `node_modules`
-  - Cargo projects where `CARGO_TARGET_DIR` or `build.target-dir` is set
+  - anything under a folder containing `.stowaway-ignore`
+  - anything below a minimum size (default 50 MB). A small folder isn't worth an image and a process.
+- **Idle check:** no file inside has been modified for `idle_seconds` (default 120), and no process has files open inside it. Open files are checked with a single `lsof` run filtered by path, rather than the slow `lsof +D`.
 
-### 4.5 Tools that delete the symlink
+### 4.5 Deleting a mounted folder
 
-`rm -rf node_modules`, `cargo clean`, and some `npm ci` / package-manager versions remove the **symlink itself**, not its contents, and then create a fresh real directory. This is the most common way the system will drift from its intended state, so it's handled as a normal event, not an error:
+Because the folder is a mount point, deleting the folder itself (as opposed to its contents) fails with "Resource busy":
 
-1. FSEvents reports that a managed project symlink was removed.
-2. The user meant to "clean". The agent moves the backing store entry into a trash area and deletes it asynchronously.
-3. If a real directory appears in the same place, the agent re-adopts it once it is idle (§4.4). Until then it takes up local space temporarily.
-4. If nothing appears within the idle window, the agent recreates the symlink pointing to an empty entry (pre-adoption).
+| Command | Effect |
+|---|---|
+| `rm -rf node_modules` | Deletes all contents, then prints `Resource busy` and exits 1. A chained `rm -rf node_modules && npm i` stops at the error. |
+| `cargo clean` | Deletes all contents, then reports `Resource busy (os error 16)` and exits 101. |
+| `npm ci` | Works. npm empties `node_modules` rather than deleting it. |
+| `rm -rf my-repo` (deleting the whole repository) | Deletes everything except the mounted folders, then fails on them and on the repository folder itself. |
 
-The agent does **not** try to win a race by recreating the symlink while a tool is running.
+Mitigations:
 
-The exact behavior of `cargo clean`, `npm ci`, `pnpm install` and `yarn install` on a symlinked directory needs to be checked and recorded in tests (open question §11).
+- **`stowaway clean [path]`:** empties managed folders under a path without the error. The docs recommend `rm -rf node_modules/*` or `stowaway clean`.
+- **Deleted repositories:** when the agent sees that a mounted entry's manifest (`package.json`, `Cargo.toml`) is gone, it detaches the image and deletes it. It then removes the now-empty mount-point folder, and removes empty parent folders up to (but not including) the root, but only if they're empty. A second `rm -rf my-repo` then succeeds, and usually the agent has already finished the job.
+- **`stowaway release <path>`** returns a folder to normal before a user deletes it on purpose.
 
 ### 4.6 Store layout
 
@@ -144,49 +181,44 @@ The exact behavior of `cargo clean`, `npm ci`, `pnpm install` and `yarn install`
 /Volumes/<Drive>/.stowaway/
   volume.json                 # format version, volume UUID it was initialized for
   <machine-id>/
-    store/<entry-id>/         # the actual node_modules / target contents
-    trash/                    # pending async deletion
-    manifest.json             # entry-id → {kind, last-known project path, sizes, timestamps}
+    images/<entry-id>.sparsebundle
+    trash/                    # images pending deletion, speed-test scratch files
 
 ~/.stowaway/
-  links/<entry-id>            # switchable symlinks (§4.1)
-  local/<entry-id>/           # offline fallback contents
-  trash/
-  state.db                    # registry (SQLite): entries, kinds, paths, status
+  staging/<entry-id>/         # private mount points used while copying
+  state.db                    # registry (SQLite): entries, kinds, paths, status, sizes, history
+  engine.lock                 # held by whichever process is changing entries (agent or CLI)
+  agent.sock                  # IPC socket (§9.1)
   agent.log
 ```
 
-- Storage is namespaced by `machine-id` so one drive can safely serve more than one Mac.
-- The store and local directories are excluded from Spotlight (`.metadata_never_index`) and Time Machine (`tmutil addexclusion`).
-- `entry-id` is a random ID (e.g. a ULID), not a hash of the path. This is what makes repository moves work (§4.1).
+- Storage is namespaced by `machine-id` (`IOPlatformUUID`) so one drive can serve more than one Mac.
+- **Serialization:** every operation that changes entries holds `engine.lock`, whether it comes from the agent or from the CLI, so they never race.
 
-### 4.7 Copied repositories
+### 4.7 Moved, copied and deleted repositories
 
-If a repository containing managed symlinks is copied (`cp -R`, Finder duplicate), two projects end up pointing at the same entry. When the scanner finds two project symlinks resolving to the same `entry-id`, it keeps the one at the registered path. It gives the other a new, empty entry and re-points that project's symlink.
+- **Moved or renamed:** the mount follows the move. The agent updates the entry's path from the mount table.
+- **Copied** (`cp -R`, Finder duplicate): the copy contains a plain, unmanaged copy of the folder's contents, because `cp` copies through mount points. That's an ordinary unmanaged project, which the agent adopts like any other.
+- **Deleted:** see §4.5.
+- **Garbage collection:** `gc` deletes images whose entries have no project path anymore and haven't been seen for `gc_orphan_days`.
 
-### 4.8 Global caches
+### 4.8 Kinds and global caches
 
-**Each kind is a small declarative description**, so adding an ecosystem doesn't touch the switching, migration or IPC code. A description specifies:
+**Each kind is a small declarative description**, so adding an ecosystem doesn't touch the mounting, migration or IPC code. A description specifies:
 
-- **how to find the folder:** for project kinds, a scan pattern plus a manifest or lockfile check; for global kinds, a tool command or environment variable plus a default path
-- **how to tell when it's idle:** a lock file to hold, process names to check with `lsof`, or "wait for the owning app to quit"
-- **what to do on reconnect:** `local-wins-if-complete` (node), `external-wins` (cargo target, DerivedData, Go build cache), or `merge-no-clobber` (content-addressed caches)
-- **companion kinds** that must stay on the same volume as this one (pnpm and `node`, bun and `node`, uv and `.venv`)
+- **how to find the folder:** for project kinds, a folder name plus a manifest or lockfile check; for global kinds, an environment variable plus a default path
+- **when it can be pre-adopted**
+- **how to tell when it's idle:** a lock file to hold, or `lsof` plus modification times
+- **what to do on reconnect:** `local-wins-if-complete`, `external-wins` or `merge-no-clobber` (§4.2)
 - **file-handling quirks**, such as read-only files (Go)
 
-The global kinds use the same two-level symlink and the same online/offline switching as per-project entries. For example, `~/.cargo/registry → ~/.stowaway/links/<id> → store/<id>` when the drive is online, or `→ local/<id>` when it is offline. They differ from per-project entries in a few ways:
+Global caches use the same mounted images as project folders, so `~/.cargo/registry` is the mount point of its image. Differences:
 
-- **Discovery:** global caches are found from configuration and tool queries, not by scanning the roots: `pnpm store path`, plus `$CARGO_HOME`, falling back to `~/.cargo`. If a cache directory doesn't exist yet, it is pre-adopted (§4.4).
-- **Adoption** still waits until the cache is idle. For Cargo, the agent holds Cargo's own package-cache lock (`$CARGO_HOME/.package-cache`, an `flock`) while it adopts, switches or migrates. That keeps a running `cargo fetch`/`build` from seeing the cache change underneath it. pnpm has no equivalent global lock, so for pnpm the agent relies on the idle check and on `lsof`.
-- **Reconnecting after offline work:** these are caches, not something the user worked on, so "local wins" (§4.2) is replaced by a **no-clobber merge**. Files that exist in `local/<id>` but not in the external store are copied over, and then the local copy is discarded. This is safe because both stores are effectively immutable once written: pnpm files are addressed by content hash, and Cargo `.crate` files and extracted sources are addressed by name and version. Cargo's registry index cache is the exception, since it can be stale; Cargo refreshes it on its own. The external store is never overwritten.
-- **Deleting the cache** (`rm -rf ~/.cargo/registry`): handled the same way as §4.5.
+- **Discovery:** locations come from configuration recorded at `init`, when the CLI runs with the user's own environment. The background agent can't see that environment, which is why the locations are recorded rather than looked up later. For pnpm, `pnpm store path` returns a versioned folder (`.../store/v10`); Stowaway manages its parent (`.../store`), because different projects can use different pnpm versions.
+- **Cargo:** the agent holds Cargo's package-cache lock (`$CARGO_HOME/.package-cache`) while adopting or migrating `cargo-home` entries.
+- **Reconnect:** `merge-no-clobber`, because the contents are effectively write-once. pnpm and Cargo `.crate` files are addressed by content hash or by name and version.
 
-**Why pnpm needs this:** pnpm installs by hard-linking or cloning files from its store into `node_modules/.pnpm`. Neither works across volumes. If only `node_modules` were on the external drive, every pnpm install would fall back to a full copy. With both the store and `node_modules` managed, their real paths are always on the *same* volume: both on the drive when online, both local when offline. pnpm gets its usual hard links in both states.
-
-Consequences of the pnpm design:
-
-- A pnpm project that is *not* managed (excluded, or outside the roots) installs on the internal disk from a store that lives on the external drive. That falls back to copying, so it is slower and uses more space, but it still works. `status` points this out.
-- When a pnpm project's offline `node_modules` is migrated back (§4.2), it becomes plain copies on the drive and is no longer hard-linked to the store. Everything still works, but it is duplicated until the next `pnpm install` relinks it (§11).
+**pnpm, bun and uv:** these install by hard-linking or cloning files from a global store. That only works within a single filesystem, and every image is its own filesystem. So when the store and `node_modules` are both managed, pnpm falls back to copying files into each project's image. Everything still works; the cost is extra space on the cheap external drive instead of the internal disk. The pnpm store's own image keeps the internal disk free of the store.
 
 ### 4.9 Network drives (not in v1)
 
@@ -195,44 +227,53 @@ Supporting an SMB or NFS share looks like a small change, since it's "just a dif
 | Problem | Why it matters here |
 |---|---|
 | **Latency on per-file operations** | `node_modules` holds 50k–300k small files, and Node, bundlers and package managers check each one. Over SMB every check is a network round trip, so installs and dev-server startup get *slower* than rebuilding locally. That defeats the "fast cache" goal. |
-| **Symlinks and hard links** | macOS's SMB client only supports symlinks when the server is set up for them, and hard links and copy-on-write clones are effectively unavailable. That breaks `node_modules/.bin`, pnpm's symlink layout, and the same-volume linking for pnpm, bun and uv (§4.8). |
-| **File locking** | Cargo, Gradle and the agent itself (§4.8) depend on `flock`, which isn't reliable on network filesystems. Cargo warns about this on NFS. |
-| **Hung mounts** | When a server or Wi-Fi drops out, calls on the mount can block for minutes instead of failing. Builds hang rather than erroring, and the agent's own checks could hang too. Every filesystem call to the volume would need a timeout in a separate thread. |
-| **Frequent disconnects** | Wi-Fi roaming and sleep make the drive come and go often. Each flip back to local leaves partial local copies, so migrations and merges would happen constantly. |
+| **Images on a network share** | Disk images stored on SMB/NFS are fragile, and a network dropout behind an attached image can hang every process using it. |
+| **File locking** | Cargo, Gradle and the agent itself depend on `flock`, which isn't reliable on network filesystems. Cargo warns about this on NFS. |
+| **Hung mounts** | When a server or Wi-Fi drops out, calls on the mount can block for minutes instead of failing. Builds hang rather than erroring, and the agent's own checks could hang too. |
+| **Frequent disconnects** | Wi-Fi roaming and sleep make the drive come and go often, which means constant reconnect work. |
 | **Identity** | Network volumes have no volume UUID. Identity would have to come from the server URL and share name plus a marker file. |
-| **Memory-mapped files** | Native Node modules, Rust proc-macro libraries and models are memory-mapped. A network dropout crashes the processes using them, and that would happen far more often than with a local drive. |
 
-**Verdict:** this is not a small addition, and per-project kinds (`node`, `cargo-target`, `.venv`) should never be supported on network drives.
+**Verdict:** this is not a small addition, and per-project kinds should never be supported on network drives.
 
-**A narrow version that might work later:** allow a network share as a second, read-mostly target, only for global kinds made of large files that are stored by content hash: `huggingface`, Ollama models, the Go module cache, the Gradle cache. These are mostly big files written once, which is the access pattern network storage handles well, and keeping models on a NAS is already common. That would still need the identity, timeout and hung-mount work described above, so it's worth considering only after v1 is stable.
+**A narrow version that might work later:** allow a network share as a second, read-mostly target, only for global kinds made of large files that are stored by content hash: `huggingface`, Ollama models, the Go module cache, the Gradle cache. These are mostly big files written once, which is the access pattern network storage handles well, and keeping models on a NAS is already common. It would still need the identity, timeout and hung-mount work described above, so it's worth considering only after v1 is stable.
+
+### 4.10 Image housekeeping and costs
+
+- **Images don't shrink when files are deleted.** Each one stays at the largest size it has ever reached. The agent compares an image's size on the drive with the space used inside it. When the image is idle and bloated (more than 1.5× the used space and over 1 GB of waste), the agent rebuilds it: a fresh image, a copy of the contents, then a swap. `stowaway compact` does the same on demand.
+- **Memory and attach time:** each attached image runs a `diskimagesiod` process (about 10 MB RSS) and takes about 0.5 s to attach. `status` shows the count. The minimum size for adoption (§4.4) keeps small folders out. A later version can detach images for projects that have been dormant for a long time; that's a config option, off in v1.
 
 ## 5. Ecosystem compatibility notes
 
-- **Node module resolution:** Node resolves symlinks to their real path by default, so dependencies resolve each other correctly inside the store. Code inside `node_modules` that walks up looking for project files (some config loaders) could resolve from the store path instead. The store directories must never contain a stray parent `node_modules` or `package.json`.
-- **`.gitignore`:** a `node_modules/` pattern with a trailing slash matches directories only, so **git does not ignore a symlink named `node_modules`**. On adoption, Stowaway adds the name to the repo's `.git/info/exclude`. It never edits the tracked `.gitignore`. Cargo's default `/target` pattern already works.
-- **pnpm:** the store is managed together with `node_modules` so that hard links keep working (§4.8). Stowaway never edits `.npmrc` or `store-dir`. It moves the existing store location instead, so pnpm's configuration stays untouched.
-- **Cargo** follows a symlinked `target/` without problems. Switching between local and external means a full rebuild the first time, which is expected and acceptable.
-- **Docker bind mounts** of a project won't follow the symlink into `/Volumes` unless that path is shared too. This is a documented limitation.
-- **Filesystem requirement:** the external volume must be **APFS** with the same case-sensitivity as the internal disk. exFAT and HFS+ are rejected at `init`. exFAT can't store the symlinks and permissions that `node_modules` relies on.
+- **Node, bundlers, TypeScript, Vite, Turbopack:** they see a real `node_modules` folder at its normal path, so real paths stay inside the project.
+- **git:** the usual `node_modules/` and `/target` ignore patterns match a mount point. Stowaway never edits git files.
+- **Docker Desktop bind mounts:** a container may see the empty folder underneath the mount point instead of the image's contents, depending on how Docker shares files. This is a documented limitation; the usual Docker pattern of keeping `node_modules` in a container volume avoids it.
+- **Speed:** each image adds a layer between the tools and the drive. `stowaway bench` measures the drive's performance (§8.1). Measuring the image layer's own overhead is a follow-up task.
+- **Filesystem requirement:** the external volume must be APFS. exFAT and HFS+ are rejected at `init`. Images are always APFS.
 
 ## 6. Safety principles
 
-1. Only directories that are **re-creatable by construction** are managed (§3). Source files are never moved or deleted.
-2. Every move is copy-then-swap or a same-volume rename. No step leaves an entry partly moved. An interrupted operation is either resumed or rolled back at the next startup.
-3. Deletion only ever happens inside Stowaway's own `store/`, `local/` and `trash/` directories.
-4. When in doubt, use local. Local disk is wasted rather than ever leaving a dangling link.
-5. `stowaway uninstall` must restore every project to plain real directories and remove all symlinks.
+1. Only folders that are **re-creatable by construction** are managed (§3), and never if they contain files tracked by git. Source files are never moved or deleted.
+2. Every move is copy, verify, then swap. No step leaves an entry partly moved. An interrupted operation is either resumed or rolled back at the next startup.
+3. Stowaway only deletes:
+   - its own images
+   - the contents of a managed folder after they have been copied into its image
+   - local fallback contents, according to the kind's reconnect policy
+   - empty folders left behind when a deleted repository is cleaned up (§4.5)
+4. When in doubt, local wins. The fallback underneath the mount point always exists, so nothing can dangle.
+5. `stowaway uninstall` returns every folder to a plain local folder (empty, or with its contents using `--copy`) and deletes the images.
 
 ## 7. Failure modes
 
 | Situation | Behavior |
 |---|---|
-| Drive unplugged with no warning | Links switch to local within about 1 second. Builds running at that moment fail and need a re-run. |
-| Agent not running and drive missing | Links dangle. `stowaway doctor` detects and fixes this. launchd `KeepAlive` restarts the agent. A future shell-prompt hook could warn about it. |
-| Drive mounted but full | Writes fail with ENOSPC. v1 reports this in `status` and in a notification. Automatically falling back to local when free space is low is a future feature. |
+| Drive unplugged with no warning | The mounts vanish. Tools see the local folders immediately. Running builds and dev servers fail and need a re-run. The agent clears the stale image devices. |
+| Agent not running and drive missing | The fallback still works because nothing points at the drive. When the agent comes back it attaches the images. |
+| Agent not running and drive present | Images stay unattached. Tools use the local folders. When the agent comes back it applies the reconnect policies. |
+| Drive mounted but full | Writes fail with ENOSPC. `status` and a notification report it. |
 | A different drive with the same name | Ignored, because the volume UUID doesn't match. |
-| Project deleted | Its entry becomes an orphan. `gc` removes entries that no symlink has referenced for N days (default 14). |
-| macOS blocks access to removable volumes (TCC) | `init` explains how to grant the agent "Removable Volumes" / Full Disk Access permission. |
+| Project deleted | §4.5. Orphaned images are garbage-collected after `gc_orphan_days` (default 14). |
+| macOS blocks access to removable volumes (TCC) | `init` and `doctor` explain how to grant the "Removable Volumes" permission. |
+| Finder eject while images are attached | Fails with "in use", until DiskArbitration integration lands. Use the menu bar's Eject or `stowaway eject`. |
 
 ## 8. Interface
 
@@ -245,10 +286,12 @@ stowaway bench [--json]    # run the drive speed test against the internal disk 
 stowaway scan [--dry-run]  # discover and adopt now; dry-run lists what would happen
 stowaway adopt <path>      # adopt a specific directory
 stowaway release <path> [--copy]
-stowaway doctor [--fix]    # check links, registry, store; repair
+stowaway doctor [--fix]    # check mounts, registry, images; repair
+stowaway clean [<path>]    # empty managed folders under a path without the mount-point error (§4.5)
+stowaway compact [<path>]  # rebuild bloated images to reclaim space on the drive (§4.10)
 stowaway gc [--dry-run]
 stowaway roots list | add <path> | remove <path> [--copy]   # watched folders (same as the menu bar's Configure Folders)
-stowaway eject             # switch to local, list processes holding files on the drive, then eject
+stowaway eject             # detach all images (naming processes that hold files), then eject the drive
 stowaway pause | resume    # stop or resume auto-adoption (drive switching keeps working)
 stowaway agent             # run the background agent in the foreground (used by launchd)
 stowaway uninstall [--copy]
@@ -263,6 +306,7 @@ kinds = ["node", "cargo-target", "pnpm-store", "cargo-home",
          "xcode-derived-data", "gradle-home", "go", "js-caches", "huggingface"]
 exclude = ["~/code/scratch/**"]
 idle_seconds = 120
+min_adopt_bytes = 50_000_000         # folders smaller than this aren't worth an image (§4.4)
 gc_orphan_days = 14
 drive_low_space_percent = 10       # "nearly full" warning threshold
 ```
@@ -384,7 +428,7 @@ The negotiated speed is the useful part. It catches the common case of a fast dr
   - **Homebrew cask (`.app`):** bundles the Rust binary inside the app and registers the agent with `SMAppService.agent(plistName:)`. The agent then shows up under the app's name in System Settings → Login Items, and permission prompts name the app rather than a bare binary.
 - **Process model:** a per-user launchd agent (`~/Library/LaunchAgents/dev.stowaway.agent.plist`) with `RunAtLoad` and `KeepAlive`. No root access and no kernel extension are needed.
 - **State:** SQLite in `~/.stowaway/state.db`. A journal of in-flight operations supports crash recovery (§6.2).
-- **Copies across volumes:** `clonefile`/`copyfile(3)` with metadata and symlinks preserved. Copies are throttled to low I/O priority so they don't hurt interactive work.
+- **Copies across volumes:** a Rust copier that preserves symlinks, permissions, read-only files and hard links (tracked by inode, so Cargo's hard-linked binaries aren't duplicated). Copies are throttled to low I/O priority so they don't hurt interactive work.
 
 ### 9.2 Engineering standards
 
@@ -498,21 +542,21 @@ exit = "warn"
 
 ## 11. Open questions
 
-1. Confirm exactly how `cargo clean`, `npm ci`, `pnpm`, `yarn berry` and `bun` behave on a symlinked `node_modules`/`target` (§4.5).
+1. Measure the image layer's overhead for small-file-heavy work (`npm install`, Node startup) against a plain folder on the same drive (§5).
 2. Should pre-adoption (§4.4) be on by default, or opt-in per root?
 3. When an offline local copy is migrated back, should it be skipped if the external copy turns out to be newer? (This could happen if a second Mac used the same entry. That can't happen in v1 because storage is namespaced per machine.)
-4. Is a shell-prompt hook worth adding to warn about dangling links while the agent is down?
+4. Can a physical cable pull leave image devices in a worse state than `hdiutil detach -force` does in testing? This needs real hardware (§4.0).
 5. Should we cap local fallback size and evict the least recently used entries while offline?
-6. Check that pnpm really does hard-link when the store and `node_modules` are both symlinks that resolve to the same volume. pnpm decides where its store lives based on which disk the project is on, so the result could depend on whether it compares the symlink path or the real path.
-7. For pnpm projects, should migrating an offline `node_modules` back be replaced by discarding it and running `pnpm install --offline` from the store? That would restore the hard links instead of keeping duplicated copies (§4.8).
+6. Docker Desktop: confirm whether bind mounts of a project show the mounted `node_modules` image or the empty folder underneath (§5).
+7. Should images for long-dormant projects be detached to save memory, and how would a tool's first use re-attach them in time (§4.10)?
 
 ## 12. Milestones
 
-1. **M0 — manual:** The repository setup from §9.2 comes first: toolchain, lints, hooks and CI, all in place and passing before any feature code lands. Then `init`, `adopt`, `release`, `status`, and manual `online`/`offline` switching. Two-level symlinks proven with disk-image tests.
-2. **M1 — agent:** launchd agent with DiskArbitration handling, automatic switching, reconcile at startup, and `doctor`. Global caches: `pnpm-store` and `cargo-home`, including Cargo lock handling.
-3. **M2 — automatic:** FSEvents discovery, idle-gated adoption, pre-adoption, handling of deleted symlinks, and migrating offline work back to the drive.
+1. **M0 — manual:** The repository setup from §9.2 comes first: toolchain, lints, hooks and CI, all in place and passing before any feature code lands. Then `init`, `adopt`, `release`, `clean`, `status`, and attaching/detaching images, all proven with disk-image tests.
+2. **M1 — agent:** launchd agent with drive polling, automatic attach/detach, reconnect policies, reconcile at startup, and `doctor`. Global caches: `pnpm-store` and `cargo-home`, including Cargo lock handling.
+3. **M2 — automatic:** FSEvents discovery, idle-gated adoption, pre-adoption, cleanup of deleted repositories, and image compaction.
 4. **M3 — menu bar app:** the IPC socket and event stream, the icon and its states, the popover, the Configure Folders window, eject, drive performance and speed test (§8.1), `SMAppService` registration, and the App Store feasibility prototype (§13.8).
-5. **M4 — release:** `gc`, `uninstall`, notifications, `.git/info/exclude` handling, docs, Homebrew tap with the formula and cask, license and contributor agreement in place (§13), public source release.
+5. **M4 — release:** `gc`, `uninstall`, notifications, DiskArbitration eject integration, docs, Homebrew tap with the formula and cask, license and contributor agreement in place (§13), public source release.
 
 ## 13. Licensing and sales
 
@@ -596,7 +640,7 @@ The aim is to keep the free path completely smooth for hobbyists, and to make th
 
 Every Mac App Store app must be sandboxed. Stowaway does several things the sandbox restricts:
 
-- **Writing outside the app's container:** symlinks in `~/code`, `~/.cargo`, `~/Library/pnpm`, `~/Library/Developer/Xcode` and on the external drive. A sandboxed app can only reach folders the user has chosen, through security-scoped bookmarks. Symlinks that need to keep working across restarts are known to be difficult in the sandbox.
+- **Mounting images outside the app's container:** at folders in `~/code`, `~/.cargo`, `~/Library/pnpm`, `~/Library/Developer/Xcode`, with the images stored on the external drive. A sandboxed app can only reach folders the user has chosen, through security-scoped bookmarks, and running `hdiutil` from inside the sandbox is untested.
 - **Home-folder paths:** a sandboxed app's home directory is redirected into its container, so `~/.stowaway/links` would end up inside the container. On recent macOS, other apps (node, cargo) touching another app's container trigger "access data from other apps" permission prompts.
 - **Background agent and CLI:** a persistent launch agent, plus a CLI on `PATH`. The App Store doesn't allow bundling command-line tools that aren't sandboxed, and requires apps to work without installing extra components.
 - **Inspecting other processes:** checking other programs' open files with `lsof`, and ejecting volumes.
@@ -631,7 +675,7 @@ This section is the source for the landing page, the App Store listing, the READ
 
 - **Product name:** Stowaway. It is written with a capital S in prose.
 - **Lowercase `stowaway`** is used for the command, the Homebrew formula and cask, the crate and the repository name, and the paths `~/.stowaway` and `~/.config/stowaway`.
-- **The metaphor:** a stowaway rides along in the ship's hold, out of sight. Your dependencies and build files ride along on the external drive, out of your internal disk's way. The name also nods to GNU Stow, the classic symlink-farm manager.
+- **The metaphor:** a stowaway rides along in the ship's hold, out of sight. Your dependencies and build files ride along on the external drive, out of your internal disk's way. The name also nods to GNU Stow.
 - **Never in the product name, App Store name or logo:** "Cargo", "Rust", "Node.js", "npm", "Xcode", "Swift", or any Apple or Microsoft feature name (Sidecar, Time Machine, Dev Drive). These are trademarks. They may appear in descriptive copy ("works with Cargo, npm, pnpm and Xcode"), never as part of the brand.
 - **Checks before launch:** the name is available in App Store Connect, the name `stowaway` is free on Homebrew and crates.io, and a USPTO/EUIPO trademark search for software (class 9) is clear. If `stowaway` is taken as a CLI name, the fallback is `stow-away` for the command only.
 - **This repository** is currently named `space-shifter`. Rename it to `stowaway` before the public release.
@@ -658,7 +702,7 @@ This section is the source for the landing page, the App Store listing, the READ
 | Alternative | What it does | Why Stowaway is different |
 |---|---|---|
 | Cleaners (npkill, DevCleaner, `cargo clean`) | Delete the files | Stowaway keeps the cache, so there's no slow rebuild and no re-download |
-| A hand-made symlink to an external drive | Moves the files | Breaks the moment the drive is unplugged. Stowaway falls back to the local disk automatically |
+| A hand-made symlink to an external drive | Moves the files | Breaks the moment the drive is unplugged, and current npm and pnpm refuse a symlinked `node_modules` anyway. Stowaway mounts the drive's storage in place and falls back to the local disk automatically |
 | A bigger internal SSD | Fixes the problem | Apple's storage upgrades cost several times the price of an equivalent external drive |
 
 ### 14.4 Messaging pillars
