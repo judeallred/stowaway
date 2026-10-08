@@ -10,6 +10,7 @@ use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// Capacity and identity of the filesystem that contains a path, from `statfs(2)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,35 +74,97 @@ fn c_chars_to_string(chars: &[c_char]) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-const IOPOL_TYPE_DISK: c_int = 0;
-const IOPOL_SCOPE_THREAD: c_int = 1;
-const IOPOL_DEFAULT: c_int = 0;
-const IOPOL_UTILITY: c_int = 4;
-
-unsafe extern "C" {
-    fn setiopolicy_np(iotype: c_int, scope: c_int, policy: c_int) -> c_int;
-}
-
-/// Lowers (or restores) the disk I/O priority of the calling thread.
-///
-/// Background copies run at "utility" priority so they don't slow down builds or the UI.
+/// Bytes this process has read from disk so far, as counted by the kernel.
 ///
 /// # Errors
 ///
-/// Returns the OS error if the policy can't be set.
-pub fn set_thread_background_io(background: bool) -> io::Result<()> {
-    let policy = if background {
-        IOPOL_UTILITY
-    } else {
-        IOPOL_DEFAULT
+/// Returns the OS error if `proc_pid_rusage` fails.
+pub fn own_disk_read_bytes() -> io::Result<u64> {
+    let pid = c_int::try_from(std::process::id())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "process ID out of range"))?;
+    // SAFETY: `rusage_info_v2` contains only integers, so all-zero bytes are a valid value.
+    let mut info: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
+    // SAFETY: `info` is a live, correctly sized `rusage_info_v2`, matching `RUSAGE_INFO_V2`.
+    let rc = unsafe {
+        libc::proc_pid_rusage(
+            pid,
+            libc::RUSAGE_INFO_V2,
+            (&raw mut info).cast::<libc::rusage_info_t>(),
+        )
     };
-    // SAFETY: `setiopolicy_np` takes plain integers and only affects the calling thread.
-    let rc = unsafe { setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, policy) };
     if rc == 0 {
-        Ok(())
+        Ok(info.ri_diskio_bytesread)
     } else {
         Err(io::Error::last_os_error())
     }
+}
+
+/// CPU time spent across all cores since boot, in scheduler ticks. The counters are 32-bit and
+/// wrap, so compare two samples with [`CpuTicks::busy_fraction_since`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CpuTicks {
+    /// Running user code.
+    pub user: u32,
+    /// Running kernel code.
+    pub system: u32,
+    /// Idle.
+    pub idle: u32,
+    /// Running low-priority (niced) user code.
+    pub nice: u32,
+}
+
+impl CpuTicks {
+    /// The fraction of CPU time that was busy between `earlier` and `self`, or `None` if no
+    /// ticks elapsed.
+    #[must_use]
+    pub fn busy_fraction_since(&self, earlier: &Self) -> Option<f64> {
+        let busy = u64::from(self.user.wrapping_sub(earlier.user))
+            + u64::from(self.system.wrapping_sub(earlier.system))
+            + u64::from(self.nice.wrapping_sub(earlier.nice));
+        let total = busy + u64::from(self.idle.wrapping_sub(earlier.idle));
+        let (busy, total) = (u32::try_from(busy).ok()?, u32::try_from(total).ok()?);
+        (total > 0).then(|| f64::from(busy) / f64::from(total))
+    }
+}
+
+unsafe extern "C" {
+    /// Declared here because `libc`'s copy is deprecated in favor of the `mach2` crate.
+    fn mach_host_self() -> libc::mach_port_t;
+}
+
+/// Reads the machine-wide CPU tick counters (`host_statistics(HOST_CPU_LOAD_INFO)`).
+///
+/// # Errors
+///
+/// Returns an error if the kernel call fails.
+pub fn cpu_ticks() -> io::Result<CpuTicks> {
+    static HOST: OnceLock<libc::mach_port_t> = OnceLock::new();
+    // SAFETY: `mach_host_self` takes no arguments and returns a send right to the host port. One
+    // is kept for the life of the process, so there's nothing to deallocate.
+    let host = *HOST.get_or_init(|| unsafe { mach_host_self() });
+    let mut info = libc::host_cpu_load_info { cpu_ticks: [0; 4] };
+    let mut count = libc::HOST_CPU_LOAD_INFO_COUNT;
+    // SAFETY: `info` is a live `host_cpu_load_info`, and `count` is its size in `integer_t`s, as
+    // `HOST_CPU_LOAD_INFO` requires; the kernel writes at most `count` integers.
+    let rc = unsafe {
+        libc::host_statistics(
+            host,
+            libc::HOST_CPU_LOAD_INFO,
+            (&raw mut info).cast::<libc::integer_t>(),
+            &raw mut count,
+        )
+    };
+    if rc != libc::KERN_SUCCESS {
+        return Err(io::Error::other(format!("host_statistics failed ({rc})")));
+    }
+    // Indices are CPU_STATE_USER, CPU_STATE_SYSTEM, CPU_STATE_IDLE and CPU_STATE_NICE.
+    let [user, system, idle, nice] = info.cpu_ticks;
+    Ok(CpuTicks {
+        user,
+        system,
+        idle,
+        nice,
+    })
 }
 
 /// Turns the unified buffer cache off (or on) for an open file, so benchmarks measure the drive
@@ -140,9 +203,36 @@ mod tests {
     }
 
     #[test]
-    fn background_io_can_be_toggled() {
-        set_thread_background_io(true).unwrap();
-        set_thread_background_io(false).unwrap();
+    fn own_disk_reads_are_counted() {
+        let before = own_disk_read_bytes().unwrap();
+        let file = File::open("/etc/hosts").unwrap();
+        set_no_cache(&file, true).unwrap();
+        io::Read::read_to_end(&mut &file, &mut Vec::new()).unwrap();
+        assert!(own_disk_read_bytes().unwrap() >= before);
+    }
+
+    #[test]
+    fn cpu_load_is_a_fraction() {
+        let before = cpu_ticks().unwrap();
+        let spin = std::time::Instant::now();
+        while spin.elapsed() < std::time::Duration::from_millis(50) {
+            std::hint::black_box(0_u64);
+        }
+        let after = cpu_ticks().unwrap();
+        if let Some(busy) = after.busy_fraction_since(&before) {
+            assert!((0.0..=1.0).contains(&busy), "{busy}");
+        }
+        let wrapped = CpuTicks {
+            user: 5,
+            idle: 5,
+            ..CpuTicks::default()
+        };
+        let earlier = CpuTicks {
+            user: u32::MAX - 4,
+            idle: u32::MAX - 4,
+            ..CpuTicks::default()
+        };
+        assert_eq!(wrapped.busy_fraction_since(&earlier), Some(0.5));
     }
 
     #[test]

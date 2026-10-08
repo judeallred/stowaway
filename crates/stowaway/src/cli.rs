@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
-use crate::config::{Config, Usage};
+use crate::config::{Config, TransferPriority, Usage};
 use crate::engine::{self, AdoptOptions, Engine, EngineLock};
 use crate::error::{Error, Result};
 use crate::ipc::{self, Call};
@@ -120,6 +120,13 @@ enum Command {
     Pause,
     /// Resume adopting new folders.
     Resume,
+    /// Show or set offload transfer priority: background pauses transfers while your disk is busy,
+    /// normal doesn't.
+    Priority {
+        /// The new priority; omit to show the current one.
+        #[arg(value_enum)]
+        priority: Option<TransferPriority>,
+    },
     /// Run or manage the background agent.
     Agent {
         #[command(subcommand)]
@@ -169,6 +176,11 @@ enum AgentAction {
     Run,
     /// Install and start the launchd service.
     Install,
+    /// Start the installed agent; it reattaches the images.
+    Start,
+    /// Detach every image, so folders use their local contents, and stop the agent until it's
+    /// started again.
+    Stop,
     /// Stop and remove the launchd service.
     Uninstall,
 }
@@ -223,18 +235,31 @@ fn progress_printer(event: &engine::EngineEvent) {
         bytes,
         total_bytes,
         elapsed_seconds,
+        waiting_for_disk,
+        step,
         ..
     } = event
     {
+        if *step != engine::TransferStep::Copying {
+            eprint!("\r\x1b[K  {}: {}…", path.display(), step.describe());
+            return;
+        }
         let rate = report::bytes_f64(*bytes) / 1_000_000.0 / elapsed_seconds.max(0.001);
+        let speed = if *waiting_for_disk {
+            "paused while the disk is busy".to_owned()
+        } else {
+            report::format_rate(rate)
+        };
         eprint!(
-            "\r  copying {} — {} of {} · {}   ",
+            "\r\x1b[K  copying {} — {} of {} · {speed}",
             path.display(),
             format_bytes(*bytes),
             format_bytes(*total_bytes),
-            report::format_rate(rate)
         );
-    } else if matches!(event, engine::EngineEvent::TransferDone { .. }) {
+    } else if matches!(
+        event,
+        engine::EngineEvent::TransferDone { .. } | engine::EngineEvent::TransferAborted { .. }
+    ) {
         eprintln!();
     }
 }
@@ -392,11 +417,39 @@ fn run(command: Command) -> Result<()> {
             );
             Ok(())
         }
+        Command::Priority { priority } => {
+            let priority = match priority {
+                Some(priority) => {
+                    ops::set_transfer_priority(&layout, priority)?;
+                    priority
+                }
+                None => Config::load_required(&layout)?.transfer_priority,
+            };
+            println!(
+                "Offload transfer priority: {}.",
+                match priority {
+                    TransferPriority::Background =>
+                        "background (transfers pause while your disk is busy)",
+                    TransferPriority::Normal => "normal (transfers never pause)",
+                }
+            );
+            Ok(())
+        }
         Command::Agent { action } => match action.unwrap_or(AgentAction::Run) {
             AgentAction::Run => agent::run(&layout),
             AgentAction::Install => {
                 let path = launchd::install(&layout)?;
                 println!("Agent installed ({}).", path.display());
+                Ok(())
+            }
+            AgentAction::Start => {
+                launchd::start()?;
+                println!("Agent started.");
+                Ok(())
+            }
+            AgentAction::Stop => {
+                ipc::call(&layout.socket_path(), Call::Quit, Duration::from_mins(3))?;
+                println!("Agent stopped. Folders use their local contents until it starts again.");
                 Ok(())
             }
             AgentAction::Uninstall => {
@@ -577,7 +630,10 @@ fn fetch_status(layout: &Layout) -> Result<StatusReport> {
         return Ok(report);
     }
     let mut engine = Engine::open(layout.clone())?;
-    status::build(&mut engine)
+    let mut report = status::build(&mut engine)?;
+    // A busy agent can miss the timeout, but it's running if it accepts connections.
+    report.agent_running = std::os::unix::net::UnixStream::connect(layout.socket_path()).is_ok();
+    Ok(report)
 }
 
 fn print_license_footer(report: &StatusReport) {

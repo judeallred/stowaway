@@ -81,35 +81,57 @@ impl TestDrive {
         assert!(self.mount_point.is_dir(), "drive mounted: {out}");
     }
 
-    /// Simulates unplugging the drive without ejecting it.
-    fn yank(&self) {
+    /// Simulates unplugging the drive without ejecting it, then waits for `mounts` (the images on
+    /// it) to vanish: macOS tears nested mounts down asynchronously, and writing into a folder
+    /// before then fails with an I/O error.
+    fn yank(&self, mounts: &[&Path]) {
         run("hdiutil", &["detach", "-force", &self.device]);
         assert!(!self.mount_point.exists() || fs::read_dir(&self.mount_point).is_err());
+        let started = std::time::Instant::now();
+        while mounts.iter().any(|m| is_mount_point(m)) && started.elapsed().as_secs() < 30 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(!mounts.iter().any(|m| is_mount_point(m)));
     }
 }
 
 impl Drop for TestDrive {
     fn drop(&mut self) {
-        // Detach images that live on this drive, then the drive itself.
-        if let Ok(out) = Command::new("hdiutil").args(["info"]).output() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            let mut current_image_on_drive = false;
-            for line in text.lines() {
-                if let Some(path) = line.strip_prefix("image-path      : ") {
-                    current_image_on_drive =
-                        path.starts_with(self.mount_point.to_str().unwrap_or("?"));
-                } else if current_image_on_drive && line.starts_with("/dev/disk") {
-                    let dev = line.split_whitespace().next().unwrap_or_default();
-                    let _detached = Command::new("hdiutil")
-                        .args(["detach", "-force", dev])
-                        .output();
-                    current_image_on_drive = false;
+        // Detach images that live on this drive, then the drive itself, looking each device up
+        // by its image. Device numbers are reused, so after a yank `self.device` may already
+        // belong to someone else's image, such as a real Stowaway mount.
+        let Ok(out) = Command::new("hdiutil").args(["info"]).output() else {
+            return;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let drive_root = self.mount_point.to_str().unwrap_or("?");
+        let own_image = self.image.to_str().unwrap_or("?");
+        let mut nested = Vec::new();
+        let mut drive_devices = Vec::new();
+        let mut current: Option<String> = None;
+        for line in text.lines() {
+            if let Some(path) = line.strip_prefix("image-path      : ") {
+                current = Some(path.to_owned());
+            } else if line.starts_with("/dev/disk")
+                && let Some(path) = current.take()
+            {
+                let device = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                if path.starts_with(drive_root) {
+                    nested.push(device);
+                } else if path == own_image || path.ends_with(own_image) {
+                    drive_devices.push(device);
                 }
             }
         }
-        let _detached = Command::new("hdiutil")
-            .args(["detach", "-force", &self.device])
-            .output();
+        for device in nested.iter().chain(&drive_devices) {
+            let _detached = Command::new("hdiutil")
+                .args(["detach", "-force", device])
+                .output();
+        }
     }
 }
 
@@ -194,13 +216,7 @@ fn adopt_yank_work_offline_and_reconnect() {
 
     // Unplug: the mount disappears (macOS tears nested mounts down asynchronously) and the
     // empty local folder shows through.
-    s.drive.yank();
-    let started = std::time::Instant::now();
-    while is_mount_point(&modules) && started.elapsed().as_secs() < 30 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    eprintln!("nested mount gone after {:?}", started.elapsed());
-    assert!(!is_mount_point(&modules));
+    s.drive.yank(&[&modules]);
     assert!(stowaway::fsutil::is_effectively_empty(&modules).unwrap());
     s.engine.reconcile().unwrap();
     assert_eq!(
@@ -234,7 +250,7 @@ fn incomplete_offline_work_does_not_replace_the_drive_copy() {
     s.engine
         .adopt(&modules, KindId::Node, AdoptOptions::default())
         .unwrap();
-    s.drive.yank();
+    s.drive.yank(&[&modules]);
     s.engine.reconcile().unwrap();
     // Only a tool cache was written while offline: no install marker.
     write(&modules.join(".cache/eslint/x"), "cache");
@@ -264,7 +280,7 @@ fn cargo_target_keeps_the_drive_copy_on_reconnect() {
     s.engine
         .adopt(&target, KindId::CargoTarget, AdoptOptions::default())
         .unwrap();
-    s.drive.yank();
+    s.drive.yank(&[&target]);
     s.engine.reconcile().unwrap();
     write(&target.join("debug/partial"), "offline");
     s.drive.attach();
@@ -308,7 +324,7 @@ fn release_with_copy_restores_a_plain_folder() {
         .adopt(&modules, KindId::Node, AdoptOptions::default())
         .unwrap();
     let image = s.drive.mount_point.join(format!(
-        ".stowaway/{}/images/{}.sparsebundle",
+        ".stowaway/{}.noindex/images/{}.sparsebundle",
         s.engine.config.machine_id, entry.id
     ));
     assert!(image.exists());
@@ -380,7 +396,7 @@ fn clean_compact_and_gc() {
     );
 
     let orphan = s.drive.mount_point.join(format!(
-        ".stowaway/{}/images/stray.sparsebundle",
+        ".stowaway/{}.noindex/images/stray.sparsebundle",
         s.engine.config.machine_id
     ));
     fs::create_dir_all(&orphan).unwrap();
@@ -439,11 +455,7 @@ fn real_cargo_builds_through_the_mount_and_offline() {
     build(&project);
     assert!(target.join("debug/hello").exists());
 
-    s.drive.yank();
-    let started = std::time::Instant::now();
-    while is_mount_point(&target) && started.elapsed().as_secs() < 30 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    s.drive.yank(&[&target]);
     build(&project);
     assert!(
         target.join("debug/hello").exists(),

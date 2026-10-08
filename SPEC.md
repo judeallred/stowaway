@@ -96,12 +96,12 @@ The first draft of this spec put each managed folder behind a symlink that point
 Each managed folder (an **entry**) has its own sparse-bundle disk image on the external drive:
 
 ```
-/Volumes/FastSSD/.stowaway/<machine-id>/images/<entry-id>.sparsebundle
+/Volumes/FastSSD/.stowaway/<machine-id>.noindex/images/<entry-id>.sparsebundle
 ```
 
 - **Drive online:** the image is attached with `hdiutil attach -nobrowse -mountpoint <folder>`, so `~/code/my-app/node_modules` is the image's volume. Tools, Node's module resolution, git and Time Machine all see an ordinary directory. Time Machine skips mount points, so these folders also stop being backed up.
 - **Drive offline:** nothing is mounted, and the real folder on the internal disk underneath the mount point is what tools see. It starts empty, so the next `npm install` or `cargo build` fills it from the network or by compiling. **This needs no action from the agent.** If the agent isn't running or crashes, the fallback still works.
-- **Image format:** each image is created as APFS, sized to the external volume's capacity. It's sparse, so it only takes the space actually written. It matches the internal disk's case sensitivity. A `.metadata_never_index` file at the image's volume root keeps Spotlight out.
+- **Image format:** each image is created as APFS, sized to the external volume's capacity. It's sparse, so it only takes the space actually written. It matches the internal disk's case sensitivity. A `.metadata_never_index` file at the image's volume root keeps Spotlight out of its contents. On the drive, the per-machine folder is named `<machine-id>.noindex`, so Spotlight also skips the image files themselves instead of re-examining them on every write. (`.metadata_never_index` is only honored at the root of a volume, so it can't do this for a folder.)
 - **Identity:** the entry ID is the image's filename. The agent can match mounts to entries by reading the mount table (`hdiutil info`), so if a repository is moved, the agent picks up its new path automatically.
 
 ### 4.2 Entry lifecycle
@@ -141,6 +141,7 @@ Each managed folder (an **entry**) has its own sparse-bundle disk image on the e
 - **Polling:** the agent polls the mounted volumes every two seconds. It's cheap, and it covers sleep/wake and missed notifications. DiskArbitration callbacks can replace polling later. The unmount-approval callback is what will let a Finder eject detach the images first.
 - **Ejecting:** an eject has to detach every image first, because otherwise their open backing files block it. `stowaway eject`, and the menu bar's Eject command, detach the images (naming any process that is holding files open), then eject the drive.
 - **At startup**, the agent reconciles everything: it attaches images for entries whose local folders are empty, and queues reconnect work for the rest.
+- **Self-healing:** problems the agent can fix are fixed, not reported as chores. It reconciles every minute, including between folders during a long adoption pass. A copy holds the engine lock, so every 30 seconds it also reattaches other entries whose mount vanished while their folder stayed empty. If Stowaway's folders on the drive are deleted, they're recreated the next time the drive is located. The popover only lists what still needs the user, such as a permission to grant.
 
 ### 4.4 Discovery and auto-adoption
 
@@ -180,7 +181,7 @@ Mitigations:
 ```
 /Volumes/<Drive>/.stowaway/
   volume.json                 # format version, volume UUID it was initialized for
-  <machine-id>/
+  <machine-id>.noindex/       # .noindex keeps Spotlight out of the images
     images/<entry-id>.sparsebundle
     trash/                    # images pending deletion, speed-test scratch files
 
@@ -189,7 +190,7 @@ Mitigations:
   state.db                    # registry (SQLite): entries, kinds, paths, status, sizes, history
   engine.lock                 # held by whichever process is changing entries (agent or CLI)
   agent.sock                  # IPC socket (§9.1)
-  agent.log
+  stowaway-agent.log
 ```
 
 - Storage is namespaced by `machine-id` (`IOPlatformUUID`) so one drive can serve more than one Mac.
@@ -293,7 +294,10 @@ stowaway gc [--dry-run]
 stowaway roots list | add <path> | remove <path> [--copy]   # watched folders (same as the menu bar's Configure Folders)
 stowaway eject             # detach all images (naming processes that hold files), then eject the drive
 stowaway pause | resume    # stop or resume auto-adoption (drive switching keeps working)
+stowaway priority [background|normal]  # show or set offload transfer priority
 stowaway agent             # run the background agent in the foreground (used by launchd)
+stowaway agent stop        # stop any transfer, detach all images (folders fall back to local) and stop the agent
+stowaway agent start       # start the agent again; it reattaches the images
 stowaway uninstall [--copy]
 ```
 
@@ -309,9 +313,10 @@ idle_seconds = 120
 min_adopt_bytes = 50_000_000         # folders smaller than this aren't worth an image (§4.4)
 gc_orphan_days = 14
 drive_low_space_percent = 10       # "nearly full" warning threshold
+transfer_priority = "background"   # "background" pauses transfers while the disk is busy; "normal" doesn't
 ```
 
-Every change to entries or this file happens under `~/.stowaway/engine.lock`, whether it comes from the agent, the CLI or the menu bar app (which goes through the agent over IPC, §9.1). The CLI makes its changes directly under the lock and then asks the agent to refresh. When the file changes, including hand edits, the agent notices and reloads it.
+Every change to entries or this file happens under `~/.stowaway/engine.lock`, whether it comes from the agent, the CLI or the menu bar app (which goes through the agent over IPC, §9.1). The one exception is `transfer_priority`: it's written without the lock, because the copy it's meant to affect holds the lock. The CLI makes its changes directly under the lock and then asks the agent to refresh. When the file changes, including hand edits, the agent notices and reloads it.
 
 ### Menu bar app
 
@@ -319,17 +324,22 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 
 **Icon**
 
-- A monochrome template image, so it fits light mode, dark mode and tinted menu bars. v1 uses SF Symbols (`shippingbox`, alternating with `shippingbox.and.arrow.backward` while transferring); the custom crate glyph from §14.6 replaces them before release.
-- Variants for each state:
+- A monochrome template image, so it fits light mode, dark mode and tinted menu bars.
+- The base is always the Stowaway logo. Each state adds a small badge overlapping the logo's bottom-right corner, with a thin transparent gap cut around the badge so the two shapes stay distinct. The logo isn't settled yet: v1 uses the `shippingbox` SF Symbol (one constant, `IconState.logoSymbolName`), and the custom glyph from §14.6 replaces it before release. Badges are SF Symbols.
+- The icon never animates, because motion in the menu bar is distracting. Each task gets its own static badge instead:
 
-| State | Icon |
+| State | Badge on the logo |
 |---|---|
-| Drive connected, idle | Normal glyph |
-| Transfer in progress (adopting, migrating, merging) | A slight animation, e.g. the glyph's arrow drifting toward the drive, at a few frames per second. It only runs while bytes are moving. If Reduce Motion is on, a static "transferring" glyph is shown instead. |
-| Drive disconnected (working locally) | Glyph with a slash or outline |
-| Drive nearly full or full | Glyph with a warning badge |
-| Agent not running, permissions missing, links dangling, or another error | Glyph with an error badge |
-| Paused | Glyph with a pause badge |
+| Drive connected, idle | None |
+| Measuring folders before adopting | Magnifying glass |
+| Moving folders onto the drive | Down arrow |
+| Syncing after a reconnect (reconnect, merge) | Circular arrows |
+| Compacting images | Inward arrows |
+| Releasing folders back to local | U-turn arrow |
+| Drive disconnected (working locally) | Filled circle with an × |
+| Drive nearly full or full | Filled circle with ! |
+| Agent not running, permissions missing, links dangling, or another error | Filled warning triangle |
+| Paused | Filled pause circle |
 
 **Popover** (opens when the icon is clicked)
 
@@ -339,6 +349,8 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
    - A "nearly full" warning appears below `drive_low_space_percent`, and a "full" error when writes are failing with ENOSPC.
    - The row also flags a drive that is connected but isn't APFS or has the wrong UUID.
 3. **Activity:** shown only while transfers are running, e.g. "Moving my-app/node_modules to FastSSD — 1.2 of 3.4 GB · 410 MB/s · 8,200 files/s · about 6 s left", plus "and 4 more queued".
+   - Each transfer reports its step: preparing (creating the image, taking stock of the folder), copying (the only step with a determinate bar), writing to the drive (detaching the image flushes its buffered data), checking nothing changed during the copy, removing the local copy (or the old image, when compacting), mounting, and measuring. Steps after the copy show an indeterminate bar with "1.5 GB copied · Writing to the drive…". A transfer that fails or is postponed partway disappears from the list instead of staying stuck.
+   - While folders are being offloaded, an **Offload transfer priority** radio toggle offers **Background** (the default: transfers pause while other apps keep the disk busy) and **Normal** (transfers run at normal priority and never pause). The change applies to the transfer already running.
 4. **Drive performance** (§8.1), e.g. "Thunderbolt 3 (40 Gb/s) · read 2.6 GB/s · write 2.1 GB/s · small files 0.8× internal". When a bottleneck is detected, a hint line appears below it. A "Run speed test" button sits next to the date of the last test.
 5. **Problems:** one row per problem the agent knows about: dangling links, missing permissions (with a button that opens the right System Settings pane), a pnpm store that isn't usable, the agent not running (with a Start button), and so on. Clicking a row shows the matching `doctor` details.
 6. **Actions:**
@@ -346,7 +358,7 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
    - Eject Drive: runs the same flow as `stowaway eject`. If programs are still holding files on the drive, it lists them by name.
    - Pause / Resume
    - Open Log
-   - Quit Menu Bar App
+   - Quit Stowaway: runs the same flow as `stowaway agent stop`, then quits the app. Like Eject, it lists the programs holding files on the drive and stays open if there are any. When the app starts again it starts the agent, which reattaches the images (§4.3).
 
 **Configure Folders window**
 
@@ -362,6 +374,8 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 **Notifications** are kept to a minimum: the drive went offline while transfers were running, a migration finished (with the amount of space freed), the drive is full, and agent errors. Each one can be turned off in the menu bar app.
 
 **How sizes are measured:** sizes count the space actually allocated on disk (`st_blocks`), with hard-linked files counted once. They're formatted the way Finder does it, in decimal units. The agent stores sizes in `state.db` and updates them after each transfer, plus a low-priority rescan every few hours. The popover never walks directories itself, so it opens instantly.
+
+**Candidate sizes are cached.** Measuring candidates (folders not adopted yet) means walking them, which takes minutes for large `target/` folders, and auto-adoption rechecks candidates every 10 minutes and after file changes. Each measurement is stored in `state.db`'s `measurements` table, together with the folder's own modification time. A later pass reuses it unless it's more than 6 hours old or the folder's modification time has changed: that time changes when direct children are added or removed, e.g. by an install or a first build. Changes deeper inside, such as a rebuild growing `target/`, are picked up when the measurement expires. A stale size can only delay or reorder an adoption, because adoption copies whatever is there. Expired measurements are pruned at the start of each pass.
 
 ### 8.1 Drive performance and bottleneck diagnosis
 
@@ -395,9 +409,10 @@ The negotiated speed is the useful part. It catches the common case of a fast dr
 | Sequential speed is close to the connection's maximum, and the connection is slow (USB 2, or 5 Gb/s) | "Your connection is the limit. A 10 Gb/s USB or Thunderbolt port, or a better cable, could make this about N× faster." |
 | Sequential speed is far below the connection's maximum | "The drive itself is the limit. An NVMe drive in a matching enclosure would be faster." This can also be heat-related throttling, if speed drops over the course of the test. |
 | Sequential speed is fine but small-file speed is much worse than the internal disk | "Small-file performance is the limit (common with cheaper SSDs and some enclosures). Installs will be slower than on your internal disk." |
-| Transfer throughput is far below the test results | "Transfers are slower than this drive can handle", together with the likely cause the agent can see: transfers being run at low priority by design, other heavy disk activity, or Spotlight indexing. |
+| Transfer throughput is far below the test results | "Transfers are slower than this drive can handle", together with the likely cause the agent can see: transfers pausing for other disk activity, or Spotlight indexing. |
 | The external drive is at least as fast as the internal disk in all tests | No hint. The status line shows "Faster than or equal to internal". |
 
+- **Format note:** the speed test also records the drive's format and whether it's encrypted, and one line under the results says whether a different setup would be faster. Setup already requires APFS, so the usual line is "Formatted as APFS, the best format for Stowaway." Other notes: a non-APFS format (reformat as APFS, which erases the drive), a spinning hard drive (no format helps; an SSD would), or an encrypted volume on an Intel Mac.
 - **Where it appears:** the popover's Drive performance row (§8), the "Drive performance" block in `stowaway status`, and the full table in `stowaway bench`.
 - **Formats:** `--json` returns the raw numbers. Results are tied to the volume UUID and the connection path, so moving the drive to a different port or cable is recognized as a new setup that may need a fresh test.
 
@@ -413,12 +428,12 @@ The negotiated speed is the useful part. It catches the common case of a fast dr
   - `xtask`: developer tasks (`cargo xtask ci`, `cargo xtask install-hooks`).
   - `macos-app/`: the menu bar app, written in Swift (see below).
 - **Menu bar app:** a SwiftUI `MenuBarExtra` app using the window style, with `LSUIElement` set so it has no Dock icon.
-  - **Why Swift for this part:** a native popover, folder picker, Reduce Motion support and `SMAppService` are straightforward in SwiftUI and awkward through Rust's AppKit bindings.
+  - **Why Swift for this part:** a native popover, folder picker and `SMAppService` are straightforward in SwiftUI and awkward through Rust's AppKit bindings.
   - **Thin client:** the app contains no logic for moving files or switching links. It only displays what the agent reports and sends it requests.
   - **The Rust-only alternative:** a status item and `NSMenu` built with `objc2-app-kit`, plus a raw AppKit window. That's possible, but it means much more code for a worse result.
 - **IPC:** the agent listens on a Unix domain socket at `~/.stowaway/agent.sock`, which only your user account can access.
   - **Protocol:** versioned, newline-delimited JSON.
-  - **Requests:** `status`, `roots.list`, `roots.add` (with a dry-run preview), `roots.remove`, `eject`, `pause`, `resume`, `scan`, `doctor`, `bench`.
+  - **Requests:** `status`, `roots.list`, `roots.add` (with a dry-run preview), `roots.remove`, `eject`, `quit`, `pause`, `resume`, `set-transfer-priority`, `scan`, `doctor`, `bench`.
   - **Events:** `subscribe` returns a stream of state changes, transfer progress, size updates and problems. The menu bar icon and popover are driven entirely by this stream.
   - **The CLI** uses the same socket for commands that need the live agent.
   - **Message types** are defined once in Rust and exported as a JSON Schema. A test in CI checks that the Swift side decodes them.
@@ -426,9 +441,9 @@ The negotiated speed is the useful part. It catches the common case of a fast dr
   - Both are published from the project's own Homebrew tap. `homebrew-core` only accepts open-source licenses, and this project's license isn't one (§13).
   - **Homebrew formula (CLI only):** installs the binary, and `init` installs a plain launchd plist.
   - **Homebrew cask (`.app`):** bundles the Rust binary inside the app and registers the agent with `SMAppService.agent(plistName:)`. The agent then shows up under the app's name in System Settings → Login Items, and permission prompts name the app rather than a bare binary.
-- **Process model:** a per-user launchd agent (`~/Library/LaunchAgents/dev.stowaway.agent.plist`) with `RunAtLoad` and `KeepAlive`. No root access and no kernel extension are needed.
+- **Process model:** a per-user launchd agent (`~/Library/LaunchAgents/dev.stowaway.agent.plist`) with `RunAtLoad`, and `KeepAlive` set to restart it only after a crash: a `quit` request exits cleanly and the agent stays stopped until the app or `stowaway agent start` kickstarts it. A `quit` stops any copy in progress (the transfer is retried later), detaches every image while holding the engine lock until the process exits, and leaves entries in local fallback (§4.2). No root access and no kernel extension are needed.
 - **State:** SQLite in `~/.stowaway/state.db`. A journal of in-flight operations supports crash recovery (§6.2).
-- **Copies across volumes:** a Rust copier that preserves symlinks, permissions, read-only files and hard links (tracked by inode, so Cargo's hard-linked binaries aren't duplicated). Copies are throttled to low I/O priority so they don't hurt interactive work.
+- **Copies across volumes:** a Rust copier that preserves symlinks, permissions, read-only files and hard links (tracked by inode, so Cargo's hard-linked binaries aren't duplicated). One thread walks the tree, creating directories and links in order, and hands files to up to 8 worker threads. Folders of many small files are limited by per-file latency, so parallel copies are about 2.4× faster than serial ones (24k files: 6.7 s serial, 2.8 s with 4 workers; `cp`, `ditto`, `rsync` and `tar` were all slower than the serial copier). The worker count starts at 2 and adjusts by one each second: down while the whole machine's CPU use is above 80%, up while it's below 70%. Copies run at normal I/O priority. With the `transfer_priority = "background"` setting (the default), they also pause while other programs keep the internal disk busy (more than 30 MB/s that isn't the agent's own reads, sampled once a second with `iostat`), resuming after three calm seconds. With `"normal"`, they never pause. Copies re-read the setting once a second, and `set-transfer-priority` writes it without taking the engine lock, so a change reaches a copy that's already running. macOS's low I/O tiers were tried first: they made copies about 100× slower whenever anything else touched the disk. For the same reason the LaunchAgent uses `ProcessType` `Interactive`; `Adaptive` and `Standard` agents get throttled I/O.
 
 ### 9.2 Engineering standards
 

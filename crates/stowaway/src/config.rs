@@ -20,6 +20,18 @@ pub enum Usage {
     Work,
 }
 
+/// Offload transfer priority: how hard copies to and from the drive compete with other work for
+/// the internal disk.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransferPriority {
+    /// Pause transfers while other programs keep the internal disk busy.
+    #[default]
+    Background,
+    /// Transfer at normal priority, never pausing.
+    Normal,
+}
+
 /// Licensing details the user chose to record. Not verified (honor system).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -70,6 +82,9 @@ pub struct Config {
     pub licensing: Licensing,
     /// Auto-adoption paused.
     pub paused: bool,
+    /// Whether copies yield to other disk activity. Read again during copies, so a change
+    /// applies to one already running.
+    pub transfer_priority: TransferPriority,
 }
 
 impl Default for Config {
@@ -91,6 +106,7 @@ impl Default for Config {
             internal_case_sensitive: false,
             licensing: Licensing::default(),
             paused: false,
+            transfer_priority: TransferPriority::Background,
         }
     }
 }

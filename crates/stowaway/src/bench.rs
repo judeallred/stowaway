@@ -23,6 +23,12 @@ pub struct Connection {
     pub model: Option<String>,
     /// Whether it's an SSD.
     pub solid_state: Option<bool>,
+    /// The volume's format, e.g. `APFS` or `Case-sensitive APFS`.
+    #[serde(default)]
+    pub format: Option<String>,
+    /// Whether the volume is encrypted.
+    #[serde(default)]
+    pub encrypted: Option<bool>,
 }
 
 /// Results for one disk.
@@ -101,7 +107,39 @@ pub fn connection(mount_point: &Path) -> Connection {
         link_label,
         model: disk.media_name,
         solid_state: disk.solid_state.or(volume.solid_state),
+        format: volume.filesystem_name,
+        encrypted: volume.encryption,
     }
+}
+
+/// One line about the drive's format: whether a different setup would make Stowaway faster, or
+/// that it's already the best choice. `None` when the speed test didn't record the format.
+#[must_use]
+pub fn format_note(connection: &Connection) -> Option<String> {
+    let format = connection.format.as_deref()?;
+    if !format.contains("APFS") {
+        return Some(format!(
+            "Formatted as {format}. APFS is much faster for folders of many small files; reformatting the drive as APFS in Disk Utility erases it."
+        ));
+    }
+    if connection.solid_state == Some(false) {
+        return Some(format!(
+            "Formatted as {format}, but this is a spinning hard drive. No format fixes its slow handling of small files; an SSD would make Stowaway much faster."
+        ));
+    }
+    if connection.encrypted == Some(true) && cfg!(target_arch = "x86_64") {
+        return Some(format!(
+            "Formatted as encrypted {format}. On Intel Macs without a T2 chip, encryption slows transfers; an unencrypted APFS volume would be faster."
+        ));
+    }
+    let encrypted = if connection.encrypted == Some(true) {
+        " (encrypted)"
+    } else {
+        ""
+    };
+    Some(format!(
+        "Formatted as {format}{encrypted}, the best format for Stowaway."
+    ))
 }
 
 /// Finds the negotiated link speed for a BSD disk name in `system_profiler` output.
@@ -366,7 +404,7 @@ pub fn diagnose(report: &BenchReport, recent_transfer_mbps: Option<f64>) -> Opti
         && transfer < ext.seq_write_mbps * 0.25
     {
         return Some(
-            "Transfers are slower than this drive can handle. Stowaway copies at low priority so builds stay fast; heavy disk activity or Spotlight indexing can also slow it down."
+            "Transfers are slower than this drive can handle. Folders of many small files copy slower than large files, and with Background priority, transfers pause while other apps keep your disk busy. Spotlight indexing can also slow them down."
                 .to_owned(),
         );
     }
@@ -385,6 +423,30 @@ pub fn at_least_internal(report: &BenchReport) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_notes_say_when_another_format_would_be_faster() {
+        let ssd = |format: &str| Connection {
+            format: Some(format.into()),
+            solid_state: Some(true),
+            encrypted: Some(false),
+            ..Connection::default()
+        };
+        assert_eq!(format_note(&Connection::default()), None);
+        assert_eq!(
+            format_note(&ssd("APFS")).as_deref(),
+            Some("Formatted as APFS, the best format for Stowaway.")
+        );
+        assert!(
+            format_note(&ssd("Mac OS Extended (Journaled)"))
+                .is_some_and(|n| n.contains("APFS is much faster"))
+        );
+        let spinning = Connection {
+            solid_state: Some(false),
+            ..ssd("APFS")
+        };
+        assert!(format_note(&spinning).is_some_and(|n| n.contains("spinning hard drive")));
+    }
 
     #[test]
     fn parses_link_labels() {

@@ -4,23 +4,38 @@ public import Observation
 /// What the menu bar icon shows (spec §8).
 public enum IconState: Equatable, Sendable {
   case idle
-  case transferring
+  /// Adding up folder sizes before adopting.
+  case measuring
+  /// Moving folders onto the drive.
+  case adopting
+  /// Bringing local changes and the drive back in step after a reconnect.
+  case syncing
+  /// Rebuilding bloated images.
+  case compacting
+  /// Returning folders to plain local folders.
+  case releasing
   case disconnected
   case warning
   case error
   case paused
 
-  /// The SF Symbol for this state. `frame` alternates while transferring.
-  public func symbolName(frame: Int, reduceMotion: Bool) -> String {
+  /// The Stowaway logo, drawn in every state. A placeholder until the logo is settled.
+  public static let logoSymbolName = "shippingbox"
+
+  /// The small SF Symbol overlapping the logo's corner, or nil for the plain logo. Icons never
+  /// animate.
+  public var badgeSymbolName: String? {
     switch self {
-    case .idle: "shippingbox"
-    case .transferring:
-      reduceMotion || frame.isMultiple(of: 2)
-        ? "shippingbox.and.arrow.backward" : "shippingbox"
-    case .disconnected: "externaldrive.badge.xmark"
-    case .warning: "externaldrive.badge.exclamationmark"
-    case .error: "exclamationmark.triangle"
-    case .paused: "pause.circle"
+    case .idle: nil
+    case .measuring: "magnifyingglass"
+    case .adopting: "arrow.down"
+    case .syncing: "arrow.triangle.2.circlepath"
+    case .compacting: "arrow.down.right.and.arrow.up.left"
+    case .releasing: "arrow.uturn.backward"
+    case .disconnected: "xmark.circle.fill"
+    case .warning: "exclamationmark.circle.fill"
+    case .error: "exclamationmark.triangle.fill"
+    case .paused: "pause.circle.fill"
     }
   }
 
@@ -28,11 +43,25 @@ public enum IconState: Equatable, Sendable {
   public var accessibilityLabel: String {
     switch self {
     case .idle: "Stowaway"
-    case .transferring: "Stowaway, transferring"
+    case .measuring: "Stowaway, measuring folders"
+    case .adopting: "Stowaway, moving folders to the drive"
+    case .syncing: "Stowaway, syncing with the drive"
+    case .compacting: "Stowaway, compacting images"
+    case .releasing: "Stowaway, releasing folders"
     case .disconnected: "Stowaway, drive disconnected"
     case .warning: "Stowaway, needs attention"
     case .error: "Stowaway, problem"
     case .paused: "Stowaway, paused"
+    }
+  }
+
+  /// The state for a transfer's `op`.
+  static func forTransfer(op: String) -> Self {
+    switch op {
+    case "reconnect", "merge": .syncing
+    case "compact": .compacting
+    case "release": .releasing
+    default: .adopting
     }
   }
 }
@@ -43,14 +72,13 @@ public enum IconState: Equatable, Sendable {
 public final class AppModel {
   public private(set) var status: StatusReport?
   public private(set) var transfers: [String: TransferProgress] = [:]
+  public private(set) var plan: AdoptionPlan?
   public private(set) var agentReachable = false
-  public private(set) var animationFrame = 0
   public var lastError: String?
   public var busyMessage: String?
 
   public let client: AgentClient
   private var subscription: Task<Void, Never>?
-  private var animation: Task<Void, Never>?
 
   public init(client: AgentClient = AgentClient()) {
     self.client = client
@@ -79,7 +107,7 @@ public final class AppModel {
     }
     agentReachable = false
     transfers = [:]
-    updateAnimation()
+    plan = nil
   }
 
   /// Applies a pushed notification.
@@ -88,6 +116,7 @@ public final class AppModel {
     case .status(let report):
       agentReachable = true
       status = report
+      plan = report.plan
       var active: [String: TransferProgress] = [:]
       for case .transferProgress(let progress) in report.activeTransfers {
         active[progress.entryId] = progress
@@ -97,36 +126,23 @@ public final class AppModel {
       transfers[progress.entryId] = progress
     case .engine(.transferDone(let transfer)):
       transfers[transfer.entryId] = nil
+    case .engine(.transferAborted(let entryId)):
+      transfers[entryId] = nil
     case .engine(.driveChanged(let connected)):
       status?.drive.connected = connected
       if !connected { transfers = [:] }
+    case .plan(let newPlan):
+      plan = newPlan
     case .engine, .unknown:
       break
     }
-    updateAnimation()
   }
 
   /// Marks the agent unreachable (used by tests and when a request fails to connect).
   public func markAgentUnreachable() {
     agentReachable = false
     transfers = [:]
-    updateAnimation()
-  }
-
-  private func updateAnimation() {
-    if iconState == .transferring {
-      guard animation == nil else { return }
-      animation = Task { [weak self] in
-        while !Task.isCancelled {
-          try? await Task.sleep(for: .milliseconds(450))
-          self?.animationFrame += 1
-        }
-      }
-    } else {
-      animation?.cancel()
-      animation = nil
-      animationFrame = 0
-    }
+    plan = nil
   }
 
   // MARK: Derived state
@@ -137,7 +153,12 @@ public final class AppModel {
       return .error
     }
     if !status.drive.connected { return .disconnected }
-    if !transfers.isEmpty { return .transferring }
+    if let transfer = activeTransfers.first { return .forTransfer(op: transfer.op) }
+    switch plan?.phase {
+    case .adopting: return .adopting
+    case .measuring: return .measuring
+    case nil: break
+    }
     if status.drive.lowSpace || !status.problems.isEmpty { return .warning }
     if status.paused { return .paused }
     return .idle
@@ -149,7 +170,8 @@ public final class AppModel {
 
   /// The popover's headline (spec §8, item 1).
   public var headline: String {
-    guard agentReachable, let status else { return "Stowaway isn't running" }
+    guard agentReachable else { return "Stowaway isn't running" }
+    guard let status else { return "Connecting to Stowaway…" }
     if status.drive.connected {
       return "Stowaway is offloading \(Format.bytes(status.offloadedBytes))"
     }
@@ -158,9 +180,10 @@ public final class AppModel {
 
   /// Lines under the headline.
   public var subheadlines: [String] {
-    guard agentReachable, let status else {
+    guard agentReachable else {
       return ["Start it to keep your dependencies on \(driveName)."]
     }
+    guard let status else { return [] }
     if status.drive.connected { return [] }
     var lines = ["\(Format.bytes(status.offloadedBytes)) is waiting on \(driveName)."]
     if status.localBytes > 0 {
@@ -168,6 +191,52 @@ public final class AppModel {
         "\(Format.bytes(status.localBytes)) is being used locally until the drive comes back.")
     }
     return lines
+  }
+
+  /// What the auto-adoption pass is doing, e.g. "Measuring folders: 12 of 66 checked".
+  public var planTitle: String? {
+    guard let plan else { return nil }
+    switch plan.phase {
+    case .measuring where plan.foldersTotal == 0:
+      return "Looking for folders to offload…"
+    case .measuring:
+      return "Measuring folders: \(plan.foldersDone) of \(plan.foldersTotal) checked"
+    case .adopting:
+      return
+        "Offloading \(Format.bytes(plan.plannedBytes)): \(plan.foldersDone) of \(plan.foldersTotal) folders"
+    }
+  }
+
+  /// The line under `planTitle`.
+  public var planDetail: String? {
+    guard let plan else { return nil }
+    switch plan.phase {
+    case .measuring where plan.foldersTotal == 0: return nil
+    case .measuring: return "\(Format.bytes(plan.plannedBytes)) to offload so far"
+    case .adopting: return "\(Format.bytes(planMovedBytes)) moved"
+    }
+  }
+
+  /// Progress through the pass, or nil while there's nothing to measure it against yet.
+  public var planFraction: Double? {
+    guard let plan else { return nil }
+    switch plan.phase {
+    case .measuring:
+      guard plan.foldersTotal > 0 else { return nil }
+      return Double(plan.foldersDone) / Double(plan.foldersTotal)
+    case .adopting:
+      if plan.plannedBytes > 0 {
+        return min(1, Double(planMovedBytes) / Double(plan.plannedBytes))
+      }
+      guard plan.foldersTotal > 0 else { return nil }
+      return Double(plan.foldersDone) / Double(plan.foldersTotal)
+    }
+  }
+
+  /// Bytes moved in this pass, including the copy in progress.
+  private var planMovedBytes: UInt64 {
+    let current = transfers.values.filter { $0.op == "adopt" }.reduce(0) { $0 + $1.bytes }
+    return (plan?.movedBytes ?? 0) + current
   }
 
   /// Active transfers, largest first.
@@ -214,6 +283,80 @@ public final class AppModel {
       markAgentUnreachable()
       lastError = AgentError.notRunning.errorDescription
     } catch {
+      lastError = error.localizedDescription
+    }
+  }
+
+  /// Asks the agent to detach every image and stop, so folders use their local contents until
+  /// Stowaway starts again. Returns whether the app can quit: true once the agent has stopped
+  /// (or wasn't running), false if it refused, e.g. because files on the drive are open.
+  public func quit() async -> Bool {
+    busyMessage = "Detaching folders from \(driveName)…"
+    defer { busyMessage = nil }
+    do {
+      try await client.send(.quit)
+      return true
+    } catch AgentError.notRunning, AgentError.closed {
+      return true
+    } catch {
+      lastError = error.localizedDescription
+      return false
+    }
+  }
+
+  /// Whether the offload transfer priority toggle is shown: only while folders are being moved.
+  public var showsTransferPriority: Bool {
+    guard status?.transferPriority != nil else { return false }
+    return plan?.phase == .adopting || !transfers.isEmpty
+  }
+
+  /// Sets the offload transfer priority. The toggle flips right away, and flips back if the agent
+  /// rejects the change.
+  public func setTransferPriority(_ priority: TransferPriority) async {
+    let previous = status?.transferPriority
+    guard previous != priority else { return }
+    status?.transferPriority = priority
+    do {
+      try await client.send(.setTransferPriority(priority))
+      lastError = nil
+    } catch {
+      status?.transferPriority = previous
+      lastError = error.localizedDescription
+    }
+  }
+
+  /// Global caches found on this Mac, and supported ones that weren't.
+  public var detectedGlobals: [GlobalReport] {
+    (status?.globals ?? []).filter(\.detected)
+  }
+
+  public var undetectedGlobals: [GlobalReport] {
+    (status?.globals ?? []).filter { !$0.detected }
+  }
+
+  /// Turns offloading of a global cache on or off. The checkbox flips right away, and flips back
+  /// if the agent rejects the change. Turning off a cache with folders on the drive releases them,
+  /// copying them back with `copy`.
+  public func setGlobalEnabled(_ global: GlobalReport, enabled: Bool, copy: Bool = false) async {
+    guard let index = status?.globals?.firstIndex(where: { $0.kind == global.kind }) else {
+      return
+    }
+    let previous = status?.globals?[index].enabled
+    status?.globals?[index].enabled = enabled
+    let releasing = !enabled && global.entries > 0
+    if releasing {
+      busyMessage =
+        copy ? "Copying \(global.label) back to this Mac…" : "Releasing \(global.label)…"
+    }
+    defer { if releasing { busyMessage = nil } }
+    do {
+      try await client.send(.setKindEnabled(kind: global.kind, enabled: enabled, copy: copy))
+      lastError = nil
+    } catch {
+      if let previous, status?.globals?.indices.contains(index) == true {
+        status?.globals?[index].enabled = previous
+      }
+      if case AgentError.notRunning = error { markAgentUnreachable() }
       lastError = error.localizedDescription
     }
   }

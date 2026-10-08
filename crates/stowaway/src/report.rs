@@ -10,7 +10,32 @@ macro_rules! line {
 
 use crate::bench::BenchReport;
 use crate::registry::EntryStatus;
-use crate::status::StatusReport;
+use crate::status::{AdoptionPlan, Performance, PlanPhase, StatusReport};
+
+fn performance(out: &mut String, perf: &Performance) {
+    line!(out, "\nDrive performance:");
+    if let Some(bench) = &perf.last_bench {
+        line!(out, "  {}", bench_line(bench));
+    } else {
+        line!(out, "  No speed test yet (run `stowaway bench`).");
+    }
+    if let Some(rate) = perf.recent_transfer_mbps {
+        line!(
+            out,
+            "  Recent transfers: {} · {:.0} files/s",
+            format_rate(rate),
+            perf.recent_transfer_files_per_sec.unwrap_or_default()
+        );
+    }
+    if let Some(hint) = &perf.hint {
+        line!(out, "  Hint: {hint}");
+    } else if perf.at_least_internal {
+        line!(out, "  Faster than or equal to internal.");
+    }
+    if let Some(note) = &perf.format_note {
+        line!(out, "  {note}");
+    }
+}
 
 /// Converts a byte or file count to `f64` for display arithmetic.
 #[must_use]
@@ -57,6 +82,29 @@ const fn status_word(status: EntryStatus) -> &'static str {
     }
 }
 
+/// Describes the auto-adoption pass in progress.
+#[must_use]
+pub fn plan_line(plan: &AdoptionPlan) -> String {
+    match plan.phase {
+        PlanPhase::Measuring if plan.folders_total == 0 => {
+            "Looking for folders to offload…".to_owned()
+        }
+        PlanPhase::Measuring => format!(
+            "Measuring folders: {} of {} checked, {} to offload so far.",
+            plan.folders_done,
+            plan.folders_total,
+            format_bytes(plan.planned_bytes)
+        ),
+        PlanPhase::Adopting => format!(
+            "Offloading {}: {} of {} folders done, {} moved.",
+            format_bytes(plan.planned_bytes),
+            plan.folders_done,
+            plan.folders_total,
+            format_bytes(plan.moved_bytes)
+        ),
+    }
+}
+
 /// Renders `stowaway status`.
 #[must_use]
 pub fn status(report: &StatusReport) -> String {
@@ -95,6 +143,9 @@ pub fn status(report: &StatusReport) -> String {
             );
         }
     }
+    if let Some(plan) = &report.plan {
+        line!(out, "{}", plan_line(plan));
+    }
     if report.paused {
         line!(out, "Auto-adoption is paused.");
     }
@@ -128,26 +179,7 @@ pub fn status(report: &StatusReport) -> String {
         }
     }
 
-    let perf = &report.performance;
-    line!(out, "\nDrive performance:");
-    if let Some(bench) = &perf.last_bench {
-        line!(out, "  {}", bench_line(bench));
-    } else {
-        line!(out, "  No speed test yet (run `stowaway bench`).");
-    }
-    if let Some(rate) = perf.recent_transfer_mbps {
-        line!(
-            out,
-            "  Recent transfers: {} · {:.0} files/s",
-            format_rate(rate),
-            perf.recent_transfer_files_per_sec.unwrap_or_default()
-        );
-    }
-    if let Some(hint) = &perf.hint {
-        line!(out, "  Hint: {hint}");
-    } else if perf.at_least_internal {
-        line!(out, "  Faster than or equal to internal.");
-    }
+    performance(&mut out, &report.performance);
 
     if !report.problems.is_empty() {
         line!(out, "\nProblems:");
@@ -252,6 +284,9 @@ pub fn bench_table(bench: &BenchReport) -> String {
             out,
             "\nThe external drive is at least as fast as your internal disk."
         );
+    }
+    if let Some(note) = crate::bench::format_note(&bench.connection) {
+        line!(out, "{note}");
     }
     out
 }

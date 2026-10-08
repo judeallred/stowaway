@@ -7,6 +7,7 @@ pub mod bench;
 pub mod cli;
 pub mod cmd;
 pub mod config;
+pub mod diskload;
 pub mod drive;
 pub mod engine;
 pub mod error;

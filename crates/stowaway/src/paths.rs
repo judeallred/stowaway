@@ -93,7 +93,7 @@ impl Layout {
     /// The agent's log file.
     #[must_use]
     pub fn log_path(&self) -> PathBuf {
-        self.state_dir.join("agent.log")
+        self.state_dir.join("stowaway-agent.log")
     }
 
     /// Expands a leading `~` and makes the path absolute.
@@ -116,7 +116,9 @@ impl Layout {
 pub struct DriveLayout {
     /// `<mount>/.stowaway`.
     pub root: PathBuf,
-    /// `<mount>/.stowaway/<machine-id>`.
+    /// `<mount>/.stowaway/<machine-id>.noindex`. Spotlight skips folders named `*.noindex` and
+    /// everything in them, so it doesn't re-examine images on every write.
+    /// `.metadata_never_index` would only be honored at the root of a volume.
     pub machine_dir: PathBuf,
 }
 
@@ -126,7 +128,7 @@ impl DriveLayout {
     pub fn new(mount_point: &Path, machine_id: &str) -> Self {
         let root = mount_point.join(".stowaway");
         Self {
-            machine_dir: root.join(machine_id),
+            machine_dir: root.join(format!("{machine_id}.noindex")),
             root,
         }
     }
@@ -202,7 +204,7 @@ mod tests {
         let d = DriveLayout::new(Path::new("/Volumes/SSD"), "MID");
         assert_eq!(
             d.image_path("e1"),
-            PathBuf::from("/Volumes/SSD/.stowaway/MID/images/e1.sparsebundle")
+            PathBuf::from("/Volumes/SSD/.stowaway/MID.noindex/images/e1.sparsebundle")
         );
         assert_eq!(
             d.volume_file(),

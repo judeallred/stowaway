@@ -1,14 +1,69 @@
+import AppKit
 import StowawayKit
 import SwiftUI
 
-/// The menu bar glyph: a template SF Symbol per state, gently animated while data moves.
+/// The menu bar glyph: the logo with a small static badge on its corner for each state.
 struct MenuBarIcon: View {
   let model: AppModel
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     let state = model.iconState
-    Image(systemName: state.symbolName(frame: model.animationFrame, reduceMotion: reduceMotion))
+    Image(nsImage: MenuBarImage.image(badge: state.badgeSymbolName))
       .accessibilityLabel(state.accessibilityLabel)
+  }
+}
+
+/// Draws the logo-plus-badge template images. `MenuBarExtra` labels only render a single image,
+/// so the two symbols are composited here rather than stacked in SwiftUI.
+@MainActor
+enum MenuBarImage {
+  private static let canvas = NSSize(width: 20, height: 17)
+  private static let logoConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+  private static let badgeConfig = NSImage.SymbolConfiguration(pointSize: 8.5, weight: .bold)
+  /// Width of the transparent gap cut around the badge so it reads apart from the logo.
+  private static let gap: CGFloat = 1.5
+
+  private static var cache: [String: NSImage] = [:]
+
+  static func image(badge: String?) -> NSImage {
+    let key = badge ?? ""
+    if let cached = cache[key] {
+      return cached
+    }
+    let image = render(badge: badge)
+    cache[key] = image
+    return image
+  }
+
+  private static func render(badge: String?) -> NSImage {
+    let logo = symbol(IconState.logoSymbolName, logoConfig)
+    let badgeImage = badge.map { symbol($0, badgeConfig) }
+    let image = NSImage(size: canvas, flipped: false) { rect in
+      let logoRect = NSRect(
+        x: 0, y: rect.maxY - logo.size.height, width: logo.size.width, height: logo.size.height)
+      logo.draw(in: logoRect)
+      guard let badgeImage else {
+        return true
+      }
+      let badgeRect = NSRect(
+        x: rect.maxX - badgeImage.size.width, y: 0, width: badgeImage.size.width,
+        height: badgeImage.size.height)
+      for dx in [-gap, 0, gap] {
+        for dy in [-gap, 0, gap] {
+          badgeImage.draw(
+            in: badgeRect.offsetBy(dx: dx, dy: dy), from: .zero, operation: .destinationOut,
+            fraction: 1)
+        }
+      }
+      badgeImage.draw(in: badgeRect)
+      return true
+    }
+    image.isTemplate = true
+    return image
+  }
+
+  private static func symbol(_ name: String, _ config: NSImage.SymbolConfiguration) -> NSImage {
+    NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+      .withSymbolConfiguration(config) ?? NSImage()
   }
 }

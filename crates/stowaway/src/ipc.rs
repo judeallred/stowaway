@@ -10,10 +10,11 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::Usage;
-use crate::engine::EngineEvent;
+use crate::config::{TransferPriority, Usage};
+use crate::engine::{EngineEvent, TransferStep};
 use crate::error::{Error, Result};
-use crate::status::StatusReport;
+use crate::kinds::KindId;
+use crate::status::{AdoptionPlan, StatusReport};
 
 /// Protocol version; bumped on incompatible changes.
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -56,10 +57,28 @@ pub enum Call {
     },
     /// Detaches all images and ejects the drive.
     Eject,
+    /// Stops any copy in progress, detaches all images so folders fall back to their local
+    /// contents, and stops the agent. It reattaches them when it next starts.
+    Quit,
     /// Pauses auto-adoption.
     Pause,
     /// Resumes auto-adoption.
     Resume,
+    /// Sets whether copies yield to other disk activity. Applies to a copy already running.
+    SetTransferPriority {
+        /// The new priority.
+        priority: TransferPriority,
+    },
+    /// Turns offloading of a kind on or off. Turning it off releases its managed folders.
+    SetKindEnabled {
+        /// The kind.
+        kind: KindId,
+        /// Offload it.
+        enabled: bool,
+        /// When turning off, copy contents back to the Mac instead of letting them be
+        /// re-downloaded.
+        copy: bool,
+    },
     /// Runs health checks; with `fix`, also reconciles.
     Doctor {
         /// Repair what can be repaired.
@@ -107,6 +126,8 @@ pub enum Notification {
     Status(Box<StatusReport>),
     /// Transfer progress or completion, and other engine events.
     Engine(EngineEvent),
+    /// The auto-adoption pass changed; `None` when it finished.
+    Plan(Option<AdoptionPlan>),
 }
 
 /// Result of a `roots-add` preview.
@@ -174,30 +195,7 @@ pub fn agent_running(socket: &Path) -> bool {
 #[must_use]
 pub fn samples() -> Vec<serde_json::Value> {
     let (status, progress, transfer) = sample_status();
-    let requests = [
-        Call::Status,
-        Call::Subscribe,
-        Call::Refresh,
-        Call::Scan,
-        Call::RootsAdd {
-            path: "/Users/me/code".into(),
-            dry_run: true,
-        },
-        Call::RootsRemove {
-            path: "/Users/me/code".into(),
-            copy: false,
-        },
-        Call::Eject,
-        Call::Pause,
-        Call::Resume,
-        Call::Doctor { fix: false },
-        Call::Bench { quick: true },
-        Call::SetUsage { usage: Usage::Work },
-        Call::RecordLicense {
-            order_id: "ORD-1".into(),
-            licensee: Some("Acme".into()),
-        },
-    ];
+    let requests = sample_requests();
     let wrap = |kind: &str, message: serde_json::Value| serde_json::json!({ "kind": kind, "message": message });
     let mut out: Vec<serde_json::Value> = Vec::new();
     for (id, call) in (1_u64..).zip(requests) {
@@ -236,12 +234,29 @@ pub fn samples() -> Vec<serde_json::Value> {
             serde_json::to_value(response).unwrap_or_default(),
         ));
     }
+    let mut flushing = progress.clone();
+    if let EngineEvent::TransferProgress { step, bytes, .. } = &mut flushing {
+        *step = TransferStep::Flushing;
+        *bytes = 3_400_000_000;
+    }
     let notifications = [
         Notification::Status(Box::new(status)),
         Notification::Engine(progress),
+        Notification::Engine(flushing),
+        Notification::Engine(EngineEvent::TransferAborted {
+            entry_id: "01jdef".into(),
+        }),
         Notification::Engine(EngineEvent::TransferDone { transfer }),
         Notification::Engine(EngineEvent::EntriesChanged),
         Notification::Engine(EngineEvent::DriveChanged { connected: false }),
+        Notification::Plan(Some(AdoptionPlan {
+            phase: crate::status::PlanPhase::Measuring,
+            folders_done: 12,
+            folders_total: 66,
+            planned_bytes: 41_200_000_000,
+            moved_bytes: 0,
+        })),
+        Notification::Plan(None),
     ];
     for note in notifications {
         out.push(wrap(
@@ -250,6 +265,42 @@ pub fn samples() -> Vec<serde_json::Value> {
         ));
     }
     out
+}
+
+fn sample_requests() -> [Call; 16] {
+    [
+        Call::Status,
+        Call::Subscribe,
+        Call::Refresh,
+        Call::Scan,
+        Call::RootsAdd {
+            path: "/Users/me/code".into(),
+            dry_run: true,
+        },
+        Call::RootsRemove {
+            path: "/Users/me/code".into(),
+            copy: false,
+        },
+        Call::Eject,
+        Call::Quit,
+        Call::Pause,
+        Call::Resume,
+        Call::SetTransferPriority {
+            priority: TransferPriority::Normal,
+        },
+        Call::SetKindEnabled {
+            kind: KindId::PnpmStore,
+            enabled: false,
+            copy: true,
+        },
+        Call::Doctor { fix: false },
+        Call::Bench { quick: true },
+        Call::SetUsage { usage: Usage::Work },
+        Call::RecordLicense {
+            order_id: "ORD-1".into(),
+            licensee: Some("Acme".into()),
+        },
+    ]
 }
 
 fn sample_bench() -> crate::bench::BenchReport {
@@ -262,6 +313,8 @@ fn sample_bench() -> crate::bench::BenchReport {
             link_gbps: Some(40.0),
             model: Some("Samsung X5".into()),
             solid_state: Some(true),
+            format: Some("APFS".into()),
+            encrypted: Some(false),
         },
         internal: DiskResult {
             seq_write_mbps: 3100.0,
@@ -283,9 +336,37 @@ fn sample_bench() -> crate::bench::BenchReport {
     }
 }
 
+fn sample_globals() -> Vec<crate::status::GlobalReport> {
+    use crate::status::GlobalReport;
+
+    vec![
+        GlobalReport {
+            kind: KindId::PnpmStore,
+            label: "pnpm store".into(),
+            description: KindId::PnpmStore.spec().description.into(),
+            paths: vec!["/Users/me/Library/pnpm/store".into()],
+            detected: true,
+            enabled: true,
+            entries: 1,
+            offloaded_bytes: 12_800_000_000,
+            pending_bytes: None,
+        },
+        GlobalReport {
+            kind: KindId::Huggingface,
+            label: "Hugging Face models".into(),
+            description: KindId::Huggingface.spec().description.into(),
+            paths: Vec::new(),
+            detected: false,
+            enabled: true,
+            entries: 0,
+            offloaded_bytes: 0,
+            pending_bytes: None,
+        },
+    ]
+}
+
 fn sample_status() -> (StatusReport, EngineEvent, crate::registry::Transfer) {
     use crate::engine::{Problem, Severity};
-    use crate::kinds::KindId;
     use crate::registry::{EntryStatus, Transfer};
     use crate::status::{DriveStatus, EntryReport, Performance, RootReport};
 
@@ -306,6 +387,8 @@ fn sample_status() -> (StatusReport, EngineEvent, crate::registry::Transfer) {
         files: 30_000,
         total_files: 81_000,
         elapsed_seconds: 2.9,
+        waiting_for_disk: true,
+        step: TransferStep::Copying,
     };
     let status = StatusReport {
         version: "0.1.0".into(),
@@ -335,7 +418,15 @@ fn sample_status() -> (StatusReport, EngineEvent, crate::registry::Transfer) {
             entries: 23,
             offloaded_bytes: 41_200_000_000,
         }],
+        globals: sample_globals(),
         active_transfers: vec![progress.clone()],
+        plan: Some(AdoptionPlan {
+            phase: crate::status::PlanPhase::Adopting,
+            folders_done: 3,
+            folders_total: 56,
+            planned_bytes: 182_400_000_000,
+            moved_bytes: 12_300_000_000,
+        }),
         recent_transfers: vec![transfer.clone()],
         problems: vec![Problem {
             severity: Severity::Warning,
@@ -347,10 +438,12 @@ fn sample_status() -> (StatusReport, EngineEvent, crate::registry::Transfer) {
             recent_transfer_mbps: Some(410.0),
             recent_transfer_files_per_sec: Some(8200.0),
             hint: None,
+            format_note: Some("Formatted as APFS, the best format for Stowaway.".into()),
             at_least_internal: false,
         },
         attached_images: 23,
         paused: false,
+        transfer_priority: TransferPriority::Background,
         agent_running: true,
         license_reminder: false,
     };

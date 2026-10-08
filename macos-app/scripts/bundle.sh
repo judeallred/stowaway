@@ -52,8 +52,8 @@ cat > "$app/Contents/Library/LaunchAgents/dev.stowaway.agent.plist" <<EOF
   <key>ProgramArguments</key><array><string>stowaway</string><string>agent</string></array>
   <key>AssociatedBundleIdentifiers</key><array><string>dev.stowaway.app</string></array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Adaptive</string>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ProcessType</key><string>Interactive</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin</string>

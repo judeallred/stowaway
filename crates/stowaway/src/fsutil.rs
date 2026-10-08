@@ -4,11 +4,31 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, FileTimes, Permissions};
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime};
 
 use walkdir::WalkDir;
 
+use crate::diskload::CopyThreads;
 use crate::error::{Error, IoContext, Result};
+
+/// Folders macOS keeps at the root of every volume, including each image. They're owned by root
+/// and unreadable, and aren't part of the folder's contents.
+const VOLUME_METADATA: &[&str] = &[".fseventsd", ".Spotlight-V100", ".Trashes"];
+
+/// Walks `path` on one filesystem, skipping [`VOLUME_METADATA`] at its top level.
+fn walk_tree(
+    path: &Path,
+    min_depth: usize,
+) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> {
+    WalkDir::new(path)
+        .min_depth(min_depth)
+        .same_file_system(true)
+        .into_iter()
+        .filter_entry(|e| e.depth() != 1 || !VOLUME_METADATA.iter().any(|m| e.file_name() == *m))
+}
 
 /// Files macOS creates on its own that don't make a folder "non-empty".
 const IGNORABLE: &[&str] = &[
@@ -48,11 +68,130 @@ pub enum Overwrite {
     Keep,
 }
 
+/// What a copy's progress callback wants next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pace {
+    /// Keep copying.
+    Go,
+    /// Stop starting new files; the callback is asked again a second later.
+    Wait,
+    /// Abandon the copy: it fails with [`Error::Busy`].
+    Stop,
+}
+
+/// Most files one copy works on at once.
+const MAX_COPY_THREADS: usize = 8;
+/// Files waiting for a worker. Small, so a [`Pace::Wait`] takes effect quickly.
+const QUEUE_DEPTH: usize = 256;
+/// How often the progress callback is called.
+const REPORT_EVERY: Duration = Duration::from_millis(200);
+
+/// One file for a worker to copy.
+struct Job {
+    src: PathBuf,
+    dst: PathBuf,
+    meta: fs::Metadata,
+}
+
+/// State shared between the walker and the workers of one copy.
+struct Shared {
+    queue: Mutex<Receiver<Job>>,
+    /// Workers with an index below this may take jobs; the rest idle.
+    allowed: AtomicUsize,
+    /// Jobs queued or in progress.
+    pending: AtomicUsize,
+    bytes: AtomicU64,
+    files: AtomicU64,
+    /// Set when the walk and every job are done, or on the first error.
+    stop: AtomicBool,
+    error: Mutex<Option<Error>>,
+}
+
+impl Shared {
+    fn totals(&self) -> CopyProgress {
+        CopyProgress {
+            bytes: self.bytes.load(Ordering::Relaxed),
+            files: self.files.load(Ordering::Relaxed),
+        }
+    }
+
+    fn fail(&self, error: Error) {
+        self.error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert(error);
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    fn work(&self, index: usize) {
+        while !self.stop.load(Ordering::Relaxed) {
+            if index >= self.allowed.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(20));
+                continue;
+            }
+            let job = self
+                .queue
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .recv_timeout(Duration::from_millis(20));
+            match job {
+                Ok(job) => {
+                    match copy_file(&job) {
+                        Ok(()) => {
+                            self.bytes.fetch_add(job.meta.len(), Ordering::Relaxed);
+                            self.files.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(e) => self.fail(e),
+                    }
+                    self.pending.fetch_sub(1, Ordering::Relaxed);
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    }
+}
+
+fn copy_file(job: &Job) -> Result<()> {
+    remove_if_present(&job.dst)?;
+    fs::copy(&job.src, &job.dst).ctx("copying", &job.src)?;
+    set_times(&job.dst, &job.meta)
+}
+
+/// Calls `progress` and, while it asks to wait, idles every worker and asks again each second.
+fn pace(
+    shared: &Shared,
+    threads: &mut CopyThreads,
+    progress: &mut dyn FnMut(CopyProgress) -> Pace,
+) {
+    loop {
+        match progress(shared.totals()) {
+            Pace::Go => break,
+            Pace::Wait if !shared.stop.load(Ordering::Relaxed) => {
+                shared.allowed.store(0, Ordering::Relaxed);
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            Pace::Wait => return,
+            Pace::Stop => {
+                shared.fail(Error::Busy("the copy was stopped".to_owned()));
+                return;
+            }
+        }
+    }
+    shared.allowed.store(threads.adjust(), Ordering::Relaxed);
+}
+
 /// Copies the contents of `src` into the existing directory `dst`.
 ///
 /// Preserves symlinks (as symlinks), permissions, modification times and hard links (by inode),
 /// and doesn't cross into other filesystems. Read-only directories get their permissions applied
 /// after their contents are written.
+///
+/// One thread walks the tree, creating directories and links in order, and hands regular files
+/// to a pool of workers sized by [`CopyThreads`]: copying many small files is limited by
+/// per-file latency, so several in flight are much faster than one. Hard links to a file are
+/// created after every file is copied, so their target always exists. `progress` is called on
+/// this thread about every 200 ms and can pause the copy with [`Pace::Wait`].
 ///
 /// # Errors
 ///
@@ -61,15 +200,100 @@ pub fn copy_tree(
     src: &Path,
     dst: &Path,
     overwrite: Overwrite,
-    progress: &mut dyn FnMut(CopyProgress),
+    progress: &mut dyn FnMut(CopyProgress) -> Pace,
 ) -> Result<CopyStats> {
     let started = Instant::now();
-    let mut totals = CopyProgress::default();
-    let mut linked: HashMap<(u64, u64), PathBuf> = HashMap::new();
+    let max = std::thread::available_parallelism().map_or(1, |n| n.get().min(MAX_COPY_THREADS));
+    let mut threads = CopyThreads::new(max);
+    let (sender, receiver) = mpsc::sync_channel::<Job>(QUEUE_DEPTH);
+    let shared = Shared {
+        queue: Mutex::new(receiver),
+        allowed: AtomicUsize::new(threads.allowed()),
+        pending: AtomicUsize::new(0),
+        bytes: AtomicU64::new(0),
+        files: AtomicU64::new(0),
+        stop: AtomicBool::new(false),
+        error: Mutex::new(None),
+    };
     let mut dirs: Vec<(PathBuf, fs::Metadata)> = Vec::new();
-    let mut last_report = Instant::now();
+    let mut links: Vec<(PathBuf, PathBuf)> = Vec::new();
 
-    for entry in WalkDir::new(src).min_depth(1).same_file_system(true) {
+    std::thread::scope(|scope| {
+        for index in 0..max {
+            let shared = &shared;
+            scope.spawn(move || shared.work(index));
+        }
+        let mut last_report: Option<Instant> = None;
+        let mut tick = |shared: &Shared| {
+            if last_report.is_none_or(|at| at.elapsed() >= REPORT_EVERY) {
+                pace(shared, &mut threads, progress);
+                last_report = Some(Instant::now());
+            }
+        };
+        let walked = walk_into(
+            src, dst, overwrite, &shared, &sender, &mut dirs, &mut links, &mut tick,
+        );
+        if let Err(e) = walked {
+            shared.fail(e);
+        }
+        while shared.pending.load(Ordering::Relaxed) > 0 && !shared.stop.load(Ordering::Relaxed) {
+            tick(&shared);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        shared.stop.store(true, Ordering::Relaxed);
+    });
+    if let Some(error) = shared
+        .error
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+    {
+        return Err(error);
+    }
+
+    let mut totals = CopyProgress {
+        bytes: shared.bytes.into_inner(),
+        files: shared.files.into_inner(),
+    };
+    for (first, target) in &links {
+        remove_if_present(target)?;
+        fs::hard_link(first, target).ctx("hard-linking", target)?;
+        totals.files = totals.files.saturating_add(1);
+    }
+    for (dir, meta) in dirs.iter().rev() {
+        fs::set_permissions(dir, Permissions::from_mode(meta.mode()))
+            .ctx("setting permissions", dir)?;
+        set_times(dir, meta)?;
+    }
+    let _final = progress(totals);
+    Ok(CopyStats {
+        bytes: totals.bytes,
+        files: totals.files,
+        seconds: started.elapsed().as_secs_f64(),
+    })
+}
+
+/// The walking half of [`copy_tree`]: creates directories and symlinks, records hard links for
+/// later, and queues regular files for the workers.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "internal helper threading the copy's shared state"
+)]
+fn walk_into(
+    src: &Path,
+    dst: &Path,
+    overwrite: Overwrite,
+    shared: &Shared,
+    sender: &SyncSender<Job>,
+    dirs: &mut Vec<(PathBuf, fs::Metadata)>,
+    links: &mut Vec<(PathBuf, PathBuf)>,
+    tick: &mut dyn FnMut(&Shared),
+) -> Result<()> {
+    let mut linked: HashMap<(u64, u64), PathBuf> = HashMap::new();
+    for entry in walk_tree(src, 1) {
+        if shared.stop.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        tick(shared);
         let entry = entry.map_err(|e| walk_error(src, e))?;
         let rel = entry.path().strip_prefix(src).map_err(|_| {
             Error::Invalid(format!("{} escaped the copy root", entry.path().display()))
@@ -87,47 +311,47 @@ pub fn copy_tree(
                 _ => fs::create_dir_all(&target).ctx("creating", &target)?,
             }
             dirs.push((target, meta));
+            shared.files.fetch_add(1, Ordering::Relaxed);
         } else if target.symlink_metadata().is_ok() && overwrite == Overwrite::Keep {
-            continue;
+            // An existing file wins in a no-clobber merge.
         } else if file_type.is_symlink() {
             remove_if_present(&target)?;
             let link = fs::read_link(entry.path()).ctx("reading link", entry.path())?;
             symlink(&link, &target).ctx("creating link", &target)?;
+            shared.files.fetch_add(1, Ordering::Relaxed);
         } else if file_type.is_file() {
-            remove_if_present(&target)?;
-            let key = (meta.dev(), meta.ino());
-            if meta.nlink() > 1
-                && let Some(first) = linked.get(&key)
-            {
-                fs::hard_link(first, &target).ctx("hard-linking", &target)?;
-            } else {
-                fs::copy(entry.path(), &target).ctx("copying", entry.path())?;
-                set_times(&target, &meta)?;
-                totals.bytes = totals.bytes.saturating_add(meta.len());
-                if meta.nlink() > 1 {
-                    linked.insert(key, target.clone());
+            if meta.nlink() > 1 {
+                let key = (meta.dev(), meta.ino());
+                if let Some(first) = linked.get(&key) {
+                    links.push((first.clone(), target));
+                    continue;
+                }
+                linked.insert(key, target.clone());
+            }
+            shared.pending.fetch_add(1, Ordering::Relaxed);
+            let mut job = Job {
+                src: entry.path().to_path_buf(),
+                dst: target,
+                meta,
+            };
+            loop {
+                match sender.try_send(job) {
+                    Ok(()) => break,
+                    Err(TrySendError::Full(back)) => {
+                        if shared.stop.load(Ordering::Relaxed) {
+                            return Ok(());
+                        }
+                        job = back;
+                        tick(shared);
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(TrySendError::Disconnected(_)) => return Ok(()),
                 }
             }
         }
         // Sockets, FIFOs and devices are skipped: they never belong in caches.
-        totals.files = totals.files.saturating_add(1);
-        if last_report.elapsed().as_millis() >= 200 {
-            progress(totals);
-            last_report = Instant::now();
-        }
     }
-
-    for (dir, meta) in dirs.iter().rev() {
-        fs::set_permissions(dir, Permissions::from_mode(meta.mode()))
-            .ctx("setting permissions", dir)?;
-        set_times(dir, meta)?;
-    }
-    progress(totals);
-    Ok(CopyStats {
-        bytes: totals.bytes,
-        files: totals.files,
-        seconds: started.elapsed().as_secs_f64(),
-    })
+    Ok(())
 }
 
 fn set_times(path: &Path, meta: &fs::Metadata) -> Result<()> {
@@ -196,7 +420,7 @@ pub struct Fingerprint {
 /// Fails if the tree can't be read.
 pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
     let mut fp = Fingerprint::default();
-    for entry in WalkDir::new(dir).min_depth(1).same_file_system(true) {
+    for entry in walk_tree(dir, 1) {
         let entry = entry.map_err(|e| walk_error(dir, e))?;
         let meta = entry
             .path()
@@ -313,7 +537,7 @@ pub fn remove_tree(path: &Path) -> Result<()> {
 pub fn allocated_bytes(path: &Path) -> Result<u64> {
     let mut seen: HashSet<(u64, u64)> = HashSet::new();
     let mut total: u64 = 0;
-    for entry in WalkDir::new(path).same_file_system(true) {
+    for entry in walk_tree(path, 0) {
         let entry = entry.map_err(|e| walk_error(path, e))?;
         let meta = entry
             .path()
@@ -360,7 +584,10 @@ mod tests {
             .set_modified(old)
             .unwrap();
 
-        let stats = copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {}).unwrap();
+        let stats = copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {
+            Pace::Go
+        })
+        .unwrap();
 
         assert_eq!(
             fs::read_to_string(dst.path().join("a/b.txt")).unwrap(),
@@ -378,13 +605,114 @@ mod tests {
     }
 
     #[test]
+    fn parallel_copies_are_complete_and_can_pause() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        for i in 0..600 {
+            write(
+                &src.path().join(format!("d{}/e{}/f{i}", i % 7, i % 3)),
+                &i.to_string().repeat(i % 50 + 1),
+            );
+        }
+        for i in 0..40 {
+            fs::hard_link(
+                src.path().join(format!("d{}/e{}/f{i}", i % 7, i % 3)),
+                src.path().join(format!("link{i}")),
+            )
+            .unwrap();
+        }
+        let mut calls = 0;
+        let stats = copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {
+            calls += 1;
+            if calls == 1 { Pace::Wait } else { Pace::Go }
+        })
+        .unwrap();
+
+        for i in 0..600 {
+            let rel = format!("d{}/e{}/f{i}", i % 7, i % 3);
+            assert_eq!(
+                fs::read_to_string(dst.path().join(&rel)).unwrap(),
+                i.to_string().repeat(i % 50 + 1),
+                "{rel}"
+            );
+        }
+        for i in 0..40 {
+            let original = fs::metadata(dst.path().join(format!("d{}/e{}/f{i}", i % 7, i % 3)));
+            let link = fs::metadata(dst.path().join(format!("link{i}"))).unwrap();
+            assert_eq!(
+                original.unwrap().ino(),
+                link.ino(),
+                "link{i} is a hard link"
+            );
+        }
+        assert_eq!(
+            fingerprint(dst.path()).unwrap().bytes,
+            fingerprint(src.path()).unwrap().bytes
+        );
+        assert_eq!(stats.files, fingerprint(src.path()).unwrap().entries);
+    }
+
+    #[test]
+    fn volume_metadata_is_skipped() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        write(
+            &src.path().join("pkg/index.js"),
+            "x".repeat(10_000).as_str(),
+        );
+        let events = src.path().join(".fseventsd");
+        write(&events.join("0001"), "log");
+        fs::set_permissions(&events, Permissions::from_mode(0o000)).unwrap();
+
+        let allocated = allocated_bytes(src.path());
+        let print = fingerprint(src.path());
+        let copied = copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {
+            Pace::Go
+        });
+        fs::set_permissions(&events, Permissions::from_mode(0o700)).unwrap();
+
+        assert!(allocated.unwrap() >= 10_000);
+        assert_eq!(print.unwrap().entries, 2, "pkg and pkg/index.js");
+        copied.unwrap();
+        assert!(dst.path().join("pkg/index.js").exists());
+        assert!(!dst.path().join(".fseventsd").exists());
+    }
+
+    #[test]
+    fn stopped_copies_fail() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        for i in 0..50 {
+            write(&src.path().join(format!("f{i}")), "x");
+        }
+        let result = copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {
+            Pace::Stop
+        });
+        assert!(matches!(result, Err(Error::Busy(_))));
+    }
+
+    #[test]
+    fn copy_errors_are_reported() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        write(&src.path().join("ok"), "fine");
+        write(&src.path().join("secret"), "nope");
+        fs::set_permissions(src.path().join("secret"), Permissions::from_mode(0o000)).unwrap();
+        let result = copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {
+            Pace::Go
+        });
+        fs::set_permissions(src.path().join("secret"), Permissions::from_mode(0o600)).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn keep_mode_does_not_clobber() {
         let src = tempfile::tempdir().unwrap();
         let dst = tempfile::tempdir().unwrap();
         write(&src.path().join("same"), "new");
         write(&src.path().join("only-src"), "x");
         write(&dst.path().join("same"), "old");
-        copy_tree(src.path(), dst.path(), Overwrite::Keep, &mut |_| {}).unwrap();
+        copy_tree(src.path(), dst.path(), Overwrite::Keep, &mut |_| Pace::Go).unwrap();
         assert_eq!(fs::read_to_string(dst.path().join("same")).unwrap(), "old");
         assert!(dst.path().join("only-src").exists());
     }
@@ -395,7 +723,10 @@ mod tests {
         let dst = tempfile::tempdir().unwrap();
         write(&src.path().join("ro/file"), "data");
         fs::set_permissions(src.path().join("ro"), Permissions::from_mode(0o555)).unwrap();
-        copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {}).unwrap();
+        copy_tree(src.path(), dst.path(), Overwrite::Replace, &mut |_| {
+            Pace::Go
+        })
+        .unwrap();
         let mode = fs::metadata(dst.path().join("ro")).unwrap().mode();
         assert_eq!(mode & 0o777, 0o555);
         clear_dir_contents(dst.path()).unwrap();

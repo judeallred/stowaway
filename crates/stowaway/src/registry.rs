@@ -96,6 +96,18 @@ pub struct JournalItem {
     pub phase: String,
 }
 
+/// A cached size of a folder that isn't managed yet (an adoption candidate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Measurement {
+    /// Allocated bytes when measured.
+    pub bytes: u64,
+    /// The folder's own modification time then, in nanoseconds since the epoch. It changes when
+    /// direct children are added or removed, e.g. by an install.
+    pub dir_mtime_ns: i64,
+    /// When it was measured (Unix seconds).
+    pub measured_at: i64,
+}
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS entries (
     id TEXT PRIMARY KEY,
@@ -129,6 +141,12 @@ CREATE TABLE IF NOT EXISTS bench (
     volume_uuid TEXT NOT NULL,
     results TEXT NOT NULL,
     at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS measurements (
+    path TEXT PRIMARY KEY,
+    bytes INTEGER NOT NULL,
+    dir_mtime_ns INTEGER NOT NULL,
+    measured_at INTEGER NOT NULL
 );
 PRAGMA user_version = 1;
 ";
@@ -453,6 +471,59 @@ impl Registry {
             )
             .optional()?)
     }
+
+    /// The cached size of a candidate folder.
+    ///
+    /// # Errors
+    ///
+    /// Fails on a database error.
+    pub fn measurement(&self, path: &Path) -> Result<Option<Measurement>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT bytes, dir_mtime_ns, measured_at FROM measurements WHERE path = ?1",
+                [path.to_string_lossy()],
+                |row| {
+                    Ok(Measurement {
+                        bytes: to_u64(row.get(0)?),
+                        dir_mtime_ns: row.get(1)?,
+                        measured_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Caches the size of a candidate folder.
+    ///
+    /// # Errors
+    ///
+    /// Fails on a database error.
+    pub fn record_measurement(&self, path: &Path, measurement: Measurement) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO measurements (path, bytes, dir_mtime_ns, measured_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET bytes = ?2, dir_mtime_ns = ?3, measured_at = ?4",
+            params![
+                path.to_string_lossy(),
+                to_i64(measurement.bytes),
+                measurement.dir_mtime_ns,
+                measurement.measured_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Drops cached sizes measured before `before` (Unix seconds).
+    ///
+    /// # Errors
+    ///
+    /// Fails on a database error.
+    pub fn prune_measurements(&self, before: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM measurements WHERE measured_at < ?1", [before])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -541,5 +612,24 @@ mod tests {
         reg.record_bench("U", "{}", 1).unwrap();
         reg.record_bench("U", "{\"v\":2}", 2).unwrap();
         assert_eq!(reg.latest_bench("U").unwrap().as_deref(), Some("{\"v\":2}"));
+    }
+
+    #[test]
+    fn measurements_are_cached_and_pruned() {
+        let reg = Registry::in_memory().unwrap();
+        let path = Path::new("/x/node_modules");
+        let first = Measurement {
+            bytes: 10,
+            dir_mtime_ns: 1,
+            measured_at: 100,
+        };
+        reg.record_measurement(path, first).unwrap();
+        let second = Measurement { bytes: 20, ..first };
+        reg.record_measurement(path, second).unwrap();
+        assert_eq!(reg.measurement(path).unwrap(), Some(second));
+        reg.prune_measurements(100).unwrap();
+        assert!(reg.measurement(path).unwrap().is_some());
+        reg.prune_measurements(101).unwrap();
+        assert_eq!(reg.measurement(path).unwrap(), None);
     }
 }

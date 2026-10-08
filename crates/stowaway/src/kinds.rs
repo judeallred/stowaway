@@ -134,6 +134,8 @@ pub enum Scope {
 pub struct KindSpec {
     /// Human-readable name.
     pub label: &'static str,
+    /// One sentence saying what the folder holds, for the folders window.
+    pub description: &'static str,
     /// Project or global.
     pub scope: Scope,
     /// Reconnect behavior.
@@ -151,6 +153,7 @@ const NODE_MARKERS: &[&str] = &[
 
 static NODE: KindSpec = KindSpec {
     label: "node_modules",
+    description: "A project's installed packages.",
     scope: Scope::Project {
         dir_name: "node_modules",
         manifest: "package.json",
@@ -169,6 +172,7 @@ static NODE: KindSpec = KindSpec {
 
 static CARGO_TARGET: KindSpec = KindSpec {
     label: "Cargo target",
+    description: "A Cargo workspace's build output.",
     scope: Scope::Project {
         dir_name: "target",
         manifest: "Cargo.toml",
@@ -181,6 +185,7 @@ static CARGO_TARGET: KindSpec = KindSpec {
 
 static PNPM_STORE: KindSpec = KindSpec {
     label: "pnpm store",
+    description: "Packages pnpm shares between all your projects.",
     scope: Scope::Global,
     policy: ReconnectPolicy::MergeNoClobber,
     cargo_package_lock: false,
@@ -188,6 +193,7 @@ static PNPM_STORE: KindSpec = KindSpec {
 
 static CARGO_HOME: KindSpec = KindSpec {
     label: "Cargo registry",
+    description: "Crates and git dependencies Cargo has downloaded.",
     scope: Scope::Global,
     policy: ReconnectPolicy::MergeNoClobber,
     cargo_package_lock: true,
@@ -195,6 +201,7 @@ static CARGO_HOME: KindSpec = KindSpec {
 
 static XCODE_DERIVED_DATA: KindSpec = KindSpec {
     label: "Xcode DerivedData",
+    description: "Xcode's build products and indexes.",
     scope: Scope::Global,
     policy: ReconnectPolicy::ExternalWins,
     cargo_package_lock: false,
@@ -202,6 +209,7 @@ static XCODE_DERIVED_DATA: KindSpec = KindSpec {
 
 static GRADLE_HOME: KindSpec = KindSpec {
     label: "Gradle caches",
+    description: "Downloaded dependencies and Gradle versions.",
     scope: Scope::Global,
     policy: ReconnectPolicy::MergeNoClobber,
     cargo_package_lock: false,
@@ -209,6 +217,7 @@ static GRADLE_HOME: KindSpec = KindSpec {
 
 static GO: KindSpec = KindSpec {
     label: "Go caches",
+    description: "Downloaded modules and Go's build cache.",
     scope: Scope::Global,
     policy: ReconnectPolicy::MergeNoClobber,
     cargo_package_lock: false,
@@ -216,6 +225,7 @@ static GO: KindSpec = KindSpec {
 
 static JS_CACHES: KindSpec = KindSpec {
     label: "npm/yarn/bun caches",
+    description: "Download caches for npm, Yarn and bun.",
     scope: Scope::Global,
     policy: ReconnectPolicy::MergeNoClobber,
     cargo_package_lock: false,
@@ -223,6 +233,7 @@ static JS_CACHES: KindSpec = KindSpec {
 
 static HUGGINGFACE: KindSpec = KindSpec {
     label: "Hugging Face models",
+    description: "Models downloaded from Hugging Face.",
     scope: Scope::Global,
     policy: ReconnectPolicy::MergeNoClobber,
     cargo_package_lock: false,

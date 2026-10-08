@@ -31,6 +31,8 @@ pub struct DiskInfo {
     pub bus_protocol: Option<String>,
     /// Whether it's an SSD.
     pub solid_state: Option<bool>,
+    /// Whether the volume is encrypted.
+    pub encryption: Option<bool>,
     /// Whole-disk identifier, e.g. `disk5`.
     pub parent_whole_disk: Option<String>,
     /// Physical stores backing an APFS container.
@@ -119,10 +121,6 @@ pub fn read_marker(mount_point: &Path) -> Option<VolumeMarker> {
 pub fn prepare(layout: &DriveLayout, volume_uuid: &str) -> Result<()> {
     std::fs::create_dir_all(layout.images_dir()).ctx("creating", &layout.images_dir())?;
     std::fs::create_dir_all(layout.trash_dir()).ctx("creating", &layout.trash_dir())?;
-    let never_index = layout.root.join(".metadata_never_index");
-    if !never_index.exists() {
-        std::fs::write(&never_index, b"").ctx("writing", &never_index)?;
-    }
     let marker = VolumeMarker {
         format: FORMAT_VERSION,
         volume_uuid: volume_uuid.to_owned(),

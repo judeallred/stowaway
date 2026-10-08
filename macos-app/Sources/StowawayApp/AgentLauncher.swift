@@ -9,6 +9,7 @@ enum AgentLauncher {
   static func start() throws {
     if Bundle.main.bundleURL.pathExtension == "app" {
       try SMAppService.agent(plistName: plistName).register()
+      kickstart()
       return
     }
     guard let binary = cliPath() else {
@@ -22,6 +23,18 @@ enum AgentLauncher {
     if process.terminationStatus != 0 {
       throw LaunchError.failed(process.terminationStatus)
     }
+  }
+
+  /// Starts the installed agent if it isn't running, e.g. after Quit Stowaway stopped it. The
+  /// agent reattaches the images as it starts. Does nothing if no agent is installed.
+  static func kickstart() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+    process.arguments = ["kickstart", "gui/\(getuid())/dev.stowaway.agent"]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try? process.run()
+    process.waitUntilExit()
   }
 
   /// The `stowaway` CLI: bundled helper first, then common install locations.

@@ -2,21 +2,25 @@
 //! the housekeeping commands (spec §4).
 
 use std::fs::{self, File};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::config::Config;
+use crate::diskload::TransferGovernor;
 use crate::drive::{self, DriveLocator};
 use crate::error::{Error, IoContext, Result};
-use crate::fsutil::{self, CopyProgress, CopyStats, Overwrite};
+use crate::fsutil::{self, CopyProgress, CopyStats, Fingerprint, Overwrite, Pace};
 use crate::hdiutil::{self, AttachedImage};
 use crate::idle::{self, Activity};
 use crate::kinds::{self, KindId, ReconnectPolicy, Scope};
 use crate::paths::{DriveLayout, Layout};
-use crate::registry::{Entry, EntryStatus, Registry, Transfer};
+use crate::registry::{Entry, EntryStatus, Measurement, Registry, Transfer};
 use crate::scan::{self, Candidate, ScanOptions};
 
 /// Something the engine did that observers (the agent's IPC clients) may want to show.
@@ -41,11 +45,22 @@ pub enum EngineEvent {
         total_files: u64,
         /// Seconds since the copy started.
         elapsed_seconds: f64,
+        /// Paused because other programs are keeping the internal disk busy.
+        #[serde(default)]
+        waiting_for_disk: bool,
+        /// What the transfer is doing; only [`TransferStep::Copying`] moves `bytes` and `files`.
+        #[serde(default)]
+        step: TransferStep,
     },
-    /// A copy finished.
+    /// A transfer finished, including the steps after its copy.
     TransferDone {
         /// The finished transfer.
         transfer: Transfer,
+    },
+    /// A transfer stopped without finishing (it failed or was postponed).
+    TransferAborted {
+        /// Entry that was being transferred.
+        entry_id: String,
     },
     /// An entry was added, removed or changed status.
     EntriesChanged,
@@ -56,8 +71,118 @@ pub enum EngineEvent {
     },
 }
 
+/// The steps of a transfer, in order. Not every operation has every step.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransferStep {
+    /// Creating the image and taking stock of the folder.
+    Preparing,
+    /// Copying files.
+    #[default]
+    Copying,
+    /// Detaching the image, which writes its buffered data out to the drive.
+    Flushing,
+    /// Checking that the folder didn't change during the copy.
+    Verifying,
+    /// Deleting what's no longer needed: the local files after adopting or reconnecting, or the
+    /// old image after compacting.
+    Cleaning,
+    /// Attaching the image in place.
+    Mounting,
+    /// Measuring the folder and its image.
+    Measuring,
+}
+
+impl TransferStep {
+    /// A short description for progress lines, e.g. "writing to the drive".
+    #[must_use]
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Self::Preparing => "preparing",
+            Self::Copying => "copying",
+            Self::Flushing => "writing to the drive",
+            Self::Verifying => "checking nothing changed",
+            Self::Cleaning => "removing the old copy",
+            Self::Mounting => "mounting",
+            Self::Measuring => "measuring",
+        }
+    }
+}
+
 /// Receives [`EngineEvent`]s.
 pub type Observer = Arc<dyn Fn(&EngineEvent) + Send + Sync>;
+
+/// Reports one transfer's progress through its steps. Dropping it before
+/// [`TransferTracker::finish`] reports the transfer as aborted, so observers never keep showing
+/// a transfer that failed partway.
+struct TransferTracker {
+    observer: Option<Observer>,
+    entry_id: String,
+    path: PathBuf,
+    op: &'static str,
+    started: Instant,
+    total: Fingerprint,
+    done: CopyProgress,
+    finished: bool,
+}
+
+impl TransferTracker {
+    fn new(observer: Option<Observer>, entry_id: &str, path: &Path, op: &'static str) -> Self {
+        let tracker = Self {
+            observer,
+            entry_id: entry_id.to_owned(),
+            path: path.to_path_buf(),
+            op,
+            started: Instant::now(),
+            total: Fingerprint::default(),
+            done: CopyProgress::default(),
+            finished: false,
+        };
+        tracker.report(TransferStep::Preparing, false);
+        tracker
+    }
+
+    fn report(&self, step: TransferStep, waiting_for_disk: bool) {
+        if let Some(observer) = &self.observer {
+            observer(&EngineEvent::TransferProgress {
+                entry_id: self.entry_id.clone(),
+                path: self.path.clone(),
+                op: self.op.to_owned(),
+                bytes: self.done.bytes,
+                total_bytes: self.total.bytes,
+                files: self.done.files,
+                total_files: self.total.entries,
+                elapsed_seconds: self.started.elapsed().as_secs_f64(),
+                waiting_for_disk,
+                step,
+            });
+        }
+    }
+
+    fn step(&self, step: TransferStep) {
+        info!(path = %self.path.display(), op = self.op, ?step, "transfer step");
+        self.report(step, false);
+    }
+
+    fn finish(mut self, transfer: Transfer) {
+        self.finished = true;
+        if let Some(observer) = &self.observer {
+            observer(&EngineEvent::TransferDone { transfer });
+        }
+    }
+}
+
+impl Drop for TransferTracker {
+    fn drop(&mut self) {
+        if !self.finished
+            && let Some(observer) = &self.observer
+        {
+            observer(&EngineEvent::TransferAborted {
+                entry_id: self.entry_id.clone(),
+            });
+        }
+    }
+}
 
 /// The connected drive.
 #[derive(Debug, Clone)]
@@ -114,6 +239,34 @@ pub struct AdoptOptions {
     pub force: bool,
 }
 
+/// How often a long copy stops to reattach other entries whose mounts disappeared. A copy holds
+/// the engine lock, so the agent's regular reconcile can't run until it finishes.
+const HEAL_DURING_COPY_EVERY: Duration = Duration::from_secs(30);
+
+/// How long a candidate's measured size is trusted. Changes deep inside a folder (a rebuild
+/// growing `target/`) don't touch its modification time, so cached sizes also expire.
+const MEASUREMENT_TTL_SECS: i64 = 6 * 60 * 60;
+
+/// What [`Engine::adoption_candidates`] found.
+#[derive(Debug, Default)]
+pub struct AdoptionCandidates {
+    /// Candidates the pre-adoption and size settings allow adopting, with their sizes.
+    pub ready: Vec<(Candidate, u64)>,
+    /// Candidates whose size couldn't be measured, with the reason.
+    pub unmeasured: Vec<(Candidate, Error)>,
+}
+
+/// How far [`Engine::adoption_candidates`] has got.
+#[derive(Debug, Clone, Copy)]
+pub struct MeasureProgress {
+    /// Candidates measured so far.
+    pub done: usize,
+    /// Candidates to measure.
+    pub total: usize,
+    /// Total size of the candidates found worth adopting so far.
+    pub ready_bytes: u64,
+}
+
 /// Outcome of handling one entry during reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttachOutcome {
@@ -158,6 +311,9 @@ pub struct Engine {
     pub registry: Registry,
     locator: DriveLocator,
     observer: Option<Observer>,
+    cancel: Option<Arc<AtomicBool>>,
+    /// The drive as last located, for work done in the middle of a copy.
+    located: Option<Drive>,
 }
 
 impl std::fmt::Debug for Engine {
@@ -186,12 +342,26 @@ impl Engine {
             registry,
             locator: DriveLocator::default(),
             observer: None,
+            cancel: None,
+            located: None,
         })
     }
 
     /// Sets the event observer.
     pub fn set_observer(&mut self, observer: Option<Observer>) {
         self.observer = observer;
+    }
+
+    /// Sets a flag that, once raised, stops copies in progress. The interrupted operation fails
+    /// with [`Error::Busy`] and is retried later, like any postponed transfer.
+    pub fn set_cancel(&mut self, cancel: Option<Arc<AtomicBool>>) {
+        self.cancel = cancel;
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::Relaxed))
     }
 
     fn emit(&self, event: &EngineEvent) {
@@ -210,14 +380,31 @@ impl Engine {
         Ok(())
     }
 
-    /// The connected drive, if it's present.
+    /// The connected drive, if it's present. Recreates Stowaway's folders on it if they've been
+    /// deleted, so the store heals instead of failing every operation.
     pub fn drive(&mut self) -> Option<Drive> {
-        let uuid = self.config.volume_uuid.clone()?;
-        let mount_point = self.locator.locate(&uuid, &[])?;
-        Some(Drive {
-            layout: DriveLayout::new(&mount_point, &self.config.machine_id),
-            mount_point,
-        })
+        self.located = self
+            .config
+            .volume_uuid
+            .clone()
+            .and_then(|uuid| self.locator.locate(&uuid, &[]))
+            .map(|mount_point| Drive {
+                layout: DriveLayout::new(&mount_point, &self.config.machine_id),
+                mount_point,
+            });
+        if let Some(drive) = &self.located {
+            for dir in [drive.layout.images_dir(), drive.layout.trash_dir()] {
+                if !dir.is_dir() {
+                    match fs::create_dir_all(&dir) {
+                        Ok(()) => info!(path = %dir.display(), "recreated a folder on the drive"),
+                        Err(e) => {
+                            tracing::warn!(path = %dir.display(), error = %e, "can't create a folder on the drive");
+                        }
+                    }
+                }
+            }
+        }
+        self.located.clone()
     }
 
     fn require_drive(&mut self) -> Result<Drive> {
@@ -309,26 +496,22 @@ impl Engine {
         path: &Path,
         image: &Path,
     ) -> Result<Entry> {
+        let mut tracker = TransferTracker::new(self.observer.clone(), id, path, "adopt");
         self.create_image(drive, image, kind, path)?;
         self.registry
             .journal(id, "adopt", "copying", crate::now_unix())?;
         let before = fsutil::fingerprint(path)?;
+        tracker.total = before;
         let staging = self.staging_mount(id)?;
         let stats = {
             let attached = hdiutil::attach(image, &staging)?;
-            let copied = self.copy_with_progress(
-                id,
-                path,
-                "adopt",
-                path,
-                &staging,
-                Overwrite::Replace,
-                before,
-            );
+            let copied = self.copy_with_progress(&mut tracker, path, &staging, Overwrite::Replace);
+            tracker.step(TransferStep::Flushing);
             hdiutil::detach(&attached.device, false)?;
             copied?
         };
         let _ignored = fs::remove_dir(&staging);
+        tracker.step(TransferStep::Verifying);
         if fsutil::fingerprint(path)? != before {
             return Err(Error::Busy(format!(
                 "{} changed while it was being copied; it will be retried once it's idle",
@@ -339,11 +522,14 @@ impl Engine {
             .journal(id, "adopt", "swapping", crate::now_unix())?;
         let entry = new_entry(id, kind, path, crate::now_unix(), EntryStatus::Local);
         self.registry.insert(&entry)?;
+        tracker.step(TransferStep::Cleaning);
         fsutil::clear_dir_contents(path)?;
+        tracker.step(TransferStep::Mounting);
         hdiutil::attach(image, path)?;
         self.registry.set_status(id, EntryStatus::Mounted, None)?;
-        self.record_transfer(id, "adopt", stats)?;
+        tracker.step(TransferStep::Measuring);
         self.refresh_sizes(&entry, drive);
+        self.record_transfer(tracker, stats)?;
         self.emit(&EngineEvent::EntriesChanged);
         self.registry
             .by_id(id)?
@@ -415,53 +601,54 @@ impl Engine {
         Ok(())
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "internal helper threading progress context"
-    )]
     fn copy_with_progress(
         &self,
-        id: &str,
-        entry_path: &Path,
-        op: &str,
+        tracker: &mut TransferTracker,
         src: &Path,
         dst: &Path,
         overwrite: Overwrite,
-        total: fsutil::Fingerprint,
     ) -> Result<CopyStats> {
-        let started = Instant::now();
-        let observer = self.observer.clone();
+        tracker.step(TransferStep::Copying);
+        let mut governor = TransferGovernor::new(&self.layout, self.config.transfer_priority);
+        let mut waiting = false;
+        let mut healed = Instant::now();
         let mut report = |p: CopyProgress| {
-            if let Some(observer) = &observer {
-                observer(&EngineEvent::TransferProgress {
-                    entry_id: id.to_owned(),
-                    path: entry_path.to_path_buf(),
-                    op: op.to_owned(),
-                    bytes: p.bytes,
-                    total_bytes: total.bytes,
-                    files: p.files,
-                    total_files: total.entries,
-                    elapsed_seconds: started.elapsed().as_secs_f64(),
-                });
+            tracker.done = p;
+            if self.cancelled() {
+                info!(path = %tracker.path.display(), "copy stopped");
+                return Pace::Stop;
             }
+            if healed.elapsed() >= HEAL_DURING_COPY_EVERY {
+                healed = Instant::now();
+                self.reattach_lost_mounts(&tracker.entry_id);
+            }
+            let wait = governor.should_wait();
+            if wait != waiting {
+                waiting = wait;
+                if wait {
+                    info!(path = %tracker.path.display(), "copy paused: the disk is busy");
+                } else {
+                    info!(path = %tracker.path.display(), "copy resumed");
+                }
+            }
+            tracker.report(TransferStep::Copying, wait);
+            if wait { Pace::Wait } else { Pace::Go }
         };
-        let _ignored = stowaway_macos::set_thread_background_io(true);
-        let result = fsutil::copy_tree(src, dst, overwrite, &mut report);
-        let _ignored = stowaway_macos::set_thread_background_io(false);
-        result
+        fsutil::copy_tree(src, dst, overwrite, &mut report)
     }
 
-    fn record_transfer(&self, id: &str, op: &str, stats: CopyStats) -> Result<()> {
+    /// Records a finished transfer; the copy's own statistics, not the steps around it.
+    fn record_transfer(&self, tracker: TransferTracker, stats: CopyStats) -> Result<()> {
         let transfer = Transfer {
-            entry_id: id.to_owned(),
-            op: op.to_owned(),
+            entry_id: tracker.entry_id.clone(),
+            op: tracker.op.to_owned(),
             bytes: stats.bytes,
             files: stats.files,
             seconds: stats.seconds,
             finished_at: crate::now_unix(),
         };
         self.registry.record_transfer(&transfer)?;
-        self.emit(&EngineEvent::TransferDone { transfer });
+        tracker.finish(transfer);
         Ok(())
     }
 
@@ -517,6 +704,47 @@ impl Engine {
         Ok(outcomes)
     }
 
+    /// Reattaches mounted entries whose mount vanished and whose folder is still empty, skipping
+    /// `busy` (the entry being copied). Entries with local changes wait for a full reconcile,
+    /// which applies their reconnect policy. Failures are logged and retried later.
+    fn reattach_lost_mounts(&self, busy: &str) {
+        let Some(drive) = &self.located else { return };
+        let Ok(entries) = self.registry.entries() else {
+            return;
+        };
+        let lost: Vec<Entry> = entries
+            .into_iter()
+            .filter(|e| {
+                e.id != busy
+                    && e.status == EntryStatus::Mounted
+                    && !idle::is_mount_point(&e.path)
+                    && fsutil::is_effectively_empty(&e.path).unwrap_or(false)
+            })
+            .collect();
+        if lost.is_empty() {
+            return;
+        }
+        let Ok(attached) = hdiutil::attached() else {
+            return;
+        };
+        for entry in lost {
+            let image = drive.layout.image_path(&entry.id);
+            let current = attached.iter().find(|a| same_file(&a.image_path, &image));
+            if current.is_some_and(|a| a.mount_point.is_some()) || !image.exists() {
+                continue;
+            }
+            if let Some(stale) = current {
+                let _ignored = hdiutil::detach(&stale.device, true);
+            }
+            match hdiutil::attach(&image, &entry.path) {
+                Ok(_) => info!(path = %entry.path.display(), "reattached a lost mount"),
+                Err(e) => {
+                    tracing::warn!(path = %entry.path.display(), error = %e, "reattach failed");
+                }
+            }
+        }
+    }
+
     fn reconcile_entry(
         &self,
         drive: &Drive,
@@ -537,6 +765,9 @@ impl Engine {
                     return Ok(AttachOutcome::Removed);
                 }
                 self.registry.set_seen(&entry.id, true, crate::now_unix())?;
+                if entry.used_bytes == 0 {
+                    self.refresh_sizes(entry, drive);
+                }
                 if entry.status != EntryStatus::Mounted {
                     self.registry
                         .set_status(&entry.id, EntryStatus::Mounted, None)?;
@@ -645,20 +876,24 @@ impl Engine {
             }
             ReconnectPolicy::MergeNoClobber => (Overwrite::Keep, "merge"),
         };
+        let mut tracker = TransferTracker::new(self.observer.clone(), &entry.id, path, op);
         self.registry
             .journal(&entry.id, op, "copying", crate::now_unix())?;
         let before = fsutil::fingerprint(path)?;
+        tracker.total = before;
         let staging = self.staging_mount(&entry.id)?;
         let attached = hdiutil::attach(image, &staging)?;
         let copied = (|| {
             if overwrite == Overwrite::Replace {
                 fsutil::clear_dir_contents(&staging)?;
             }
-            self.copy_with_progress(&entry.id, path, op, path, &staging, overwrite, before)
+            self.copy_with_progress(&mut tracker, path, &staging, overwrite)
         })();
+        tracker.step(TransferStep::Flushing);
         hdiutil::detach(&attached.device, false)?;
         let _ignored = fs::remove_dir(&staging);
         let stats = copied?;
+        tracker.step(TransferStep::Verifying);
         if fsutil::fingerprint(path)? != before {
             self.registry.journal_done(&entry.id)?;
             return Err(Error::Busy(format!(
@@ -668,9 +903,10 @@ impl Engine {
         }
         self.registry
             .journal(&entry.id, op, "clearing", crate::now_unix())?;
+        tracker.step(TransferStep::Cleaning);
         fsutil::clear_dir_contents(path)?;
         self.registry.journal_done(&entry.id)?;
-        self.record_transfer(&entry.id, op, stats)
+        self.record_transfer(tracker, stats)
     }
 
     /// Cleans up after an interrupted operation: staging mounts are detached and half-adopted
@@ -752,22 +988,20 @@ impl Engine {
         if let Some(drive) = drive {
             let image = drive.layout.image_path(&entry.id);
             if copy && image.exists() {
+                let mut tracker =
+                    TransferTracker::new(self.observer.clone(), &entry.id, &path, "release");
                 let staging = self.staging_mount(&entry.id)?;
                 let attached = hdiutil::attach(&image, &staging)?;
-                let total = fsutil::fingerprint(&staging)?;
-                let copied = self.copy_with_progress(
-                    &entry.id,
-                    &path,
-                    "release",
-                    &staging,
-                    &path,
-                    Overwrite::Keep,
-                    total,
-                );
+                tracker.total = fsutil::fingerprint(&staging)?;
+                let copied =
+                    self.copy_with_progress(&mut tracker, &staging, &path, Overwrite::Keep);
+                tracker.step(TransferStep::Flushing);
                 hdiutil::detach(&attached.device, false)?;
                 let _ignored = fs::remove_dir(&staging);
                 let stats = copied?;
-                self.record_transfer(&entry.id, "release", stats)?;
+                tracker.step(TransferStep::Cleaning);
+                fsutil::remove_tree(&image)?;
+                self.record_transfer(tracker, stats)?;
             }
             fsutil::remove_tree(&image)?;
         }
@@ -831,23 +1065,21 @@ impl Engine {
         if idle::activity(&entry.path, self.config.idle_seconds)? != Activity::Idle {
             return Err(Error::Busy(format!("{} is in use", entry.path.display())));
         }
+        let mut tracker =
+            TransferTracker::new(self.observer.clone(), &entry.id, &entry.path, "compact");
         let fresh = image.with_file_name(format!("{}-compacting.sparsebundle", entry.id));
         fsutil::remove_tree(&fresh)?;
         self.create_image(drive, &fresh, entry.kind, &entry.path)?;
         let before = fsutil::fingerprint(&entry.path)?;
+        tracker.total = before;
         let staging = self.staging_mount(&entry.id)?;
         let attached = hdiutil::attach(&fresh, &staging)?;
-        let copied = self.copy_with_progress(
-            &entry.id,
-            &entry.path,
-            "compact",
-            &entry.path,
-            &staging,
-            Overwrite::Replace,
-            before,
-        );
+        let copied =
+            self.copy_with_progress(&mut tracker, &entry.path, &staging, Overwrite::Replace);
+        tracker.step(TransferStep::Flushing);
         hdiutil::detach(&attached.device, false)?;
         let _ignored = fs::remove_dir(&staging);
+        tracker.step(TransferStep::Verifying);
         let stats = match copied {
             Ok(stats) if fsutil::fingerprint(&entry.path)? == before => stats,
             _ => {
@@ -855,6 +1087,7 @@ impl Engine {
                 return Err(Error::Busy("changed during compaction".to_owned()));
             }
         };
+        tracker.step(TransferStep::Mounting);
         detach_mounted_at(&entry.path);
         let old = drive
             .layout
@@ -863,10 +1096,12 @@ impl Engine {
         fs::rename(&image, &old).ctx("moving", &image)?;
         fs::rename(&fresh, &image).ctx("moving", &fresh)?;
         hdiutil::attach(&image, &entry.path)?;
+        tracker.step(TransferStep::Cleaning);
         fsutil::remove_tree(&old)?;
-        self.record_transfer(&entry.id, "compact", stats)?;
+        tracker.step(TransferStep::Measuring);
         let new_bytes = fsutil::allocated_bytes(&image)?;
         self.refresh_sizes(entry, drive);
+        self.record_transfer(tracker, stats)?;
         Ok(image_bytes.saturating_sub(new_bytes))
     }
 
@@ -930,6 +1165,31 @@ impl Engine {
     /// [`Error::Busy`] naming the processes that hold files open.
     pub fn eject(&mut self) -> Result<()> {
         let drive = self.require_drive()?;
+        Self::detach_images(&drive, "eject")?;
+        crate::cmd::run(
+            "diskutil",
+            ["eject".as_ref(), drive.mount_point.as_os_str()],
+        )?;
+        self.handle_drive_absent()?;
+        self.emit(&EngineEvent::DriveChanged { connected: false });
+        Ok(())
+    }
+
+    /// Detaches every image, leaving the drive connected, so each folder falls back to its local
+    /// contents as if the drive were gone (spec §4.2). The next [`Engine::reconcile`] attaches
+    /// them again. Does nothing while the drive is offline.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] naming the processes that hold files open.
+    pub fn detach_all(&mut self) -> Result<()> {
+        if let Some(drive) = self.drive() {
+            Self::detach_images(&drive, "quit")?;
+        }
+        self.handle_drive_absent()
+    }
+
+    fn detach_images(drive: &Drive, action: &str) -> Result<()> {
         let mounts: Vec<PathBuf> = hdiutil::attached()?
             .into_iter()
             .filter(|a| a.image_path.starts_with(&drive.mount_point))
@@ -945,7 +1205,7 @@ impl Engine {
             names.sort();
             names.dedup();
             return Err(Error::Busy(format!(
-                "can't eject: files on the drive are open in {}. Quit them and try again.",
+                "can't {action}: files on the drive are open in {}. Quit them and try again.",
                 names.join(", ")
             )));
         }
@@ -954,12 +1214,6 @@ impl Engine {
                 hdiutil::detach(&image.device, false)?;
             }
         }
-        crate::cmd::run(
-            "diskutil",
-            ["eject".as_ref(), drive.mount_point.as_os_str()],
-        )?;
-        self.handle_drive_absent()?;
-        self.emit(&EngineEvent::DriveChanged { connected: false });
         Ok(())
     }
 
@@ -1026,28 +1280,89 @@ impl Engine {
     ///
     /// Fails if discovery fails; per-candidate failures are reported in the result.
     pub fn auto_adopt(&mut self) -> Result<Vec<(Candidate, Result<Entry>)>> {
-        let mut results = Vec::new();
         if self.config.paused {
-            return Ok(results);
+            return Ok(Vec::new());
         }
-        for candidate in self.discover()? {
-            if !candidate.exists && !self.config.pre_adopt {
-                continue;
-            }
-            if candidate.exists {
-                match fsutil::allocated_bytes(&candidate.path) {
-                    Ok(size) if size < self.config.min_adopt_bytes => continue,
-                    Ok(_) => {}
-                    Err(e) => {
-                        results.push((candidate, Err(e)));
-                        continue;
-                    }
-                }
-            }
+        let found = self.adoption_candidates(&mut |_| {})?;
+        let mut results: Vec<_> = found
+            .unmeasured
+            .into_iter()
+            .map(|(c, e)| (c, Err(e)))
+            .collect();
+        for (candidate, _) in found.ready {
             let outcome = self.adopt(&candidate.path, candidate.kind, AdoptOptions::default());
             results.push((candidate, outcome));
         }
         Ok(results)
+    }
+
+    /// What [`Engine::discover`] finds that the pre-adoption and size settings allow adopting,
+    /// plus the candidates that couldn't be measured. It only reads, so callers don't need the
+    /// [`EngineLock`]; measuring a large tree can take minutes, so `on_measured` is called before
+    /// the first candidate and after each one.
+    ///
+    /// # Errors
+    ///
+    /// Fails if discovery fails.
+    pub fn adoption_candidates(
+        &self,
+        on_measured: &mut dyn FnMut(&MeasureProgress),
+    ) -> Result<AdoptionCandidates> {
+        let candidates = self.discover()?;
+        let mut found = AdoptionCandidates::default();
+        let mut progress = MeasureProgress {
+            done: 0,
+            total: candidates.len(),
+            ready_bytes: 0,
+        };
+        on_measured(&progress);
+        let now = crate::now_unix();
+        let _ignored = self.registry.prune_measurements(now - MEASUREMENT_TTL_SECS);
+        for candidate in candidates {
+            if candidate.exists {
+                match self.measure_candidate(&candidate.path, now) {
+                    Ok(size) if size < self.config.min_adopt_bytes => {}
+                    Ok(size) => {
+                        progress.ready_bytes += size;
+                        found.ready.push((candidate, size));
+                    }
+                    Err(e) => found.unmeasured.push((candidate, e)),
+                }
+            } else if self.config.pre_adopt {
+                found.ready.push((candidate, 0));
+            }
+            progress.done += 1;
+            on_measured(&progress);
+        }
+        Ok(found)
+    }
+
+    /// A candidate's size, from the cache when it's fresh. A cached size is reused until it
+    /// expires or the folder's own modification time changes (an install adding or removing
+    /// packages, a first build creating `target/debug`). Sizes only decide what's worth adopting
+    /// and how much the plan expects to move; adoption itself copies whatever is there.
+    fn measure_candidate(&self, path: &Path, now: i64) -> Result<u64> {
+        let meta = path.symlink_metadata().ctx("inspecting", path)?;
+        let dir_mtime_ns = meta
+            .mtime()
+            .saturating_mul(1_000_000_000)
+            .saturating_add(meta.mtime_nsec());
+        if let Ok(Some(cached)) = self.registry.measurement(path)
+            && cached.dir_mtime_ns == dir_mtime_ns
+            && now - cached.measured_at < MEASUREMENT_TTL_SECS
+        {
+            return Ok(cached.bytes);
+        }
+        let bytes = fsutil::allocated_bytes(path)?;
+        let _ignored = self.registry.record_measurement(
+            path,
+            Measurement {
+                bytes,
+                dir_mtime_ns,
+                measured_at: now,
+            },
+        );
+        Ok(bytes)
     }
 
     // ----- measurement and status ---------------------------------------------------------------
@@ -1133,13 +1448,16 @@ impl Engine {
                         entry.path.display(),
                         entry.note.as_deref().unwrap_or("failed")
                     ),
-                    hint: Some("run `stowaway doctor --fix` to retry".to_owned()),
+                    hint: Some("Stowaway retries automatically".to_owned()),
                 }),
                 EntryStatus::Mounted if !idle::is_mount_point(&entry.path) => {
                     problems.push(Problem {
                         severity: Severity::Warning,
-                        message: format!("{} should be mounted but isn't", entry.path.display()),
-                        hint: Some("run `stowaway doctor --fix`".to_owned()),
+                        message: format!(
+                            "{} came off the drive; Stowaway is reattaching it",
+                            entry.path.display()
+                        ),
+                        hint: None,
                     });
                 }
                 _ => {}
@@ -1356,6 +1674,46 @@ mod tests {
         assert_eq!(
             volume_name(KindId::CargoHome, Path::new("/Users/me/.cargo/registry")),
             "stow cargo-home registry"
+        );
+    }
+
+    #[test]
+    fn candidate_sizes_are_cached_until_the_folder_changes_or_expires() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::rooted(dir.path(), &dir.path().join("state"));
+        Config {
+            volume_uuid: Some("UUID".into()),
+            ..Config::default()
+        }
+        .save(&layout)
+        .unwrap();
+        let engine = Engine::open(layout).unwrap();
+        let folder = dir.path().join("proj/node_modules");
+        fs::create_dir_all(folder.join("pkg")).unwrap();
+        let deep = folder.join("pkg/index.js");
+        fs::write(&deep, vec![1_u8; 100_000]).unwrap();
+        let now = 1_000_000;
+        let first = engine.measure_candidate(&folder, now).unwrap();
+        assert!(first > 0);
+
+        fs::write(&deep, vec![1_u8; 400_000]).unwrap();
+        assert_eq!(
+            engine.measure_candidate(&folder, now).unwrap(),
+            first,
+            "a change deep inside is picked up only when the cache expires"
+        );
+        let grown = engine
+            .measure_candidate(&folder, now + MEASUREMENT_TTL_SECS)
+            .unwrap();
+        assert!(grown > first);
+
+        fs::write(folder.join("new-package"), vec![1_u8; 400_000]).unwrap();
+        assert!(
+            engine
+                .measure_candidate(&folder, now + MEASUREMENT_TTL_SECS)
+                .unwrap()
+                > grown,
+            "adding a top-level item invalidates the cache"
         );
     }
 

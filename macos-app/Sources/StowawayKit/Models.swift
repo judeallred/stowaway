@@ -10,12 +10,17 @@ public struct StatusReport: Decodable, Sendable, Equatable {
   public var localBytes: UInt64
   public var entries: [EntryReport]
   public var roots: [RootReport]
+  /// Missing from agents older than the folders window's cache list.
+  public var globals: [GlobalReport]?
   public var activeTransfers: [EngineEvent]
+  public var plan: AdoptionPlan?
   public var recentTransfers: [Transfer]
   public var problems: [Problem]
   public var performance: Performance
   public var attachedImages: Int
   public var paused: Bool
+  /// Missing from agents older than the setting.
+  public var transferPriority: TransferPriority?
   public var agentRunning: Bool
   public var licenseReminder: Bool
 }
@@ -55,6 +60,22 @@ public struct RootReport: Decodable, Sendable, Equatable, Identifiable {
   public var id: String { path }
 }
 
+/// A machine-wide cache kind such as the pnpm store (spec §4.8).
+public struct GlobalReport: Decodable, Sendable, Equatable, Identifiable {
+  public var kind: String
+  public var label: String
+  public var description: String
+  /// Its locations that exist on this Mac.
+  public var paths: [String]
+  public var detected: Bool
+  public var enabled: Bool
+  public var entries: Int
+  public var offloadedBytes: UInt64
+  /// Last measured size of locations not offloaded yet.
+  public var pendingBytes: UInt64?
+  public var id: String { kind }
+}
+
 public struct Transfer: Decodable, Sendable, Equatable {
   public var entryId: String
   public var op: String
@@ -73,6 +94,26 @@ public struct TransferProgress: Decodable, Sendable, Equatable {
   public var files: UInt64
   public var totalFiles: UInt64
   public var elapsedSeconds: Double
+  /// Paused because other programs are keeping the internal disk busy.
+  public var waitingForDisk: Bool?
+  /// The raw step name; see `currentStep`.
+  public var step: String?
+
+  /// What the transfer is doing. Missing from older agents, which only reported copying; unknown
+  /// steps from newer agents read as copying too.
+  public var currentStep: TransferStep {
+    step.flatMap(TransferStep.init(rawValue:)) ?? .copying
+  }
+
+  /// The current step in words, e.g. "Removing the local copy…".
+  public var stepLabel: String {
+    guard currentStep == .cleaning else { return currentStep.label }
+    switch op {
+    case "compact": return "Removing the old image…"
+    case "release": return "Deleting the image from the drive…"
+    default: return currentStep.label
+    }
+  }
 
   /// Bytes per second so far.
   public var bytesPerSecond: Double {
@@ -91,9 +132,35 @@ public struct TransferProgress: Decodable, Sendable, Equatable {
   }
 }
 
+/// The steps of a transfer, in order (engine.rs `TransferStep`).
+public enum TransferStep: String, Sendable, CaseIterable {
+  case preparing
+  case copying
+  case flushing
+  case verifying
+  case cleaning
+  case mounting
+  case measuring
+
+  /// Shown under the transfer while it's in this step.
+  public var label: String {
+    switch self {
+    case .preparing: "Preparing…"
+    case .copying: "Copying"
+    case .flushing: "Writing to the drive…"
+    case .verifying: "Checking nothing changed during the copy…"
+    case .cleaning: "Removing the local copy…"
+    case .mounting: "Mounting…"
+    case .measuring: "Measuring…"
+    }
+  }
+}
+
 public enum EngineEvent: Decodable, Sendable, Equatable {
   case transferProgress(TransferProgress)
   case transferDone(Transfer)
+  /// The transfer stopped without finishing.
+  case transferAborted(entryId: String)
   case entriesChanged
   case driveChanged(connected: Bool)
   case unknown(String)
@@ -101,6 +168,7 @@ public enum EngineEvent: Decodable, Sendable, Equatable {
   private enum CodingKeys: String, CodingKey {
     case type
     case transfer
+    case entryId
     case connected
   }
 
@@ -112,6 +180,8 @@ public enum EngineEvent: Decodable, Sendable, Equatable {
       self = .transferProgress(try TransferProgress(from: decoder))
     case "transfer-done":
       self = .transferDone(try container.decode(Transfer.self, forKey: .transfer))
+    case "transfer-aborted":
+      self = .transferAborted(entryId: try container.decode(String.self, forKey: .entryId))
     case "entries-changed":
       self = .entriesChanged
     case "drive-changed":
@@ -120,6 +190,20 @@ public enum EngineEvent: Decodable, Sendable, Equatable {
       self = .unknown(type)
     }
   }
+}
+
+public enum PlanPhase: String, Decodable, Sendable {
+  case measuring
+  case adopting
+}
+
+/// The agent's current auto-adoption pass.
+public struct AdoptionPlan: Decodable, Sendable, Equatable {
+  public var phase: PlanPhase
+  public var foldersDone: Int
+  public var foldersTotal: Int
+  public var plannedBytes: UInt64
+  public var movedBytes: UInt64
 }
 
 public enum Severity: String, Decodable, Sendable {
@@ -139,6 +223,8 @@ public struct Performance: Decodable, Sendable, Equatable {
   public var recentTransferMbps: Double?
   public var recentTransferFilesPerSec: Double?
   public var hint: String?
+  /// Whether the drive's format is the best one for Stowaway; missing from older agents.
+  public var formatNote: String?
   public var atLeastInternal: Bool
 }
 
@@ -176,6 +262,7 @@ public struct RootPreview: Decodable, Sendable, Equatable {
 public enum AgentNotification: Decodable, Sendable, Equatable {
   case status(StatusReport)
   case engine(EngineEvent)
+  case plan(AdoptionPlan?)
   case unknown(String)
 
   private enum CodingKeys: String, CodingKey {
@@ -189,6 +276,7 @@ public enum AgentNotification: Decodable, Sendable, Equatable {
     switch event {
     case "status": self = .status(try container.decode(StatusReport.self, forKey: .data))
     case "engine": self = .engine(try container.decode(EngineEvent.self, forKey: .data))
+    case "plan": self = .plan(try container.decodeIfPresent(AdoptionPlan.self, forKey: .data))
     default: self = .unknown(event)
     }
   }
@@ -200,6 +288,14 @@ public enum Usage: String, Encodable, Sendable {
   case work
 }
 
+/// Offload transfer priority: whether transfers yield to other disk activity.
+public enum TransferPriority: String, Codable, Sendable, CaseIterable {
+  /// Pause transfers while other programs keep the internal disk busy.
+  case background
+  /// Transfer at normal priority, never pausing.
+  case normal
+}
+
 /// A request to the agent.
 public enum Call: Sendable, Equatable {
   case status
@@ -209,8 +305,12 @@ public enum Call: Sendable, Equatable {
   case rootsAdd(path: String, dryRun: Bool)
   case rootsRemove(path: String, copy: Bool)
   case eject
+  case quit
   case pause
   case resume
+  case setTransferPriority(TransferPriority)
+  /// Turning a kind off releases its folders, copying them back with `copy`.
+  case setKindEnabled(kind: String, enabled: Bool, copy: Bool)
   case doctor(fix: Bool)
   case bench(quick: Bool)
   case setUsage(Usage)
@@ -231,6 +331,12 @@ struct Request: Encodable {
     var path: String
     var dryRun: Bool?
     var copy: Bool?
+  }
+
+  private struct KindParams: Encodable {
+    var kind: String
+    var enabled: Bool
+    var copy: Bool
   }
 
   private struct LicenseParams: Encodable {
@@ -258,8 +364,15 @@ struct Request: Encodable {
     case .refresh: try container.encode("refresh", forKey: .method)
     case .scan: try container.encode("scan", forKey: .method)
     case .eject: try container.encode("eject", forKey: .method)
+    case .quit: try container.encode("quit", forKey: .method)
     case .pause: try container.encode("pause", forKey: .method)
     case .resume: try container.encode("resume", forKey: .method)
+    case .setTransferPriority(let priority):
+      try container.encode("set-transfer-priority", forKey: .method)
+      try container.encode(["priority": priority], forKey: .params)
+    case .setKindEnabled(let kind, let enabled, let copy):
+      try container.encode("set-kind-enabled", forKey: .method)
+      try container.encode(KindParams(kind: kind, enabled: enabled, copy: copy), forKey: .params)
     case .rootsAdd(let path, let dryRun):
       try container.encode("roots-add", forKey: .method)
       try container.encode(RootParams(path: path, dryRun: dryRun), forKey: .params)

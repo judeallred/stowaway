@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::bench::{self, BenchReport};
+use crate::config::TransferPriority;
 use crate::engine::{Engine, EngineEvent, Problem};
 use crate::error::Result;
 use crate::fsutil;
@@ -66,6 +67,29 @@ pub struct RootReport {
     pub offloaded_bytes: u64,
 }
 
+/// A machine-wide cache kind (spec §4.8), for the folders window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlobalReport {
+    /// The kind.
+    pub kind: KindId,
+    /// Human-readable name, e.g. "pnpm store".
+    pub label: String,
+    /// What the cache holds.
+    pub description: String,
+    /// Its locations that exist on this Mac.
+    pub paths: Vec<PathBuf>,
+    /// Whether any of its locations exist.
+    pub detected: bool,
+    /// Whether Stowaway offloads it.
+    pub enabled: bool,
+    /// Managed entries of this kind.
+    pub entries: usize,
+    /// Bytes offloaded from it.
+    pub offloaded_bytes: u64,
+    /// Last measured size of locations not offloaded yet, if they've been measured.
+    pub pending_bytes: Option<u64>,
+}
+
 /// Drive performance for the popover and `status` (spec §8.1).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Performance {
@@ -77,8 +101,36 @@ pub struct Performance {
     pub recent_transfer_files_per_sec: Option<f64>,
     /// The current hint, if any.
     pub hint: Option<String>,
+    /// Whether the drive's format is the best one for Stowaway, from the latest speed test.
+    #[serde(default)]
+    pub format_note: Option<String>,
     /// The drive keeps up with the internal disk everywhere.
     pub at_least_internal: bool,
+}
+
+/// What an auto-adoption pass is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlanPhase {
+    /// Adding up folder sizes to decide what's worth adopting.
+    Measuring,
+    /// Moving the chosen folders onto the drive.
+    Adopting,
+}
+
+/// The agent's current auto-adoption pass (filled in by the agent).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdoptionPlan {
+    /// What the pass is doing.
+    pub phase: PlanPhase,
+    /// Folders measured (while measuring) or handled (while adopting) so far.
+    pub folders_done: usize,
+    /// Folders in this phase.
+    pub folders_total: usize,
+    /// Bytes this pass will offload. Grows while measuring.
+    pub planned_bytes: u64,
+    /// Bytes this pass has offloaded, not counting the copy in progress.
+    pub moved_bytes: u64,
 }
 
 /// Everything the UI shows.
@@ -96,8 +148,14 @@ pub struct StatusReport {
     pub entries: Vec<EntryReport>,
     /// Watched roots.
     pub roots: Vec<RootReport>,
+    /// Global cache kinds, detected or not.
+    #[serde(default)]
+    pub globals: Vec<GlobalReport>,
     /// Copies in progress (filled in by the agent).
     pub active_transfers: Vec<EngineEvent>,
+    /// The auto-adoption pass in progress, if any.
+    #[serde(default)]
+    pub plan: Option<AdoptionPlan>,
     /// Recent finished copies.
     pub recent_transfers: Vec<Transfer>,
     /// Problems to show.
@@ -108,6 +166,9 @@ pub struct StatusReport {
     pub attached_images: usize,
     /// Auto-adoption is paused.
     pub paused: bool,
+    /// Offload transfer priority: whether transfers yield to other disk activity.
+    #[serde(default)]
+    pub transfer_priority: TransferPriority,
     /// Whether the background agent answered.
     pub agent_running: bool,
     /// Show the "Using this at work? Expense a license" line.
@@ -162,6 +223,7 @@ pub fn build(engine: &mut Engine) -> Result<StatusReport> {
             }
         })
         .collect();
+    let globals = globals(engine, &entries)?;
 
     let recent_transfers = engine.registry.recent_transfers(20)?;
     let mut performance = performance(&recent_transfers);
@@ -172,6 +234,7 @@ pub fn build(engine: &mut Engine) -> Result<StatusReport> {
     }
     if let Some(report) = &performance.last_bench {
         performance.hint = bench::diagnose(report, performance.recent_transfer_mbps);
+        performance.format_note = bench::format_note(&report.connection);
         performance.at_least_internal = bench::at_least_internal(report);
     }
 
@@ -199,15 +262,50 @@ pub fn build(engine: &mut Engine) -> Result<StatusReport> {
         local_bytes: local,
         entries,
         roots,
+        globals,
         active_transfers: Vec::new(),
+        plan: None,
         recent_transfers: transfers,
         problems: engine.problems()?,
         performance,
         attached_images,
         paused: engine.config.paused,
+        transfer_priority: engine.config.transfer_priority,
         agent_running: false,
         license_reminder,
     })
+}
+
+fn globals(engine: &Engine, entries: &[EntryReport]) -> Result<Vec<GlobalReport>> {
+    let mut out = Vec::new();
+    for (&kind, locations) in &engine.config.globals {
+        let managed: Vec<&EntryReport> = entries.iter().filter(|e| e.kind == kind).collect();
+        let is_managed = |path: &PathBuf| managed.iter().any(|e| &e.path == path);
+        let paths: Vec<PathBuf> = locations
+            .iter()
+            .filter(|p| p.is_dir() || is_managed(p))
+            .cloned()
+            .collect();
+        let mut pending_bytes = None;
+        for path in paths.iter().filter(|p| !is_managed(p)) {
+            if let Some(m) = engine.registry.measurement(path)? {
+                pending_bytes = Some(pending_bytes.unwrap_or(0) + m.bytes);
+            }
+        }
+        let spec = kind.spec();
+        out.push(GlobalReport {
+            kind,
+            label: spec.label.to_owned(),
+            description: spec.description.to_owned(),
+            detected: !paths.is_empty(),
+            paths,
+            enabled: engine.config.kind_enabled(kind),
+            entries: managed.len(),
+            offloaded_bytes: managed.iter().map(|e| e.used_bytes).sum(),
+            pending_bytes,
+        });
+    }
+    Ok(out)
 }
 
 fn drive_status(engine: &Engine, drive: Option<&crate::engine::Drive>) -> DriveStatus {

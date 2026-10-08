@@ -2,6 +2,7 @@
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::cmd;
 use crate::error::{Error, IoContext, Result};
@@ -47,8 +48,8 @@ pub fn plist(layout: &Layout, binary: &Path) -> String {
     <string>agent</string>
   </array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Adaptive</string>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ProcessType</key><string>Interactive</string>
   <key>StandardErrorPath</key><string>{log}</string>
   <key>EnvironmentVariables</key>
   <dict>
@@ -82,6 +83,7 @@ pub fn install(layout: &Layout) -> Result<PathBuf> {
     let domain = domain()?;
     let service = format!("{domain}/{LABEL}");
     let _ignored = cmd::run("launchctl", ["bootout", service.as_str()]);
+    wait_until_unloaded(&service);
     cmd::run(
         "launchctl",
         [
@@ -91,6 +93,25 @@ pub fn install(layout: &Layout) -> Result<PathBuf> {
         ],
     )?;
     Ok(path)
+}
+
+/// Waits for a `bootout` to finish. It returns while the old agent is still exiting (which takes
+/// a while mid-transfer), and bootstrapping before then fails with "Input/output error".
+fn wait_until_unloaded(service: &str) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while cmd::run("launchctl", ["print", service]).is_ok() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// Starts the installed agent if it isn't running (after `stowaway agent stop`, for example).
+///
+/// # Errors
+///
+/// Fails if the agent isn't installed.
+pub fn start() -> Result<()> {
+    let service = format!("{}/{LABEL}", domain()?);
+    cmd::run("launchctl", ["kickstart", service.as_str()]).map(|_| ())
 }
 
 /// Stops the agent and removes the plist.
@@ -128,5 +149,17 @@ mod tests {
         assert_eq!(dict.get("Label").unwrap().as_string(), Some(LABEL));
         let args = dict.get("ProgramArguments").unwrap().as_array().unwrap();
         assert_eq!(args[1].as_string(), Some("agent"));
+        // Adaptive and Standard agents get throttled disk I/O: walking a 600k-file target/ took
+        // over 3 minutes instead of 9 seconds. Copies lower their own priority instead.
+        assert_eq!(
+            dict.get("ProcessType").unwrap().as_string(),
+            Some("Interactive")
+        );
+        // Quitting from the menu bar exits cleanly and must stay stopped; crashes restart.
+        let keep_alive = dict.get("KeepAlive").unwrap().as_dictionary().unwrap();
+        assert_eq!(
+            keep_alive.get("SuccessfulExit").unwrap().as_boolean(),
+            Some(false)
+        );
     }
 }

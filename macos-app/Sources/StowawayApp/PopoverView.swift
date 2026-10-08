@@ -15,8 +15,14 @@ struct PopoverView: View {
       header
       if model.agentReachable, let status = model.status {
         DriveRow(model: model, drive: status.drive)
+        if let title = model.planTitle {
+          PlanSection(title: title, detail: model.planDetail, fraction: model.planFraction)
+        }
         if !model.activeTransfers.isEmpty {
           ActivitySection(transfers: model.activeTransfers)
+        }
+        if model.showsTransferPriority, let priority = status.transferPriority {
+          TransferPriorityPicker(model: model, priority: priority)
         }
         PerformanceRow(model: model, performance: status.performance)
         if !status.problems.isEmpty {
@@ -38,6 +44,7 @@ struct PopoverView: View {
     }
     .padding(14)
     .frame(width: 340)
+    .fixedSize(horizontal: false, vertical: true)
   }
 
   private var header: some View {
@@ -74,7 +81,12 @@ struct PopoverView: View {
         }
       }
       Button("Open Log") { openLog() }
-      Button("Quit Menu Bar App") { NSApp.terminate(nil) }
+      Button("Quit Stowaway") {
+        Task {
+          if await model.quit() { NSApp.terminate(nil) }
+        }
+      }
+      .disabled(model.busyMessage != nil)
     }
     .buttonStyle(.link)
   }
@@ -92,7 +104,7 @@ struct PopoverView: View {
     let home =
       ProcessInfo.processInfo.environment["STOWAWAY_HOME"]
       ?? (NSHomeDirectory() as NSString).appendingPathComponent(".stowaway")
-    NSWorkspace.shared.open(URL(fileURLWithPath: home).appendingPathComponent("agent.log"))
+    NSWorkspace.shared.open(URL(fileURLWithPath: home).appendingPathComponent("stowaway-agent.log"))
   }
 }
 
@@ -127,6 +139,26 @@ private struct DriveRow: View {
   }
 }
 
+private struct PlanSection: View {
+  let title: String
+  let detail: String?
+  let fraction: Double?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(title).font(.callout)
+      if let fraction {
+        ProgressView(value: fraction)
+      } else {
+        ProgressView().progressViewStyle(.linear)
+      }
+      if let detail {
+        Text(detail).font(.caption).foregroundStyle(.secondary)
+      }
+    }
+  }
+}
+
 private struct ActivitySection: View {
   let transfers: [TransferProgress]
 
@@ -136,7 +168,11 @@ private struct ActivitySection: View {
         VStack(alignment: .leading, spacing: 2) {
           Text("Moving \(Format.shortPath(first.path))")
             .font(.callout)
-          ProgressView(value: Double(first.bytes), total: Double(max(first.totalBytes, 1)))
+          if first.currentStep == .copying {
+            ProgressView(value: Double(first.bytes), total: Double(max(first.totalBytes, 1)))
+          } else {
+            ProgressView().progressViewStyle(.linear)
+          }
           Text(detail(first)).font(.caption).foregroundStyle(.secondary)
         }
       }
@@ -148,6 +184,15 @@ private struct ActivitySection: View {
   }
 
   private func detail(_ transfer: TransferProgress) -> String {
+    switch transfer.currentStep {
+    case .copying: break
+    case .preparing: return transfer.stepLabel
+    default: return "\(Format.bytes(transfer.bytes)) copied · \(transfer.stepLabel)"
+    }
+    if transfer.waitingForDisk == true {
+      return
+        "\(Format.bytes(transfer.bytes)) of \(Format.bytes(transfer.totalBytes)) · paused while your disk is busy"
+    }
     var parts = [
       "\(Format.bytes(transfer.bytes)) of \(Format.bytes(transfer.totalBytes))",
       Format.rate(bytesPerSecond: transfer.bytesPerSecond),
@@ -157,6 +202,34 @@ private struct ActivitySection: View {
       parts.append(Format.remaining(remaining))
     }
     return parts.joined(separator: " · ")
+  }
+}
+
+private struct TransferPriorityPicker: View {
+  let model: AppModel
+  let priority: TransferPriority
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Picker(
+        "Offload transfer priority",
+        selection: Binding(
+          get: { priority },
+          set: { newValue in Task { await model.setTransferPriority(newValue) } })
+      ) {
+        Text("Background").tag(TransferPriority.background)
+        Text("Normal").tag(TransferPriority.normal)
+      }
+      .pickerStyle(.radioGroup)
+      .horizontalRadioGroupLayout()
+      .font(.caption)
+      Text(
+        priority == .background
+          ? "Transfers pause while other apps keep your disk busy."
+          : "Transfers run at full speed, even while your disk is busy."
+      )
+      .font(.caption2).foregroundStyle(.secondary)
+    }
   }
 }
 
@@ -186,6 +259,9 @@ private struct PerformanceRow: View {
         Text(hint).font(.caption).foregroundStyle(.orange)
       } else if performance.atLeastInternal {
         Text("Faster than or equal to internal.").font(.caption).foregroundStyle(.secondary)
+      }
+      if let note = performance.formatNote {
+        Text(note).font(.caption).foregroundStyle(.secondary)
       }
       if let bench = performance.lastBench {
         let tested = Date(timeIntervalSince1970: TimeInterval(bench.at))

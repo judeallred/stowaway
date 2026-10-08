@@ -13,11 +13,12 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tracing::{info, warn};
 
-use crate::engine::{Engine, EngineEvent, EngineLock, Observer};
+use crate::engine::{AdoptOptions, Engine, EngineEvent, EngineLock, Observer};
 use crate::error::{Error, IoContext, Result};
 use crate::ipc::{Call, Notification, Request, Response};
 use crate::paths::Layout;
-use crate::registry::EntryStatus;
+use crate::registry::{EntryStatus, Transfer};
+use crate::status::{AdoptionPlan, PlanPhase};
 use crate::{ops, status};
 
 const TICK: Duration = Duration::from_secs(2);
@@ -47,8 +48,13 @@ struct Shared {
     layout: Layout,
     subscribers: Mutex<Vec<UnixStream>>,
     active: Mutex<BTreeMap<String, EngineEvent>>,
+    plan: Mutex<Option<AdoptionPlan>>,
+    /// Kept between status requests so its drive check (a slow `diskutil` run) is cached.
+    status_engine: Mutex<Option<Engine>>,
     status_dirty: AtomicBool,
     fs_dirty: AtomicBool,
+    /// Raised by a `quit` request: copies stop and the main loop starts nothing new.
+    quitting: Arc<AtomicBool>,
     wake: Mutex<Sender<()>>,
 }
 
@@ -81,6 +87,18 @@ impl Shared {
             .send(());
     }
 
+    fn set_plan(&self, plan: Option<AdoptionPlan>) {
+        (*self.plan.lock().unwrap_or_else(PoisonError::into_inner)).clone_from(&plan);
+        self.broadcast(&Notification::Plan(plan));
+    }
+
+    fn plan(&self) -> Option<AdoptionPlan> {
+        self.plan
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     fn active_transfers(&self) -> Vec<EngineEvent> {
         self.active
             .lock()
@@ -102,12 +120,15 @@ fn observer_for(shared: &Arc<Shared>) -> Observer {
                     .unwrap_or_else(PoisonError::into_inner)
                     .insert(entry_id.clone(), event.clone());
             }
-            EngineEvent::TransferDone { transfer } => {
+            EngineEvent::TransferDone {
+                transfer: Transfer { entry_id, .. },
+            }
+            | EngineEvent::TransferAborted { entry_id } => {
                 shared
                     .active
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&transfer.entry_id);
+                    .remove(entry_id);
                 shared.status_dirty.store(true, Ordering::Relaxed);
             }
             EngineEvent::EntriesChanged | EngineEvent::DriveChanged { .. } => {
@@ -121,6 +142,7 @@ fn observer_for(shared: &Arc<Shared>) -> Observer {
 fn open_engine(shared: &Arc<Shared>) -> Result<Engine> {
     let mut engine = Engine::open(shared.layout.clone())?;
     engine.set_observer(Some(observer_for(shared)));
+    engine.set_cancel(Some(Arc::clone(&shared.quitting)));
     Ok(engine)
 }
 
@@ -137,8 +159,11 @@ pub fn run(layout: &Layout) -> Result<()> {
         layout: layout.clone(),
         subscribers: Mutex::new(Vec::new()),
         active: Mutex::new(BTreeMap::new()),
+        plan: Mutex::new(None),
+        status_engine: Mutex::new(None),
         status_dirty: AtomicBool::new(true),
         fs_dirty: AtomicBool::new(true),
+        quitting: Arc::new(AtomicBool::new(false)),
         wake: Mutex::new(wake_tx),
     });
     let listener = bind_socket(layout)?;
@@ -259,6 +284,9 @@ fn main_loop(shared: &Arc<Shared>, wake: &Receiver<()>) -> Result<()> {
 
 impl AgentLoop {
     fn tick(&mut self) {
+        if self.shared.quitting.load(Ordering::Relaxed) {
+            return;
+        }
         self.reload_config_if_changed();
         let connected = self.engine.drive().is_some();
         let drive_changed = self.last_connected != Some(connected);
@@ -347,11 +375,69 @@ impl AgentLoop {
         }
         self.shared.fs_dirty.store(false, Ordering::Relaxed);
         self.timers.fs_scan = Instant::now();
-        let engine = &mut self.engine;
-        let done = with_lock(&self.shared, "auto-adopt", || {
-            for (candidate, outcome) in engine.auto_adopt()? {
-                match outcome {
-                    Ok(entry) => info!(path = %entry.path.display(), kind = %entry.kind, "adopted"),
+        // Measuring runs without the engine lock, and each adoption takes it separately, so CLI
+        // commands and status updates get a turn during a long first pass.
+        let shared = Arc::clone(&self.shared);
+        let mut plan = AdoptionPlan {
+            phase: PlanPhase::Measuring,
+            folders_done: 0,
+            folders_total: 0,
+            planned_bytes: 0,
+            moved_bytes: 0,
+        };
+        shared.set_plan(Some(plan.clone()));
+        let measured = self.engine.adoption_candidates(&mut |progress| {
+            plan.folders_done = progress.done;
+            plan.folders_total = progress.total;
+            plan.planned_bytes = progress.ready_bytes;
+            shared.set_plan(Some(plan.clone()));
+        });
+        let found = match measured {
+            Ok(found) => found,
+            Err(e) => {
+                warn!(error = %e, "auto-adopt failed");
+                self.shared.set_plan(None);
+                return;
+            }
+        };
+        for (candidate, e) in found.unmeasured {
+            warn!(path = %candidate.path.display(), error = %e, "adoption failed");
+        }
+        if !found.ready.is_empty() {
+            info!(
+                count = found.ready.len(),
+                bytes = plan.planned_bytes,
+                "adopting"
+            );
+        }
+        plan.phase = PlanPhase::Adopting;
+        plan.folders_done = 0;
+        plan.folders_total = found.ready.len();
+        let mut finished = true;
+        for (candidate, size) in found.ready {
+            self.shared.set_plan(Some(plan.clone()));
+            self.reload_config_if_changed();
+            if self.engine.config.paused
+                || self.shared.quitting.load(Ordering::Relaxed)
+                || self.engine.drive().is_none()
+            {
+                finished = false;
+                break;
+            }
+            if !self.engine.config.kind_enabled(candidate.kind) {
+                plan.folders_done += 1;
+                continue;
+            }
+            // A pass can run for hours; keep reconciling other entries in between.
+            self.maybe_reconcile(true, false, false);
+            let engine = &mut self.engine;
+            let mut adopted = false;
+            finished &= with_lock(&self.shared, "auto-adopt", || {
+                match engine.adopt(&candidate.path, candidate.kind, AdoptOptions::default()) {
+                    Ok(entry) => {
+                        adopted = true;
+                        info!(path = %entry.path.display(), kind = %entry.kind, "adopted");
+                    }
                     Err(Error::Busy(why)) => {
                         info!(path = %candidate.path.display(), %why, "adoption postponed");
                     }
@@ -359,10 +445,16 @@ impl AgentLoop {
                         warn!(path = %candidate.path.display(), error = %e, "adoption failed");
                     }
                 }
+                Ok(())
+            });
+            plan.folders_done += 1;
+            if adopted {
+                plan.moved_bytes += size;
             }
-            Ok(())
-        });
-        if done {
+            self.maybe_broadcast_status();
+        }
+        self.shared.set_plan(None);
+        if finished {
             self.timers.scan = Instant::now();
         }
     }
@@ -447,10 +539,34 @@ fn with_lock(shared: &Shared, what: &str, f: impl FnOnce() -> Result<()>) -> boo
     }
 }
 
+/// A status snapshot for an IPC client, built on the IPC thread so it doesn't wait for the main
+/// loop.
+fn client_snapshot(shared: &Arc<Shared>) -> Result<status::StatusReport> {
+    let cached = shared
+        .status_engine
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    let mut engine = match cached {
+        Some(mut engine) => {
+            engine.reload_config()?;
+            engine
+        }
+        None => open_engine(shared)?,
+    };
+    let report = snapshot(&mut engine, shared);
+    *shared
+        .status_engine
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(engine);
+    report
+}
+
 fn snapshot(engine: &mut Engine, shared: &Shared) -> Result<status::StatusReport> {
     let mut report = status::build(engine)?;
     report.agent_running = true;
     report.active_transfers = shared.active_transfers();
+    report.plan = shared.plan();
     Ok(report)
 }
 
@@ -507,36 +623,61 @@ fn handle_client(stream: UnixStream, shared: &Arc<Shared>) {
         if line.trim().is_empty() {
             continue;
         }
-        let response = match serde_json::from_str::<Request>(&line) {
+        let mut quit = false;
+        let (response, subscribe) = match serde_json::from_str::<Request>(&line) {
             Ok(request) => {
                 let subscribe = request.call == Call::Subscribe;
-                let response = respond(request, shared);
-                if subscribe && let Ok(clone) = writer.try_clone() {
-                    shared
-                        .subscribers
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .push(clone);
-                    shared.status_dirty.store(true, Ordering::Relaxed);
-                    shared.wake();
-                }
-                response
+                quit = request.call == Call::Quit;
+                (respond(request, shared), subscribe)
             }
-            Err(e) => Response {
-                id: 0,
-                ok: false,
-                result: None,
-                error: Some(format!("bad request: {e}")),
-            },
+            Err(e) => (
+                Response {
+                    id: 0,
+                    ok: false,
+                    result: None,
+                    error: Some(format!("bad request: {e}")),
+                },
+                false,
+            ),
         };
-        let Ok(mut bytes) = serde_json::to_vec(&response) else {
-            break;
-        };
-        bytes.push(b'\n');
-        if writer.write_all(&bytes).is_err() {
+        let written = write_line(&mut writer, &response);
+        if quit && response.ok {
+            info!("agent stopping");
+            #[expect(
+                clippy::exit,
+                reason = "a clean exit tells launchd not to restart the agent; KeepAlive only covers crashes"
+            )]
+            std::process::exit(0);
+        }
+        if !written {
             break;
         }
+        if subscribe {
+            // The main loop only broadcasts between passes, and a pass can run for minutes, so
+            // a new subscriber gets its first status from here. Writing it before registering
+            // keeps it from interleaving with broadcasts.
+            if let Ok(report) = client_snapshot(shared)
+                && !write_line(&mut writer, &Notification::Status(Box::new(report)))
+            {
+                break;
+            }
+            if let Ok(clone) = writer.try_clone() {
+                shared
+                    .subscribers
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(clone);
+            }
+        }
     }
+}
+
+fn write_line(writer: &mut UnixStream, value: &impl serde::Serialize) -> bool {
+    let Ok(mut bytes) = serde_json::to_vec(value) else {
+        return false;
+    };
+    bytes.push(b'\n');
+    writer.write_all(&bytes).is_ok()
 }
 
 fn respond(request: Request, shared: &Arc<Shared>) -> Response {
@@ -567,10 +708,7 @@ fn dispatch(call: Call, shared: &Arc<Shared>) -> Result<Option<serde_json::Value
         result
     };
     match call {
-        Call::Status => {
-            let mut engine = open_engine(shared)?;
-            Ok(Some(serde_json::to_value(snapshot(&mut engine, shared)?)?))
-        }
+        Call::Status => Ok(Some(serde_json::to_value(client_snapshot(shared)?)?)),
         Call::Subscribe => Ok(None),
         Call::Refresh => {
             shared.fs_dirty.store(true, Ordering::Relaxed);
@@ -596,8 +734,38 @@ fn dispatch(call: Call, shared: &Arc<Shared>) -> Result<Option<serde_json::Value
             Ok(Some(serde_json::to_value(released)?))
         }),
         Call::Eject => locked(&mut |engine| engine.eject().map(|()| None)),
+        Call::Quit => quit(shared).map(|()| None),
         Call::Pause => locked(&mut |engine| ops::set_paused(engine, true).map(|()| None)),
         Call::Resume => locked(&mut |engine| ops::set_paused(engine, false).map(|()| None)),
+        Call::SetTransferPriority { priority } => {
+            ops::set_transfer_priority(&shared.layout, priority)?;
+            info!(?priority, "offload transfer priority changed");
+            shared.status_dirty.store(true, Ordering::Relaxed);
+            shared.wake();
+            Ok(None)
+        }
+        Call::SetKindEnabled {
+            kind,
+            enabled,
+            copy,
+        } => {
+            ops::set_kind_enabled(&shared.layout, kind, enabled)?;
+            info!(%kind, enabled, "kind toggled");
+            shared.status_dirty.store(true, Ordering::Relaxed);
+            shared.wake();
+            let managed = open_engine(shared)?
+                .registry
+                .entries()?
+                .iter()
+                .any(|e| e.kind == kind);
+            if enabled || !managed {
+                return Ok(None);
+            }
+            locked(&mut |engine| {
+                let released = ops::release_kind(engine, kind, copy)?;
+                Ok(Some(serde_json::to_value(released)?))
+            })
+        }
         Call::Doctor { fix } => locked(&mut |engine| {
             let problems = ops::doctor(engine, fix)?;
             Ok(Some(serde_json::to_value(problems)?))
@@ -615,6 +783,34 @@ fn dispatch(call: Call, shared: &Arc<Shared>) -> Result<Option<serde_json::Value
         Call::RecordLicense { order_id, licensee } => locked(&mut |engine| {
             ops::record_license(engine, &order_id, licensee.as_deref()).map(|()| None)
         }),
+    }
+}
+
+/// Detaches every image for a `quit` request. On success the engine lock stays held until the
+/// process exits, so the main loop can't reattach anything in between. On failure the agent
+/// carries on as before.
+fn quit(shared: &Arc<Shared>) -> Result<()> {
+    info!("quit requested");
+    shared.quitting.store(true, Ordering::Relaxed);
+    let detached = (|| {
+        // A copy in progress stops within a second, but writing out its image can take a while.
+        let lock = EngineLock::acquire(&shared.layout, Duration::from_mins(2))?;
+        open_engine(shared)?.detach_all()?;
+        Ok(lock)
+    })();
+    match detached {
+        Ok(lock) => {
+            std::mem::forget(lock);
+            info!("images detached; folders are local until the agent starts again");
+            Ok(())
+        }
+        Err(e) => {
+            warn!(error = %e, "quit failed");
+            shared.quitting.store(false, Ordering::Relaxed);
+            shared.status_dirty.store(true, Ordering::Relaxed);
+            shared.wake();
+            Err(e)
+        }
     }
 }
 

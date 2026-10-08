@@ -3,11 +3,13 @@
 use std::path::{Path, PathBuf};
 
 use crate::bench::{self, BenchReport, BenchSizes};
-use crate::config::Usage;
+use crate::config::{Config, TransferPriority, Usage};
 use crate::engine::{Engine, Problem};
 use crate::error::{Error, IoContext, Result};
 use crate::fsutil;
 use crate::ipc::RootPreview;
+use crate::kinds::KindId;
+use crate::paths::Layout;
 
 /// Validates and adds a watched root, or previews it with `dry_run`.
 ///
@@ -110,6 +112,53 @@ pub fn set_paused(engine: &mut Engine, paused: bool) -> Result<()> {
     engine.config.save(&engine.layout)
 }
 
+/// Sets whether copies yield to other disk activity. Doesn't take the engine lock: a running copy
+/// holds it, and that copy re-reads this setting from the config file.
+///
+/// # Errors
+///
+/// Fails if the config can't be loaded or saved.
+pub fn set_transfer_priority(layout: &Layout, priority: TransferPriority) -> Result<()> {
+    let mut config = Config::load_required(layout)?;
+    config.transfer_priority = priority;
+    config.save(layout)
+}
+
+/// Turns offloading of a kind on or off.
+///
+/// Like [`set_transfer_priority`], doesn't take the engine lock, so it doesn't wait for a copy in
+/// progress; the agent stops adopting a disabled kind before its next copy. Folders already
+/// offloaded stay managed until [`release_kind`].
+///
+/// # Errors
+///
+/// Fails if the config can't be loaded or saved.
+pub fn set_kind_enabled(layout: &Layout, kind: KindId, enabled: bool) -> Result<()> {
+    let mut config = Config::load_required(layout)?;
+    config.kinds.retain(|&k| k != kind);
+    if enabled {
+        config.kinds.push(kind);
+        config.kinds.sort();
+    }
+    config.save(layout)
+}
+
+/// Releases every managed folder of `kind`, copying contents back with `copy`.
+///
+/// # Errors
+///
+/// Fails if a folder is in use or (with `copy`) the drive is offline.
+pub fn release_kind(engine: &mut Engine, kind: KindId, copy: bool) -> Result<Vec<PathBuf>> {
+    let mut released = Vec::new();
+    for entry in engine.registry.entries()? {
+        if entry.kind == kind {
+            engine.release(&entry.path, copy)?;
+            released.push(entry.path);
+        }
+    }
+    Ok(released)
+}
+
 /// Records the personal/work answer.
 ///
 /// # Errors
@@ -177,4 +226,27 @@ pub fn doctor(engine: &mut Engine, fix: bool) -> Result<Vec<Problem>> {
         engine.reconcile()?;
     }
     engine.problems()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggling_a_kind_keeps_display_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::rooted(dir.path(), dir.path());
+        Config {
+            volume_uuid: Some("UUID".into()),
+            ..Config::default()
+        }
+        .save(&layout)
+        .unwrap();
+        set_kind_enabled(&layout, KindId::PnpmStore, false).unwrap();
+        let kinds = Config::load_required(&layout).unwrap().kinds;
+        assert!(!kinds.contains(&KindId::PnpmStore));
+        set_kind_enabled(&layout, KindId::PnpmStore, true).unwrap();
+        set_kind_enabled(&layout, KindId::PnpmStore, true).unwrap();
+        assert_eq!(Config::load_required(&layout).unwrap().kinds, KindId::ALL);
+    }
 }
