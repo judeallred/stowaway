@@ -87,7 +87,19 @@ impl TestDrive {
     /// it) to vanish: macOS tears nested mounts down asynchronously, and writing into a folder
     /// before then fails with an I/O error.
     fn yank(&self, mounts: &[&Path]) {
-        run("hdiutil", &["detach", "-force", &self.device]);
+        // Even a forced detach can report "Resource busy" while macOS is still settling the
+        // images on the drive, as it does on CI runners.
+        let mut attempts = 0;
+        while !Command::new("hdiutil")
+            .args(["detach", "-force", &self.device])
+            .status()
+            .unwrap()
+            .success()
+        {
+            attempts += 1;
+            assert!(attempts < 10, "couldn't yank the drive");
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
         assert!(!self.mount_point.exists() || fs::read_dir(&self.mount_point).is_err());
         let started = std::time::Instant::now();
         while mounts.iter().any(|m| is_mount_point(m)) && started.elapsed().as_secs() < 30 {

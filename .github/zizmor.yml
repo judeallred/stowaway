@@ -1,0 +1,12 @@
+# Findings reviewed and accepted. Everything else fails the `workflows` CI job.
+rules:
+  dangerous-triggers:
+    ignore:
+      # The CLA check needs pull_request_target to comment on pull requests from forks. It never
+      # checks out or runs pull request code.
+      - cla.yml
+  archived-uses:
+    ignore:
+      # contributor-assistant/github-action is archived but still works. Replace it (for example
+      # with the hosted cla-assistant.io app) before it breaks.
+      - cla.yml
