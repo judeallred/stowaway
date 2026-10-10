@@ -1,0 +1,116 @@
+name: Release
+
+# Pushing a tag like v0.2.0 publishes a GitHub release with a universal Stowaway.app and CLI.
+#
+# Signing is optional. Without these secrets the app is ad-hoc signed and macOS asks users to
+# approve it on first launch. With them it's signed with a Developer ID and notarized:
+#   DEVELOPER_ID_CERTIFICATE           the "Developer ID Application" certificate as a base64 .p12
+#   DEVELOPER_ID_CERTIFICATE_PASSWORD  the .p12's password
+#   APPLE_ID, APPLE_TEAM_ID            the Apple account and team that notarize
+#   APPLE_APP_PASSWORD                 an app-specific password for that Apple account
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      SIGNED: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG doesn't match version $version in Cargo.toml"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Import the Developer ID certificate
+        if: env.SIGNED == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(uuidgen)
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          rm "$RUNNER_TEMP/certificate.p12"
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)
+          if [ -z "$identity" ]; then
+            echo "::error::no Developer ID Application identity in the certificate"
+            exit 1
+          fi
+          echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: UNIVERSAL=1 macos-app/scripts/bundle.sh
+      - run: codesign --verify --deep --strict macos-app/build/Stowaway.app
+
+      - name: Package
+        run: |
+          mkdir dist
+          ditto -c -k --keepParent macos-app/build/Stowaway.app "dist/Stowaway-$VERSION.zip"
+          cp target/universal/stowaway LICENSE dist/
+          tar -czf "dist/stowaway-$VERSION-macos-universal.tar.gz" -C dist stowaway LICENSE
+          rm dist/stowaway dist/LICENSE
+
+      - name: Notarize
+        if: env.SIGNED == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit "dist/Stowaway-$VERSION.zip" --wait \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          xcrun stapler staple macos-app/build/Stowaway.app
+          rm "dist/Stowaway-$VERSION.zip"
+          ditto -c -k --keepParent macos-app/build/Stowaway.app "dist/Stowaway-$VERSION.zip"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && shasum -a 256 -- * > SHA256SUMS)
+          if [ "$SIGNED" = true ]; then
+            install="Unzip, move **Stowaway.app** to Applications and open it."
+          else
+            install="Unzip, move **Stowaway.app** to Applications and open it. This build isn't
+          signed with a Developer ID yet, so macOS blocks the first launch: open **System Settings →
+          Privacy & Security** and click **Open Anyway**, or run
+          \`xattr -dr com.apple.quarantine /Applications/Stowaway.app\`."
+          fi
+          cat > notes.md <<EOF
+          **Beta.** Stowaway moves folders on your disk; keep backups of anything you can't rebuild.
+          macOS 14 or later, Apple silicon or Intel.
+
+          ### Install
+
+          $install
+
+          The command-line tool is also inside the app at
+          \`Stowaway.app/Contents/Helpers/stowaway\`, or download it on its own below.
+          EOF
+          gh release create "$TAG" dist/* --title "Stowaway $VERSION" --notes-file notes.md \
+            --prerelease --verify-tag

@@ -15,6 +15,12 @@ ordinary folder at its usual path. Unplug the drive and the mount disappears: th
 
 ## Quick start
 
+Download **Stowaway.app** from the [latest release](https://github.com/judeallred/stowaway/releases)
+(Apple silicon and Intel), move it to Applications and open it. Beta builds aren't signed with a
+Developer ID yet: approve the first launch in **System Settings → Privacy & Security**.
+
+Or build the command-line tool from source:
+
 ```sh
 cargo install --path crates/stowaway
 stowaway init --volume /Volumes/FastSSD --root ~/code

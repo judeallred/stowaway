@@ -28,3 +28,15 @@ The toolchain is pinned in `rust-toolchain.toml`; `rustup` picks it up automatic
   `#[expect(lint, reason = "...")]` on the smallest possible scope.
 - `unsafe` code lives only in `crates/stowaway-macos`, and every block has a `// SAFETY:` comment.
 - Dependencies must be permissively licensed; `cargo deny check` enforces the list in `deny.toml`.
+
+## Releasing
+
+Bump `version` in the root `Cargo.toml`, commit, then push a matching tag:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The Release workflow builds a universal `Stowaway.app` and CLI, and publishes them as a GitHub
+pre-release. It signs and notarizes them once the Developer ID secrets listed in
+`.github/workflows/release.yml` are set; until then the builds are ad-hoc signed.
