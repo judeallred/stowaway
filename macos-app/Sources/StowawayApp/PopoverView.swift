@@ -81,6 +81,7 @@ struct PopoverView: View {
         }
       }
       Button("Open Log") { openLog() }
+      Button("Report a Bug…") { reportBug() }
       Button("Quit Stowaway") {
         Task {
           if await model.quit() { NSApp.terminate(nil) }
@@ -95,6 +96,35 @@ struct PopoverView: View {
     do {
       try AgentLauncher.start()
       model.lastError = nil
+    } catch {
+      model.lastError = error.localizedDescription
+    }
+  }
+
+  /// Opens a prefilled GitHub issue via `stowaway bug-report`, which works even when the agent
+  /// isn't running.
+  private func reportBug() {
+    guard let cli = AgentLauncher.cliPath() else {
+      model.lastError = AgentLauncher.LaunchError.cliNotFound.errorDescription
+      return
+    }
+    let process = Process()
+    process.executableURL = cli
+    process.arguments = ["bug-report"]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    let model = model
+    process.terminationHandler = { process in
+      let failed = process.terminationStatus != 0
+      Task { @MainActor in
+        if failed {
+          model.lastError =
+            "Couldn't prepare the bug report. Try `stowaway bug-report` in Terminal."
+        }
+      }
+    }
+    do {
+      try process.run()
     } catch {
       model.lastError = error.localizedDescription
     }

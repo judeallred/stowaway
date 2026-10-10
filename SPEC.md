@@ -295,6 +295,7 @@ stowaway roots list | add <path> | remove <path> [--copy]   # watched folders (s
 stowaway eject             # detach all images (naming processes that hold files), then eject the drive
 stowaway pause | resume    # stop or resume auto-adoption (drive switching keeps working)
 stowaway priority [background|normal]  # show or set offload transfer priority
+stowaway bug-report [--print]  # open a GitHub issue prefilled with diagnostics, to review and submit
 stowaway agent             # run the background agent in the foreground (used by launchd)
 stowaway agent stop        # stop any transfer, detach all images (folders fall back to local) and stop the agent
 stowaway agent start       # start the agent again; it reattaches the images
@@ -325,7 +326,7 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 **Icon**
 
 - A monochrome template image, so it fits light mode, dark mode and tinted menu bars.
-- The base is always the Stowaway logo. Each state adds a small badge overlapping the logo's bottom-right corner, with a thin transparent gap cut around the badge so the two shapes stay distinct. The logo isn't settled yet: v1 uses the `shippingbox` SF Symbol (one constant, `IconState.logoSymbolName`), and the custom glyph from §14.6 replaces it before release. Badges are SF Symbols.
+- The base is always the Stowaway logo. Each state adds a small badge overlapping the logo's bottom-right corner, with a thin transparent gap cut around the badge so the two shapes stay distinct. The logo is a lookout with big round eyes peering over the top of a braced cargo crate (a slat across the middle and a brace in each half). The head is solid, with its eyes and a small smile cut out, so it stays legible at menu bar size. It's drawn from paths in code (`Logo.swift`), so it needs no image assets. Badges are SF Symbols.
 - The icon never animates, because motion in the menu bar is distracting. Each task gets its own static badge instead:
 
 | State | Badge on the logo |
@@ -358,6 +359,7 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
    - Eject Drive: runs the same flow as `stowaway eject`. If programs are still holding files on the drive, it lists them by name.
    - Pause / Resume
    - Open Log
+   - Report a Bug…: runs `stowaway bug-report`, which opens a new GitHub issue in the browser, prefilled with the Stowaway and macOS versions, the Mac model, whether the agent is running, the status summary and the end of the agent log. The home folder is shown as `~`. Nothing is sent until the user submits the issue. GitHub caps the link's length, so the log is trimmed to fit; the full report is saved to `~/.stowaway/bug-report.md`. The command works without the agent, which is when a report is often needed.
    - Quit Stowaway: runs the same flow as `stowaway agent stop`, then quits the app. Like Eject, it lists the programs holding files on the drive and stays open if there are any. When the app starts again it starts the agent, which reattaches the images (§4.3).
 
 **Configure Folders window**
@@ -409,7 +411,6 @@ The negotiated speed is the useful part. It catches the common case of a fast dr
 | Sequential speed is close to the connection's maximum, and the connection is slow (USB 2, or 5 Gb/s) | "Your connection is the limit. A 10 Gb/s USB or Thunderbolt port, or a better cable, could make this about N× faster." |
 | Sequential speed is far below the connection's maximum | "The drive itself is the limit. An NVMe drive in a matching enclosure would be faster." This can also be heat-related throttling, if speed drops over the course of the test. |
 | Sequential speed is fine but small-file speed is much worse than the internal disk | "Small-file performance is the limit (common with cheaper SSDs and some enclosures). Installs will be slower than on your internal disk." |
-| Transfer throughput is far below the test results | "Transfers are slower than this drive can handle", together with the likely cause the agent can see: transfers pausing for other disk activity, or Spotlight indexing. |
 | The external drive is at least as fast as the internal disk in all tests | No hint. The status line shows "Faster than or equal to internal". |
 
 - **Format note:** the speed test also records the drive's format and whether it's encrypted, and one line under the results says whether a different setup would be faster. Setup already requires APFS, so the usual line is "Formatted as APFS, the best format for Stowaway." Other notes: a non-APFS format (reformat as APFS, which erases the drive), a spinning hard drive (no format helps; an SSD would), or an encrypted volume on an Intel Mac.
@@ -440,7 +441,7 @@ The negotiated speed is the useful part. It catches the common case of a fast dr
 - **Distribution:**
   - Both are published from the project's own Homebrew tap. `homebrew-core` only accepts open-source licenses, and this project's license isn't one (§13).
   - **Homebrew formula (CLI only):** installs the binary, and `init` installs a plain launchd plist.
-  - **Homebrew cask (`.app`):** bundles the Rust binary inside the app and registers the agent with `SMAppService.agent(plistName:)`. The agent then shows up under the app's name in System Settings → Login Items, and permission prompts name the app rather than a bare binary.
+  - **Homebrew cask (`.app`):** bundles the Rust binary inside the app and registers the agent with `SMAppService.agent(plistName:)`. The agent then shows up under the app's name in System Settings → Login Items, and permission prompts name the app rather than a bare binary. On its first launch the app also registers itself with `SMAppService.mainApp`, so the menu bar app opens at login too. It registers only once, so turning it off in Login Items sticks.
 - **Process model:** a per-user launchd agent (`~/Library/LaunchAgents/dev.stowaway.agent.plist`) with `RunAtLoad`, and `KeepAlive` set to restart it only after a crash: a `quit` request exits cleanly and the agent stays stopped until the app or `stowaway agent start` kickstarts it. A `quit` stops any copy in progress (the transfer is retried later), detaches every image while holding the engine lock until the process exits, and leaves entries in local fallback (§4.2). No root access and no kernel extension are needed.
 - **State:** SQLite in `~/.stowaway/state.db`. A journal of in-flight operations supports crash recovery (§6.2).
 - **Copies across volumes:** a Rust copier that preserves symlinks, permissions, read-only files and hard links (tracked by inode, so Cargo's hard-linked binaries aren't duplicated). One thread walks the tree, creating directories and links in order, and hands files to up to 8 worker threads. Folders of many small files are limited by per-file latency, so parallel copies are about 2.4× faster than serial ones (24k files: 6.7 s serial, 2.8 s with 4 workers; `cp`, `ditto`, `rsync` and `tar` were all slower than the serial copier). The worker count starts at 2 and adjusts by one each second: down while the whole machine's CPU use is above 80%, up while it's below 70%. Copies run at normal I/O priority. With the `transfer_priority = "background"` setting (the default), they also pause while other programs keep the internal disk busy (more than 30 MB/s that isn't the agent's own reads, sampled once a second with `iostat`), resuming after three calm seconds. With `"normal"`, they never pause. Copies re-read the setting once a second, and `set-transfer-priority` writes it without taking the engine lock, so a change reaches a copy that's already running. macOS's low I/O tiers were tried first: they made copies about 100× slower whenever anything else touched the disk. For the same reason the LaunchAgent uses `ProcessType` `Interactive`; `Adaptive` and `Standard` agents get throttled I/O.
@@ -743,7 +744,7 @@ These are the landing page sections, in order:
 ### 14.6 Visual identity
 
 - **App icon concept:** a ship's crate or trunk with a small arrow going into it, or an external drive shaped like a ship's hold. It should read clearly at 16 px in Finder and in Login Items.
-- **Menu bar glyph:** a simplified one-colour crate outline as a template image, with the state variants in §8. The "transferring" animation is the arrow sliding into the crate, at a few frames per second.
+- **Menu bar glyph:** the lookout over a braced crate (§8) as a one-colour template image, with a static badge per state. It never animates.
 - **Colour:** for the landing page and app accent, a deep nautical blue with one warm signal colour (brass or amber) for warnings and the "offloading" number. The menu bar glyph stays monochrome.
 - **Type:** the system fonts in the app (SF Pro, SF Mono). The landing page uses one sans-serif headline font plus a monospace font for paths and commands.
 - **Screenshots** show the real popover with realistic numbers, in both light and dark mode, and the Configure Folders window.

@@ -14,13 +14,13 @@ use clap::{Parser, Subcommand};
 
 use crate::config::{Config, TransferPriority, Usage};
 use crate::engine::{self, AdoptOptions, Engine, EngineLock};
-use crate::error::{Error, Result};
+use crate::error::{Error, IoContext, Result};
 use crate::ipc::{self, Call};
 use crate::kinds::KindId;
 use crate::paths::Layout;
 use crate::report::{self, format_bytes};
 use crate::status::{self, StatusReport};
-use crate::{agent, launchd, ops};
+use crate::{agent, bugreport, launchd, ops};
 
 /// Keep dependency and build caches on an external drive, with automatic local fallback.
 #[derive(Debug, Parser)]
@@ -142,6 +142,12 @@ enum Command {
     License {
         #[command(subcommand)]
         action: LicenseAction,
+    },
+    /// Open a new GitHub issue with diagnostics filled in, to review and submit.
+    BugReport {
+        /// Print the report instead of opening GitHub.
+        #[arg(long)]
+        print: bool,
     },
     /// Print sample IPC messages (used to test the menu bar app).
     #[command(hide = true)]
@@ -366,6 +372,7 @@ fn run(command: Command) -> Result<()> {
             println!("Reclaimed {} on the drive.", format_bytes(reclaimed));
             Ok(())
         }
+        Command::BugReport { print } => bug_report(&layout, print),
         Command::Doctor { fix } => {
             let (_lock, mut engine) = locked_engine(&layout)?;
             let problems = ops::doctor(&mut engine, fix)?;
@@ -634,6 +641,30 @@ fn fetch_status(layout: &Layout) -> Result<StatusReport> {
     // A busy agent can miss the timeout, but it's running if it accepts connections.
     report.agent_running = std::os::unix::net::UnixStream::connect(layout.socket_path()).is_ok();
     Ok(report)
+}
+
+fn bug_report(layout: &Layout, print: bool) -> Result<()> {
+    let status = fetch_status(layout).map_err(|e| e.to_string());
+    let report = bugreport::build(layout, status.as_ref().map_err(String::as_str));
+    if print {
+        print!("{}", report.body);
+        return Ok(());
+    }
+    let saved = layout.state_dir.join("bug-report.md");
+    std::fs::write(&saved, &report.body).ctx("writing", &saved)?;
+    crate::cmd::run("open", [&report.url])?;
+    println!(
+        "Opened a new GitHub issue in your browser with diagnostics filled in. Describe what \
+         happened, review what's included, then submit it."
+    );
+    if report.url_log_lines < bugreport::LOG_LINES {
+        println!(
+            "Only the last {} log lines fit in the link; the full report is in {}.",
+            report.url_log_lines,
+            saved.display()
+        );
+    }
+    Ok(())
 }
 
 fn print_license_footer(report: &StatusReport) {

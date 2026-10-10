@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod bench;
+pub mod bugreport;
 pub mod cli;
 pub mod cmd;
 pub mod config;

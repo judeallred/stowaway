@@ -25,6 +25,21 @@ enum AgentLauncher {
     }
   }
 
+  /// Opens the menu bar app at login. Registers once, on the bundled app's first launch, so
+  /// turning it off in System Settings → Login Items sticks. The agent starts at login on its
+  /// own (`RunAtLoad`).
+  static func registerLoginItem() {
+    guard Bundle.main.bundleURL.pathExtension == "app" else { return }
+    let key = "registeredLoginItem"
+    guard !UserDefaults.standard.bool(forKey: key) else { return }
+    do {
+      try SMAppService.mainApp.register()
+      UserDefaults.standard.set(true, forKey: key)
+    } catch {
+      NSLog("Stowaway: couldn't add the login item: \(error)")
+    }
+  }
+
   /// Starts the installed agent if it isn't running, e.g. after Quit Stowaway stopped it. The
   /// agent reattaches the images as it starts. Does nothing if no agent is installed.
   static func kickstart() {

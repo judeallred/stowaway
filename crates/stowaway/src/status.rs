@@ -233,7 +233,7 @@ pub fn build(engine: &mut Engine) -> Result<StatusReport> {
         performance.last_bench = serde_json::from_str(&json).ok();
     }
     if let Some(report) = &performance.last_bench {
-        performance.hint = bench::diagnose(report, performance.recent_transfer_mbps);
+        performance.hint = bench::diagnose(report);
         performance.format_note = bench::format_note(&report.connection);
         performance.at_least_internal = bench::at_least_internal(report);
     }

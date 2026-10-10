@@ -95,8 +95,8 @@ struct ConfigureFoldersView: View {
 
   private var explainer: some View {
     HStack(alignment: .top, spacing: 14) {
-      Image(systemName: IconState.logoSymbolName)
-        .font(.system(size: 30))
+      Image(nsImage: Logo.image(size: 34))
+        .renderingMode(.template)
         .foregroundStyle(.tint)
       VStack(alignment: .leading, spacing: 6) {
         Text("Keep rebuildable folders on \(model.driveName)")

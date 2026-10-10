@@ -14,11 +14,11 @@ struct MenuBarIcon: View {
 }
 
 /// Draws the logo-plus-badge template images. `MenuBarExtra` labels only render a single image,
-/// so the two symbols are composited here rather than stacked in SwiftUI.
+/// so the logo and badge are composited here rather than stacked in SwiftUI.
 @MainActor
 enum MenuBarImage {
   private static let canvas = NSSize(width: 20, height: 17)
-  private static let logoConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+  private static let logoSize: CGFloat = 17
   private static let badgeConfig = NSImage.SymbolConfiguration(pointSize: 8.5, weight: .bold)
   /// Width of the transparent gap cut around the badge so it reads apart from the logo.
   private static let gap: CGFloat = 1.5
@@ -36,7 +36,7 @@ enum MenuBarImage {
   }
 
   private static func render(badge: String?) -> NSImage {
-    let logo = symbol(IconState.logoSymbolName, logoConfig)
+    let logo = Logo.image(size: logoSize)
     let badgeImage = badge.map { symbol($0, badgeConfig) }
     let image = NSImage(size: canvas, flipped: false) { rect in
       let logoRect = NSRect(

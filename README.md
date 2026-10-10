@@ -1,4 +1,4 @@
-# Stowaway
+# Stowaway (beta)
 
 Keep your dependencies and build files on an external SSD, and keep working when it's unplugged.
 
@@ -8,7 +8,10 @@ drive. Each one becomes a small disk image on the drive, **mounted in place**, s
 ordinary folder at its usual path. Unplug the drive and the mount disappears: the next
 `npm install` or `cargo build` simply works locally. Plug it back in and everything moves back.
 
-> **Status:** early development (v0.1). macOS 14+ only. See [SPEC.md](SPEC.md) for the design.
+> **Beta:** Stowaway is beta software (v0.1). It moves folders on your disk, so expect rough edges
+> and keep backups of anything you can't rebuild. macOS 14+ only. If something goes wrong, run
+> `stowaway bug-report` (or use **Report a Bug…** in the menu bar app) to file an issue with
+> diagnostics. See [SPEC.md](SPEC.md) for the design.
 
 ## Quick start
 

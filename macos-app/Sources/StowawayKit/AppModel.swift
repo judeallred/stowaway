@@ -19,9 +19,6 @@ public enum IconState: Equatable, Sendable {
   case error
   case paused
 
-  /// The Stowaway logo, drawn in every state. A placeholder until the logo is settled.
-  public static let logoSymbolName = "shippingbox"
-
   /// The small SF Symbol overlapping the logo's corner, or nil for the plain logo. Icons never
   /// animate.
   public var badgeSymbolName: String? {

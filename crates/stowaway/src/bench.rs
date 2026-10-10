@@ -239,7 +239,7 @@ pub fn run(
         external,
         hint: None,
     };
-    report.hint = diagnose(&report, None);
+    report.hint = diagnose(&report);
     Ok(report)
 }
 
@@ -370,10 +370,10 @@ fn mb(bytes: u64) -> f64 {
     f64::from(whole) + f64::from(frac) / 1_000_000.0
 }
 
-/// Picks the single most useful hint (spec §8.1). `recent_transfer_mbps` is the median of
-/// recent real transfers, if any.
+/// Picks the single most useful hint (spec §8.1). Only hints the user can act on, e.g. by
+/// changing the port, cable or drive.
 #[must_use]
-pub fn diagnose(report: &BenchReport, recent_transfer_mbps: Option<f64>) -> Option<String> {
+pub fn diagnose(report: &BenchReport) -> Option<String> {
     let ext = &report.external;
     let int = &report.internal;
     let link_mbps = report.connection.link_gbps.map(|g| g * 1000.0 / 8.0);
@@ -397,14 +397,6 @@ pub fn diagnose(report: &BenchReport, recent_transfer_mbps: Option<f64>) -> Opti
     {
         return Some(
             "Small-file performance is the limit (common with cheaper SSDs and some enclosures). Installs will be slower than on your internal disk."
-                .to_owned(),
-        );
-    }
-    if let Some(transfer) = recent_transfer_mbps
-        && transfer < ext.seq_write_mbps * 0.25
-    {
-        return Some(
-            "Transfers are slower than this drive can handle. Folders of many small files copy slower than large files, and with Background priority, transfers pause while other apps keep your disk busy. Spotlight indexing can also slow them down."
                 .to_owned(),
         );
     }
@@ -500,21 +492,13 @@ mod tests {
 
     #[test]
     fn diagnoses_bottlenecks() {
-        let slow_link = diagnose(&report(Some(5.0), 450.0, 9000.0), None).unwrap();
+        let slow_link = diagnose(&report(Some(5.0), 450.0, 9000.0)).unwrap();
         assert!(slow_link.contains("connection is the limit"), "{slow_link}");
-        let slow_drive = diagnose(&report(Some(40.0), 400.0, 9000.0), None).unwrap();
+        let slow_drive = diagnose(&report(Some(40.0), 400.0, 9000.0)).unwrap();
         assert!(slow_drive.contains("drive itself"), "{slow_drive}");
-        let small = diagnose(&report(Some(40.0), 2500.0, 2000.0), None).unwrap();
+        let small = diagnose(&report(Some(40.0), 2500.0, 2000.0)).unwrap();
         assert!(small.contains("Small-file"), "{small}");
-        let slow_transfers = diagnose(&report(Some(40.0), 2500.0, 9000.0), Some(50.0)).unwrap();
-        assert!(
-            slow_transfers.contains("Transfers are slower"),
-            "{slow_transfers}"
-        );
-        assert_eq!(
-            diagnose(&report(Some(40.0), 2500.0, 9000.0), Some(1500.0)),
-            None
-        );
+        assert_eq!(diagnose(&report(Some(40.0), 2500.0, 9000.0)), None);
     }
 
     #[test]
