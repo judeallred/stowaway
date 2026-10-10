@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use globset::GlobSet;
 
-use crate::kinds::{KindId, Scope};
+use crate::kinds::{self, KindId, Scope};
 
 /// A folder that could be managed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,14 @@ pub struct ScanOptions<'a> {
 
 /// Marker file that excludes a folder and everything under it.
 pub const IGNORE_MARKER: &str = ".stowaway-ignore";
+
+/// Folders under the home folder where coding agents keep their worktrees, scanned like roots
+/// whenever they exist: Cursor's and the Codex app's.
+pub const AGENT_WORKTREE_DIRS: &[&str] = &[".cursor/worktrees", ".codex/worktrees"];
+
+/// Hidden folders inside a project that hold whole checkouts, each scanned as its own project
+/// tree even though the scan otherwise skips hidden folders: Claude Code's worktrees.
+const IN_PROJECT_CHECKOUT_DIRS: &[&str] = &[".claude/worktrees"];
 
 /// Finds candidates under `root`.
 #[must_use]
@@ -91,6 +99,10 @@ fn visit(
         skip.push(dir_name);
         let path = dir.join(dir_name);
         let exists = subdirs.iter().any(|d| d == dir_name);
+        // A symlink or file in the folder's place is left alone.
+        if has(dir_name) && !exists {
+            continue;
+        }
         let eligible = match kind {
             KindId::Node => !node_ancestor,
             KindId::CargoTarget => !opts.cargo_target_dir_set && !cargo_target_redirected(dir),
@@ -107,9 +119,19 @@ fn visit(
         } else {
             lockfiles.iter().any(|l| has(l))
         };
-        if candidate {
-            out.push(Candidate { kind, path, exists });
+        if !candidate {
+            continue;
         }
+        out.extend(
+            kinds::managed_folders(kind, &path)
+                .into_iter()
+                .filter(|p| !opts.exclude.is_match(p))
+                .map(|path| Candidate {
+                    kind,
+                    exists: kinds::is_real_dir(&path),
+                    path,
+                }),
+        );
     }
 
     if depth >= opts.max_depth {
@@ -120,22 +142,33 @@ fn visit(
             continue;
         }
         let child = dir.join(&name);
-        let Ok(meta) = fs::symlink_metadata(&child) else {
-            continue;
-        };
-        // Stay on the root's filesystem: mounted images and other volumes are skipped.
-        if meta.file_type().is_symlink() || meta.dev() != root_dev {
-            continue;
+        if is_local_dir(&child, root_dev) {
+            visit(
+                &child,
+                root_dev,
+                depth + 1,
+                children_have_node_ancestor,
+                opts,
+                out,
+            );
         }
-        visit(
-            &child,
-            root_dev,
-            depth + 1,
-            children_have_node_ancestor,
-            opts,
-            out,
-        );
     }
+    // Each checkout is a separate project, so this one's `node_modules` isn't its ancestor.
+    for checkouts in IN_PROJECT_CHECKOUT_DIRS.iter().map(|d| dir.join(d)) {
+        if is_local_dir(&checkouts, root_dev) && !opts.exclude.is_match(&checkouts) {
+            for checkout in kinds::subdirs(&checkouts) {
+                if is_local_dir(&checkout, root_dev) {
+                    visit(&checkout, root_dev, depth + 1, false, opts, out);
+                }
+            }
+        }
+    }
+}
+
+/// Whether `path` is a real folder on the root's filesystem; symlinks, mounted images and other
+/// volumes are skipped.
+fn is_local_dir(path: &Path, root_dev: u64) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && m.dev() == root_dev)
 }
 
 /// Whether a `.cargo/config.toml` in `dir` or any ancestor sets `target-dir`.
@@ -224,7 +257,17 @@ mod tests {
         touch(&r.join("rs/Cargo.toml"));
         touch(&r.join("rs/Cargo.lock"));
         touch(&r.join("rs/target/CACHEDIR.TAG"));
+        touch(&r.join("rs/target/debug/deps/libx.rlib"));
+        touch(&r.join("rs/target/debug/rs"));
+        // A Cargo project that hasn't been built yet: its first build's folders are pre-adopted.
+        touch(&r.join("new-rs/Cargo.toml"));
+        touch(&r.join("new-rs/Cargo.lock"));
         touch(&r.join("rs/tests/fixture/Cargo.toml"));
+        // A symlinked node_modules, as some worktrees have: left alone.
+        touch(&r.join("linked/package.json"));
+        touch(&r.join("linked/package-lock.json"));
+        std::os::unix::fs::symlink(r.join("web/node_modules"), r.join("linked/node_modules"))
+            .unwrap();
         // Excluded and ignored.
         touch(&r.join("ignored/.stowaway-ignore"));
         touch(&r.join("ignored/package.json"));
@@ -236,7 +279,85 @@ mod tests {
             vec![
                 (KindId::Node, "fresh/node_modules".into(), false),
                 (KindId::Node, "web/node_modules".into(), true),
-                (KindId::CargoTarget, "rs/target".into(), true),
+                (
+                    KindId::CargoTarget,
+                    "new-rs/target/debug/deps".into(),
+                    false
+                ),
+                (
+                    KindId::CargoTarget,
+                    "new-rs/target/debug/incremental".into(),
+                    false
+                ),
+                (KindId::CargoTarget, "rs/target/debug/deps".into(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_next_and_venv_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        // Built Next.js app, and one only configured: pre-adoptable.
+        touch(&r.join("site/package.json"));
+        touch(&r.join("site/.next/BUILD_ID"));
+        touch(&r.join("fresh-site/package.json"));
+        touch(&r.join("fresh-site/next.config.mjs"));
+        // A venv, a folder that isn't one, and a project without a venv yet: never pre-adopted.
+        touch(&r.join("py/pyproject.toml"));
+        touch(&r.join("py/.venv/pyvenv.cfg"));
+        touch(&r.join("not-venv/pyproject.toml"));
+        touch(&r.join("not-venv/.venv/notes.txt"));
+        touch(&r.join("new-py/pyproject.toml"));
+        touch(&r.join("new-py/uv.lock"));
+        let none = GlobSetBuilder::new().build().unwrap();
+        let opts = ScanOptions {
+            kinds: &[KindId::Next, KindId::Venv],
+            exclude: &none,
+            cargo_target_dir_set: false,
+            max_depth: 6,
+        };
+        let mut v: Vec<_> = scan(r, &opts)
+            .into_iter()
+            .map(|c| {
+                (
+                    c.kind,
+                    c.path.strip_prefix(r).unwrap().display().to_string(),
+                    c.exists,
+                )
+            })
+            .collect();
+        v.sort();
+        assert_eq!(
+            v,
+            vec![
+                (KindId::Next, "fresh-site/.next".into(), false),
+                (KindId::Next, "site/.next".into(), true),
+                (KindId::Venv, "py/.venv".into(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn claude_worktrees_are_separate_projects() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        touch(&r.join("web/package.json"));
+        touch(&r.join("web/node_modules/react/index.js"));
+        touch(&r.join("web/.claude/worktrees/fix/package.json"));
+        touch(&r.join("web/.claude/worktrees/fix/node_modules/react/index.js"));
+        touch(&r.join("web/.claude/settings/package.json"));
+        touch(&r.join("web/.claude/settings/package-lock.json"));
+        let none = GlobSetBuilder::new().build().unwrap();
+        assert_eq!(
+            found(r, &none),
+            vec![
+                (
+                    KindId::Node,
+                    "web/.claude/worktrees/fix/node_modules".into(),
+                    true
+                ),
+                (KindId::Node, "web/node_modules".into(), true),
             ]
         );
     }

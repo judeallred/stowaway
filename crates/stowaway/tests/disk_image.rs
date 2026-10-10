@@ -10,10 +10,12 @@ use std::process::Command;
 
 use stowaway::config::Config;
 use stowaway::engine::{self, AdoptOptions, AttachOutcome, Engine};
+use stowaway::fsutil::{self, Overwrite, Pace};
+use stowaway::hdiutil;
 use stowaway::idle::is_mount_point;
 use stowaway::kinds::KindId;
 use stowaway::paths::Layout;
-use stowaway::registry::EntryStatus;
+use stowaway::registry::{Entry, EntryStatus};
 
 struct TestDrive {
     image: PathBuf,
@@ -161,8 +163,10 @@ fn setup() -> Setup {
     let layout = Layout::rooted(&home_path, &home_path.join(".stowaway"));
     engine::init(&layout, &drive.mount_point, std::slice::from_ref(&code)).unwrap();
     let mut config = Config::load_required(&layout).unwrap();
-    config.kinds = vec![KindId::Node, KindId::CargoTarget];
-    config.globals.clear();
+    config.disabled_kinds = KindId::ALL
+        .into_iter()
+        .filter(|k| ![KindId::Node, KindId::CargoTarget].contains(k))
+        .collect();
     config.idle_seconds = 0;
     config.min_adopt_bytes = 0;
     config.save(&layout).unwrap();
@@ -217,7 +221,7 @@ fn adopt_yank_work_offline_and_reconnect() {
     // Unplug: the mount disappears (macOS tears nested mounts down asynchronously) and the
     // empty local folder shows through.
     s.drive.yank(&[&modules]);
-    assert!(stowaway::fsutil::is_effectively_empty(&modules).unwrap());
+    assert!(fsutil::is_effectively_empty(&modules).unwrap());
     s.engine.reconcile().unwrap();
     assert_eq!(
         s.engine.registry.entries().unwrap()[0].status,
@@ -275,19 +279,130 @@ fn cargo_target_keeps_the_drive_copy_on_reconnect() {
         &project.join("target/CACHEDIR.TAG"),
         "Signature: 8a477f597d28d172789f06886806bc55",
     );
-    write(&project.join("target/debug/big-build"), "full build");
-    let target = project.join("target");
+    write(&project.join("target/debug/deps/big-build"), "full build");
+    write(&project.join("target/debug/rs"), "the program");
+    let deps = project.join("target/debug/deps");
     s.engine
-        .adopt(&target, KindId::CargoTarget, AdoptOptions::default())
+        .adopt(&deps, KindId::CargoTarget, AdoptOptions::default())
         .unwrap();
-    s.drive.yank(&[&target]);
+    s.drive.yank(&[&deps]);
     s.engine.reconcile().unwrap();
-    write(&target.join("debug/partial"), "offline");
+    assert!(
+        project.join("target/debug/rs").exists(),
+        "the program stays runnable without the drive"
+    );
+    write(&deps.join("partial"), "offline");
     s.drive.attach();
     s.engine.reconcile().unwrap();
+    assert!(is_mount_point(&deps));
+    assert!(deps.join("big-build").exists());
+    assert!(!deps.join("partial").exists());
+}
+
+/// Recreates what v0.1 left behind: a whole `target/` stowed as one image and mounted on it.
+fn stow_whole(s: &mut Setup, target: &Path) -> Entry {
+    let id = "01legacywholetarget0000000a".to_owned();
+    let image = s.engine.drive().unwrap().layout.image_path(&id);
+    hdiutil::create(&image, 1_000_000_000, "stow legacy", false).unwrap();
+    let staging = tempfile::tempdir().unwrap();
+    let attached = hdiutil::attach(&image, staging.path()).unwrap();
+    fsutil::copy_tree(target, staging.path(), Overwrite::Replace, &mut |_| {
+        Pace::Go
+    })
+    .unwrap();
+    hdiutil::detach(&attached.device, false).unwrap();
+    fsutil::clear_dir_contents(target).unwrap();
+    hdiutil::attach(&image, target).unwrap();
+    let entry = Entry {
+        id,
+        kind: KindId::CargoTarget,
+        path: target.to_path_buf(),
+        created_at: 0,
+        used_bytes: 0,
+        image_bytes: 0,
+        last_seen_at: 0,
+        orphaned_at: None,
+        status: EntryStatus::Mounted,
+        note: None,
+    };
+    s.engine.registry.insert(&entry).unwrap();
+    entry
+}
+
+#[test]
+#[ignore = "attaches disk images"]
+fn whole_targets_are_split_into_build_folders() {
+    let mut s = setup();
+    let project = s.code.join("rs");
+    write(&project.join("Cargo.toml"), "[package]\nname = \"rs\"\n");
+    write(&project.join("Cargo.lock"), "");
+    let target = project.join("target");
+    write(
+        &target.join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55",
+    );
+    for file in [
+        "debug/deps/librs-1.rlib",
+        "debug/incremental/rs-2/s-3/dep-graph.bin",
+        "debug/build/rs-4/output",
+        "release/deps/rs-5",
+    ] {
+        write(&target.join(file), "intermediate");
+    }
+    write(&target.join("debug/rs"), "debug program");
+    write(&target.join("release/rs"), "release program");
+    write(
+        &target.join("debug/.fingerprint/rs-1/lib-rs"),
+        "fingerprint",
+    );
+    let old = stow_whole(&mut s, &target);
     assert!(is_mount_point(&target));
-    assert!(target.join("debug/big-build").exists());
-    assert!(!target.join("debug/partial").exists());
+    assert_eq!(s.engine.whole_entries().unwrap().len(), 1);
+
+    let parts = s.engine.split_entry(&old).unwrap();
+
+    let mut paths: Vec<_> = parts
+        .iter()
+        .map(|e| e.path.strip_prefix(&target).unwrap().display().to_string())
+        .collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        [
+            "debug/build",
+            "debug/deps",
+            "debug/incremental",
+            "release/deps"
+        ]
+    );
+    assert!(!is_mount_point(&target), "target itself is local again");
+    for part in &parts {
+        assert!(is_mount_point(&part.path), "{}", part.path.display());
+    }
+    assert!(target.join("debug/deps/librs-1.rlib").exists());
+    assert!(
+        target
+            .join("debug/incremental/rs-2/s-3/dep-graph.bin")
+            .exists()
+    );
+    assert_eq!(
+        fs::read_to_string(target.join("release/rs")).unwrap(),
+        "release program"
+    );
+    assert!(target.join("debug/.fingerprint/rs-1/lib-rs").exists());
+    assert!(s.engine.registry.by_id(&old.id).unwrap().is_none());
+    assert!(s.engine.whole_entries().unwrap().is_empty());
+
+    let mounts: Vec<&Path> = parts.iter().map(|e| e.path.as_path()).collect();
+    s.drive.yank(&mounts);
+    assert_eq!(
+        fs::read_to_string(target.join("debug/rs")).unwrap(),
+        "debug program",
+        "the programs stay runnable without the drive"
+    );
+    s.drive.attach();
+    s.engine.reconcile().unwrap();
+    assert!(parts.iter().all(|e| is_mount_point(&e.path)));
 }
 
 #[test]
@@ -385,7 +500,7 @@ fn clean_compact_and_gc() {
     let cleaned = s.engine.clean(&s.code).unwrap();
     assert_eq!(cleaned, vec![modules.clone()]);
     assert!(is_mount_point(&modules), "clean keeps the mount");
-    assert!(stowaway::fsutil::is_effectively_empty(&modules).unwrap());
+    assert!(fsutil::is_effectively_empty(&modules).unwrap());
 
     write(&modules.join("again/index.js"), "x");
     s.engine.compact(None, true).unwrap();
@@ -448,24 +563,37 @@ fn real_cargo_builds_through_the_mount_and_offline() {
     };
     build(&project);
     let target = project.join("target");
-    s.engine
-        .adopt(&target, KindId::CargoTarget, AdoptOptions::default())
-        .unwrap();
-    assert!(is_mount_point(&target));
+    let results = s.engine.auto_adopt().unwrap();
+    assert!(results.iter().all(|(_, r)| r.is_ok()), "{results:?}");
+    let deps = target.join("debug/deps");
+    assert!(is_mount_point(&deps));
+    assert!(!is_mount_point(&target), "target itself stays local");
     build(&project);
-    assert!(target.join("debug/hello").exists());
+    let hello = target.join("debug/hello");
+    assert!(hello.exists());
 
-    s.drive.yank(&[&target]);
-    build(&project);
+    let mounts: Vec<PathBuf> = s
+        .engine
+        .registry
+        .entries()
+        .unwrap()
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    let mount_refs: Vec<&Path> = mounts.iter().map(PathBuf::as_path).collect();
+    s.drive.yank(&mount_refs);
+    let ran = Command::new(&hello).output().unwrap();
     assert!(
-        target.join("debug/hello").exists(),
-        "builds locally while the drive is gone"
+        ran.status.success(),
+        "the built program runs without the drive"
     );
+    build(&project);
+    assert!(hello.exists(), "builds locally while the drive is gone");
 
     s.drive.attach();
     let outcomes = s.engine.reconcile().unwrap();
     assert!(
-        is_mount_point(&target),
+        is_mount_point(&deps),
         "{outcomes:?} {:?}",
         s.engine.registry.entries().unwrap()
     );

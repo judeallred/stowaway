@@ -280,7 +280,8 @@ fn globals(engine: &Engine, entries: &[EntryReport]) -> Result<Vec<GlobalReport>
     let mut out = Vec::new();
     for (&kind, locations) in &engine.config.globals {
         let managed: Vec<&EntryReport> = entries.iter().filter(|e| e.kind == kind).collect();
-        let is_managed = |path: &PathBuf| managed.iter().any(|e| &e.path == path);
+        // A split cache (DerivedData) counts as managed when any of its parts is.
+        let is_managed = |path: &PathBuf| managed.iter().any(|e| e.path.starts_with(path));
         let paths: Vec<PathBuf> = locations
             .iter()
             .filter(|p| p.is_dir() || is_managed(p))

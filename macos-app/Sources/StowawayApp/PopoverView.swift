@@ -305,9 +305,17 @@ private struct PerformanceRow: View {
 private struct ProblemsSection: View {
   let problems: [Problem]
 
+  /// Problems shown before the rest are summed up in one line.
+  private static let shownLimit = 5
+
+  /// Errors first, so a real error is never cut off behind warnings.
+  private var ordered: [Problem] {
+    problems.filter { $0.severity == .error } + problems.filter { $0.severity != .error }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      ForEach(problems) { problem in
+      ForEach(ordered.prefix(Self.shownLimit)) { problem in
         VStack(alignment: .leading, spacing: 1) {
           Label(
             problem.message,
@@ -320,6 +328,12 @@ private struct ProblemsSection: View {
             Text(hint).font(.caption2).foregroundStyle(.secondary).padding(.leading, 20)
           }
         }
+      }
+      if problems.count > Self.shownLimit {
+        Text("\(problems.count - Self.shownLimit) more…")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .padding(.leading, 20)
       }
     }
   }
