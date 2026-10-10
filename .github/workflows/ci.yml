@@ -115,9 +115,7 @@ jobs:
       - run: cargo run -p xtask --locked -- ipc-schema --check
       - run: swift test --package-path macos-app -Xswiftc -warnings-as-errors
       # The same universal build the release workflow publishes, so packaging breaks here first.
-      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: UNIVERSAL=1 macos-app/scripts/bundle.sh
-      - run: codesign --verify --deep --strict macos-app/build/Stowaway.app
 
   workflows:
     runs-on: ubuntu-24.04

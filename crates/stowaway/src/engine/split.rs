@@ -4,7 +4,8 @@
 //! programs built in it left with the drive. Converting one copies each part to its own image and
 //! everything else back to this Mac. The old image isn't changed, and the old entry stays
 //! registered until a single registry update swaps it for the parts. If the conversion stops
-//! before that, recovery deletes the unregistered images and reconcile reattaches the old one.
+//! before that, recovery deletes the unregistered images and reconcile reattaches the old one,
+//! merging in the copy left in its place, which matches the image.
 
 use std::fs;
 use std::path::{Path, PathBuf};

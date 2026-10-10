@@ -912,19 +912,17 @@ impl Engine {
 
     fn apply_reconnect_policy(&self, entry: &Entry, image: &Path) -> Result<()> {
         let path = &entry.path;
-        let (overwrite, op) = match entry.kind.spec().policy {
-            ReconnectPolicy::ExternalWins => {
-                fsutil::clear_dir_contents(path)?;
-                return Ok(());
-            }
+        // Whether the image is emptied first, and whether local files replace the image's.
+        let (clear_image, overwrite, op) = match entry.kind.spec().policy {
             ReconnectPolicy::LocalWinsIfComplete(markers) => {
                 if !fsutil::contains_any(path, markers) {
                     fsutil::clear_dir_contents(path)?;
                     return Ok(());
                 }
-                (Overwrite::Replace, "reconnect")
+                (true, Overwrite::Replace, "reconnect")
             }
-            ReconnectPolicy::MergeNoClobber => (Overwrite::Keep, "merge"),
+            ReconnectPolicy::MergeLocalWins => (false, Overwrite::Replace, "merge"),
+            ReconnectPolicy::MergeNoClobber => (false, Overwrite::Keep, "merge"),
         };
         let mut tracker = TransferTracker::new(self.observer.clone(), &entry.id, path, op);
         self.registry
@@ -934,7 +932,7 @@ impl Engine {
         let staging = self.staging_mount(&entry.id)?;
         let attached = hdiutil::attach(image, &staging)?;
         let copied = (|| {
-            if overwrite == Overwrite::Replace {
+            if clear_image {
                 fsutil::clear_dir_contents(&staging)?;
             }
             self.copy_with_progress(&mut tracker, path, &staging, overwrite, &[])

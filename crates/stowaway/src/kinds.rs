@@ -115,8 +115,10 @@ pub enum ReconnectPolicy {
     /// Local replaces the image if it contains one of these "install finished" markers;
     /// otherwise local is discarded.
     LocalWinsIfComplete(&'static [&'static str]),
-    /// Local is discarded; the image is kept.
-    ExternalWins,
+    /// Local files are copied over the image's, and the image's other files are kept. For build
+    /// folders whose build records stay local (spec §4.11): everything built while the drive was
+    /// away is kept, so no record points at an output that's gone.
+    MergeLocalWins,
     /// Files missing from the image are copied in; nothing in the image is overwritten.
     MergeNoClobber,
 }
@@ -217,7 +219,7 @@ static CARGO_TARGET: KindSpec = KindSpec {
         lockfiles: &["Cargo.lock"],
         required_marker: Some("CACHEDIR.TAG"),
     },
-    policy: ReconnectPolicy::ExternalWins,
+    policy: ReconnectPolicy::MergeLocalWins,
     cargo_package_lock: false,
     split: Some(Split {
         part_names: CARGO_PARTS,
@@ -290,7 +292,7 @@ static XCODE_DERIVED_DATA: KindSpec = KindSpec {
     label: "Xcode DerivedData",
     description: "Xcode's build intermediates and indexes. Built apps stay on this Mac.",
     scope: Scope::Global,
-    policy: ReconnectPolicy::ExternalWins,
+    policy: ReconnectPolicy::MergeLocalWins,
     cargo_package_lock: false,
     split: Some(Split {
         part_names: &[

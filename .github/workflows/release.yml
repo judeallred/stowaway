@@ -63,17 +63,7 @@ jobs:
           fi
           echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
-      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: UNIVERSAL=1 macos-app/scripts/bundle.sh
-      - run: codesign --verify --deep --strict macos-app/build/Stowaway.app
-
-      - name: Package
-        run: |
-          mkdir dist
-          ditto -c -k --keepParent macos-app/build/Stowaway.app "dist/Stowaway-$VERSION.zip"
-          cp target/universal/stowaway LICENSE dist/
-          tar -czf "dist/stowaway-$VERSION-macos-universal.tar.gz" -C dist stowaway LICENSE
-          rm dist/stowaway dist/LICENSE
 
       - name: Notarize
         if: env.SIGNED == 'true'
@@ -82,35 +72,48 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool submit "dist/Stowaway-$VERSION.zip" --wait \
+          submission="$RUNNER_TEMP/Stowaway.zip"
+          ditto -c -k --keepParent macos-app/build/Stowaway.app "$submission"
+          xcrun notarytool submit "$submission" --wait \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
           xcrun stapler staple macos-app/build/Stowaway.app
-          rm "dist/Stowaway-$VERSION.zip"
-          ditto -c -k --keepParent macos-app/build/Stowaway.app "dist/Stowaway-$VERSION.zip"
 
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Package
         run: |
+          mkdir dist
+          ditto -c -k --keepParent macos-app/build/Stowaway.app "dist/Stowaway-$VERSION.zip"
+          cp target/universal/stowaway LICENSE dist/
+          tar -czf "dist/stowaway-$VERSION-macos-universal.tar.gz" -C dist stowaway LICENSE
+          rm dist/stowaway dist/LICENSE
           (cd dist && shasum -a 256 -- * > SHA256SUMS)
-          if [ "$SIGNED" = true ]; then
-            install="Unzip, move **Stowaway.app** to Applications and open it."
-          else
-            install="Unzip, move **Stowaway.app** to Applications and open it. This build isn't
-          signed with a Developer ID yet, so macOS blocks the first launch: open **System Settings →
-          Privacy & Security** and click **Open Anyway**, or run
-          \`xattr -dr com.apple.quarantine /Applications/Stowaway.app\`."
-          fi
-          cat > notes.md <<EOF
+
+      - name: Write the release notes
+        run: |
+          cat > notes.md <<'EOF'
           **Beta.** Stowaway moves folders on your disk; keep backups of anything you can't rebuild.
           macOS 14 or later, Apple silicon or Intel.
 
           ### Install
 
-          $install
-
-          The command-line tool is also inside the app at
-          \`Stowaway.app/Contents/Helpers/stowaway\`, or download it on its own below.
+          Unzip, move **Stowaway.app** to Applications and open it.
           EOF
+          if [ "$SIGNED" != true ]; then
+            cat >> notes.md <<'EOF'
+
+          This build isn't signed with a Developer ID yet, so macOS blocks the first launch: open
+          **System Settings → Privacy & Security** and click **Open Anyway**, or run
+          `xattr -dr com.apple.quarantine /Applications/Stowaway.app`.
+          EOF
+          fi
+          cat >> notes.md <<'EOF'
+
+          The command-line tool is also inside the app at `Stowaway.app/Contents/Helpers/stowaway`,
+          or download it on its own below.
+          EOF
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           gh release create "$TAG" dist/* --title "Stowaway $VERSION" --notes-file notes.md \
             --prerelease --verify-tag

@@ -87,19 +87,7 @@ impl TestDrive {
     /// it) to vanish: macOS tears nested mounts down asynchronously, and writing into a folder
     /// before then fails with an I/O error.
     fn yank(&self, mounts: &[&Path]) {
-        // Even a forced detach can report "Resource busy" while macOS is still settling the
-        // images on the drive, as it does on CI runners.
-        let mut attempts = 0;
-        while !Command::new("hdiutil")
-            .args(["detach", "-force", &self.device])
-            .status()
-            .unwrap()
-            .success()
-        {
-            attempts += 1;
-            assert!(attempts < 10, "couldn't yank the drive");
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
+        hdiutil::detach(&self.device, true).unwrap();
         assert!(!self.mount_point.exists() || fs::read_dir(&self.mount_point).is_err());
         let started = std::time::Instant::now();
         while mounts.iter().any(|m| is_mount_point(m)) && started.elapsed().as_secs() < 30 {
@@ -282,7 +270,7 @@ fn incomplete_offline_work_does_not_replace_the_drive_copy() {
 
 #[test]
 #[ignore = "attaches disk images"]
-fn cargo_target_keeps_the_drive_copy_on_reconnect() {
+fn cargo_builds_made_offline_merge_into_the_drive_copy() {
     let mut s = setup();
     let project = s.code.join("rs");
     write(&project.join("Cargo.toml"), "[package]\nname = \"rs\"\n");
@@ -307,8 +295,9 @@ fn cargo_target_keeps_the_drive_copy_on_reconnect() {
     s.drive.attach();
     s.engine.reconcile().unwrap();
     assert!(is_mount_point(&deps));
+    // Both survive: the build records stay local, so they may point at either.
     assert!(deps.join("big-build").exists());
-    assert!(!deps.join("partial").exists());
+    assert_eq!(fs::read_to_string(deps.join("partial")).unwrap(), "offline");
 }
 
 /// Recreates what v0.1 left behind: a whole `target/` stowed as one image and mounted on it.

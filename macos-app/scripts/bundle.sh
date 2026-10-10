@@ -4,8 +4,8 @@
 #
 # Usage: macos-app/scripts/bundle.sh [output-dir]   (default: macos-app/build)
 # Signing: set CODESIGN_IDENTITY to sign with a Developer ID; otherwise the bundle is ad-hoc signed.
-# Architectures: set UNIVERSAL=1 to build for both Apple silicon and Intel (needs the
-# aarch64-apple-darwin and x86_64-apple-darwin Rust targets); otherwise this Mac's only.
+# Architectures: set UNIVERSAL=1 to build for both Apple silicon and Intel; otherwise this Mac's
+# only.
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -14,6 +14,7 @@ app="$out/Stowaway.app"
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
 
 if [ "${UNIVERSAL:-}" = 1 ]; then
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
   for triple in aarch64-apple-darwin x86_64-apple-darwin; do
     cargo build --release --locked -p stowaway --target "$triple" \
       --manifest-path "$root/Cargo.toml"
@@ -84,4 +85,5 @@ identity=${CODESIGN_IDENTITY:--}
 if [ "$identity" = - ]; then timestamp=--timestamp=none; else timestamp=--timestamp; fi
 codesign --force --options runtime "$timestamp" --sign "$identity" "$app/Contents/Helpers/stowaway"
 codesign --force --options runtime "$timestamp" --sign "$identity" "$app"
+codesign --verify --deep --strict "$app"
 echo "Built $app"
