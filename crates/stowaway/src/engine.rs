@@ -388,9 +388,19 @@ impl Engine {
         Ok(())
     }
 
-    /// The connected drive, if it's present. Recreates Stowaway's folders on it if they've been
-    /// deleted, so the store heals instead of failing every operation.
+    /// The drive Stowaway may use: the connected drive, unless the user detached Stowaway from
+    /// it. While detached, everything behaves as if the drive were gone.
     pub fn drive(&mut self) -> Option<Drive> {
+        if self.config.detached {
+            return None;
+        }
+        self.connected_drive()
+    }
+
+    /// The connected drive, if it's present, whether or not Stowaway is detached from it.
+    /// Recreates Stowaway's folders on it if they've been deleted, so the store heals instead of
+    /// failing every operation.
+    pub fn connected_drive(&mut self) -> Option<Drive> {
         self.located = self
             .config
             .volume_uuid
@@ -1212,7 +1222,7 @@ impl Engine {
     ///
     /// [`Error::Busy`] naming the processes that hold files open.
     pub fn eject(&mut self) -> Result<()> {
-        let drive = self.require_drive()?;
+        let drive = self.connected_drive().ok_or(Error::DriveOffline)?;
         Self::detach_images(&drive, "eject")?;
         crate::cmd::run(
             "diskutil",
@@ -1235,6 +1245,34 @@ impl Engine {
             Self::detach_images(&drive, "quit")?;
         }
         self.handle_drive_absent()
+    }
+
+    /// Detaches every image and keeps them detached until [`Engine::attach`], so each managed
+    /// folder is an ordinary local folder again. Nothing is copied back: the folders are empty
+    /// until rebuilt or reinstalled, and the images stay on the drive.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] naming the processes that hold files open; nothing is detached then.
+    pub fn detach(&mut self) -> Result<()> {
+        if let Some(drive) = self.connected_drive() {
+            Self::detach_images(&drive, "detach")?;
+        }
+        self.config.detached = true;
+        self.config.save(&self.layout)?;
+        self.handle_drive_absent()
+    }
+
+    /// Undoes [`Engine::detach`]: attaches every image again. Folders filled in the meantime are
+    /// reconciled with their images like after the drive was away (spec §4.2).
+    ///
+    /// # Errors
+    ///
+    /// Fails if the config can't be saved or `hdiutil info` fails.
+    pub fn attach(&mut self) -> Result<()> {
+        self.config.detached = false;
+        self.config.save(&self.layout)?;
+        self.reconcile().map(|_| ())
     }
 
     fn detach_images(drive: &Drive, action: &str) -> Result<()> {

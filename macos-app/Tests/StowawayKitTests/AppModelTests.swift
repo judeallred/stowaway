@@ -9,6 +9,7 @@ struct AppModelTests {
     connected: Bool = true,
     lowSpace: Bool = false,
     paused: Bool = false,
+    detached: Bool = false,
     offloaded: UInt64 = 182_400_000_000,
     local: UInt64 = 0,
     problems: [Problem] = []
@@ -24,7 +25,8 @@ struct AppModelTests {
       performance: Performance(
         lastBench: nil, recentTransferMbps: nil, recentTransferFilesPerSec: nil, hint: nil,
         atLeastInternal: false),
-      attachedImages: 0, paused: paused, transferPriority: .background, agentRunning: true,
+      attachedImages: 0, paused: paused, detached: detached, transferPriority: .background,
+      agentRunning: true,
       licenseReminder: false)
   }
 
@@ -51,6 +53,14 @@ struct AppModelTests {
         "3.1 GB is being used locally until the drive comes back.",
       ])
     #expect(model.iconState == .disconnected)
+  }
+
+  @Test func headlineWhenDetached() {
+    let model = AppModel(client: AgentClient(socketPath: "/nonexistent"))
+    model.apply(.status(Self.status(detached: true)))
+    #expect(model.headline == "Detached — using local folders")
+    #expect(model.subheadlines == ["182.4 GB stays on FastSSD. Attach to use it again."])
+    #expect(model.iconState == .detached)
   }
 
   @Test func planShowsEachPhase() {

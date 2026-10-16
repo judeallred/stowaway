@@ -456,6 +456,33 @@ fn release_with_copy_restores_a_plain_folder() {
 
 #[test]
 #[ignore = "attaches disk images"]
+fn detach_leaves_plain_folders_until_attach() {
+    let mut s = setup();
+    let modules = node_project(&s.code, "app", true);
+    s.engine
+        .adopt(&modules, KindId::Node, AdoptOptions::default())
+        .unwrap();
+    s.engine.detach().unwrap();
+    assert!(!is_mount_point(&modules));
+    assert!(
+        fsutil::is_effectively_empty(&modules).unwrap(),
+        "nothing is copied back"
+    );
+    assert!(s.engine.drive().is_none() && s.engine.connected_drive().is_some());
+    // While detached, neither reconcile nor adoption touches the folders.
+    s.engine.reconcile().unwrap();
+    assert!(s.engine.auto_adopt().unwrap().is_empty());
+    assert!(!is_mount_point(&modules));
+    s.engine.attach().unwrap();
+    assert!(is_mount_point(&modules));
+    assert_eq!(
+        fs::read_to_string(modules.join("dep/index.js")).unwrap(),
+        "module.exports = 1;"
+    );
+}
+
+#[test]
+#[ignore = "attaches disk images"]
 fn deleted_and_moved_repositories() {
     let mut s = setup();
     let gone = node_project(&s.code, "gone", true);

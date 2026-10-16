@@ -313,6 +313,7 @@ stowaway compact [<path>]  # rebuild bloated images to reclaim space on the driv
 stowaway gc [--dry-run]
 stowaway roots list | add <path> | remove <path> [--copy]   # watched folders (same as the menu bar's Configure Folders)
 stowaway eject             # detach all images (naming processes that hold files), then eject the drive
+stowaway detach | attach   # make managed folders plain local folders (nothing copied back), or undo it
 stowaway pause | resume    # stop or resume auto-adoption (drive switching keeps working)
 stowaway priority [background|normal]  # show or set offload transfer priority
 stowaway bug-report [--print]  # open a GitHub issue prefilled with diagnostics, to review and submit
@@ -359,7 +360,8 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 | Drive disconnected (working locally) | Filled circle with an × |
 | Drive nearly full or full | Filled circle with ! |
 | Agent not running, permissions missing, links dangling, or another error | Filled warning triangle |
-| Paused | Filled pause circle |
+| Paused (`stowaway pause`) | Filled pause circle |
+| Detached | Filled circle with a − |
 
 **Popover** (opens when the icon is clicked)
 
@@ -376,7 +378,7 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 6. **Actions:**
    - Configure Folders…
    - Eject Drive: runs the same flow as `stowaway eject`. If programs are still holding files on the drive, it lists them by name.
-   - Pause / Resume
+   - Detach… / Attach: Detach asks for confirmation, then detaches every image and keeps them detached, as if the drive were gone: each managed folder is an ordinary local folder again, empty until rebuilt or reinstalled. Nothing is copied back and the images stay on the drive. The setting (`detached` in the config) survives restarts and reconnects. While detached the headline reads "Detached — using local folders" and the button becomes Attach, which reattaches everything; folders filled in the meantime are reconciled with the reconnect policies (§4.2). Same as `stowaway detach` / `stowaway attach`.
    - Open Log
    - Report a Bug…: runs `stowaway bug-report`, which opens a new GitHub issue in the browser, prefilled with the Stowaway and macOS versions, the Mac model, whether the agent is running, the status summary and the end of the agent log. The home folder is shown as `~`. Nothing is sent until the user submits the issue. GitHub caps the link's length, so the log is trimmed to fit; the full report is saved to `~/.stowaway/bug-report.md`. The command works without the agent, which is when a report is often needed.
    - Quit Stowaway: runs the same flow as `stowaway agent stop`, then quits the app. Like Eject, it lists the programs holding files on the drive and stays open if there are any. When the app starts again it starts the agent, which reattaches the images (§4.3).

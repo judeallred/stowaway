@@ -72,12 +72,13 @@ struct PopoverView: View {
           Task { await model.perform(.eject, message: "Ejecting…") }
         }
       }
-      if let paused = model.status?.paused {
-        Button(paused ? "Resume" : "Pause") {
-          Task {
-            await model.perform(
-              paused ? .resume : .pause, message: paused ? "Resuming…" : "Pausing…")
+      if let status = model.status {
+        if status.detached == true {
+          Button("Attach") {
+            Task { await model.perform(.attach, message: "Attaching…") }
           }
+        } else {
+          Button("Detach…") { confirmDetach(offloaded: status.offloadedBytes) }
         }
       }
       Button("Open Log") { openLog() }
@@ -90,6 +91,23 @@ struct PopoverView: View {
       .disabled(model.busyMessage != nil)
     }
     .buttonStyle(.link)
+  }
+
+  /// Asks before detaching: the folders come back empty, not with their contents.
+  private func confirmDetach(offloaded: UInt64) {
+    let alert = NSAlert()
+    alert.messageText = "Detach Stowaway?"
+    alert.informativeText =
+      "Every folder Stowaway manages becomes an ordinary local folder again, empty until you "
+      + "reinstall or rebuild. Nothing is copied back: \(Format.bytes(offloaded)) stays on "
+      + "\(model.driveName), and Attach brings it back."
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: "Detach")
+    alert.addButton(withTitle: "Cancel")
+    alert.buttons[0].hasDestructiveAction = true
+    NSApp.activate()
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    Task { await model.perform(.detach, message: "Detaching…") }
   }
 
   private func startAgent() {

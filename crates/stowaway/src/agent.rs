@@ -751,6 +751,8 @@ fn dispatch(call: Call, shared: &Arc<Shared>) -> Result<Option<serde_json::Value
         }),
         Call::Eject => locked(&mut |engine| engine.eject().map(|()| None)),
         Call::Quit => quit(shared).map(|()| None),
+        Call::Detach => locked(&mut |engine| engine.detach().map(|()| None)),
+        Call::Attach => locked(&mut |engine| engine.attach().map(|()| None)),
         Call::Pause => locked(&mut |engine| ops::set_paused(engine, true).map(|()| None)),
         Call::Resume => locked(&mut |engine| ops::set_paused(engine, false).map(|()| None)),
         Call::SetTransferPriority { priority } => {

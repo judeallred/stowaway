@@ -61,7 +61,8 @@ Folders tracked by git are never touched, and source code never moves.
 
 ```
 stowaway status | bench | scan | adopt <path> | release <path> | clean [path]
-stowaway compact | doctor [--fix] | gc | roots list|add|remove | eject | pause | resume
+stowaway compact | doctor [--fix] | gc | roots list|add|remove | eject | detach | attach
+stowaway pause | resume
 stowaway agent install|uninstall | uninstall | license personal|work|purchased
 ```
 

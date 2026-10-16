@@ -116,6 +116,11 @@ enum Command {
     },
     /// Detach all images and eject the drive.
     Eject,
+    /// Make every managed folder a plain local folder again, without copying anything back.
+    /// The folders are empty until rebuilt; everything stays on the drive until `attach`.
+    Detach,
+    /// Attach the drive's folders again after `detach`.
+    Attach,
     /// Stop adopting new folders (drive handling continues).
     Pause,
     /// Resume adopting new folders.
@@ -424,6 +429,29 @@ fn run(command: Command) -> Result<()> {
                 engine.eject()?;
             }
             println!("The drive was ejected. You can unplug it.");
+            Ok(())
+        }
+        Command::Detach | Command::Attach => {
+            let detach = matches!(command, Command::Detach);
+            let call = if detach { Call::Detach } else { Call::Attach };
+            if ipc::agent_running(&layout.socket_path()) {
+                ipc::call(&layout.socket_path(), call, Duration::from_secs(120))?;
+            } else {
+                let (_lock, mut engine) = locked_engine(&layout)?;
+                if detach {
+                    engine.detach()?;
+                } else {
+                    engine.attach()?;
+                }
+            }
+            println!(
+                "{}",
+                if detach {
+                    "Detached: your folders are plain local folders. Run `stowaway attach` to use the drive again."
+                } else {
+                    "Attached: your folders are on the drive again."
+                }
+            );
             Ok(())
         }
         Command::Pause | Command::Resume => {

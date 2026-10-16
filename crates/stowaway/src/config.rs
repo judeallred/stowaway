@@ -49,6 +49,10 @@ pub struct Licensing {
 /// The configuration file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent settings in a file people edit, not a state machine"
+)]
 pub struct Config {
     /// UUID of the external volume.
     pub volume_uuid: Option<String>,
@@ -86,6 +90,8 @@ pub struct Config {
     pub licensing: Licensing,
     /// Auto-adoption paused.
     pub paused: bool,
+    /// Every image is kept detached, as if the drive were gone, until the user attaches again.
+    pub detached: bool,
     /// Whether copies yield to other disk activity. Read again during copies, so a change
     /// applies to one already running.
     pub transfer_priority: TransferPriority,
@@ -124,6 +130,7 @@ impl Default for Config {
             internal_case_sensitive: false,
             licensing: Licensing::default(),
             paused: false,
+            detached: false,
             transfer_priority: TransferPriority::Background,
         }
     }

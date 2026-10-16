@@ -29,7 +29,7 @@ struct ProtocolTests {
     .status, .subscribe, .refresh, .scan,
     .rootsAdd(path: "/Users/me/code", dryRun: true),
     .rootsRemove(path: "/Users/me/code", copy: false),
-    .eject, .quit, .pause, .resume,
+    .eject, .quit, .detach, .attach, .pause, .resume,
     .setTransferPriority(.normal),
     .setKindEnabled(kind: "pnpm-store", enabled: false, copy: true),
     .doctor(fix: false),

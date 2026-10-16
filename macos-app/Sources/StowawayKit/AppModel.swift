@@ -18,6 +18,8 @@ public enum IconState: Equatable, Sendable {
   case warning
   case error
   case paused
+  /// Every folder is a plain local folder until the user attaches again.
+  case detached
 
   /// The small SF Symbol overlapping the logo's corner, or nil for the plain logo. Icons never
   /// animate.
@@ -33,6 +35,7 @@ public enum IconState: Equatable, Sendable {
     case .warning: "exclamationmark.circle.fill"
     case .error: "exclamationmark.triangle.fill"
     case .paused: "pause.circle.fill"
+    case .detached: "minus.circle.fill"
     }
   }
 
@@ -49,6 +52,7 @@ public enum IconState: Equatable, Sendable {
     case .warning: "Stowaway, needs attention"
     case .error: "Stowaway, problem"
     case .paused: "Stowaway, paused"
+    case .detached: "Stowaway, detached"
     }
   }
 
@@ -149,6 +153,7 @@ public final class AppModel {
     if status.drive.full || status.problems.contains(where: { $0.severity == .error }) {
       return .error
     }
+    if status.detached == true { return .detached }
     if !status.drive.connected { return .disconnected }
     if let transfer = activeTransfers.first { return .forTransfer(op: transfer.op) }
     switch plan?.phase {
@@ -169,6 +174,7 @@ public final class AppModel {
   public var headline: String {
     guard agentReachable else { return "Stowaway isn't running" }
     guard let status else { return "Connecting to Stowaway…" }
+    if status.detached == true { return "Detached — using local folders" }
     if status.drive.connected {
       return "Stowaway is offloading \(Format.bytes(status.offloadedBytes))"
     }
@@ -181,6 +187,11 @@ public final class AppModel {
       return ["Start it to keep your dependencies on \(driveName)."]
     }
     guard let status else { return [] }
+    if status.detached == true {
+      return [
+        "\(Format.bytes(status.offloadedBytes)) stays on \(driveName). Attach to use it again."
+      ]
+    }
     if status.drive.connected { return [] }
     var lines = ["\(Format.bytes(status.offloadedBytes)) is waiting on \(driveName)."]
     if status.localBytes > 0 {

@@ -60,6 +60,11 @@ pub enum Call {
     /// Stops any copy in progress, detaches all images so folders fall back to their local
     /// contents, and stops the agent. It reattaches them when it next starts.
     Quit,
+    /// Detaches every image and keeps them detached, so managed folders are plain local
+    /// folders, without copying anything back.
+    Detach,
+    /// Attaches the images again after `Detach`.
+    Attach,
     /// Pauses auto-adoption.
     Pause,
     /// Resumes auto-adoption.
@@ -267,7 +272,7 @@ pub fn samples() -> Vec<serde_json::Value> {
     out
 }
 
-fn sample_requests() -> [Call; 16] {
+fn sample_requests() -> [Call; 18] {
     [
         Call::Status,
         Call::Subscribe,
@@ -283,6 +288,8 @@ fn sample_requests() -> [Call; 16] {
         },
         Call::Eject,
         Call::Quit,
+        Call::Detach,
+        Call::Attach,
         Call::Pause,
         Call::Resume,
         Call::SetTransferPriority {
@@ -443,6 +450,7 @@ fn sample_status() -> (StatusReport, EngineEvent, crate::registry::Transfer) {
         },
         attached_images: 23,
         paused: false,
+        detached: false,
         transfer_priority: TransferPriority::Background,
         agent_running: true,
         license_reminder: false,
