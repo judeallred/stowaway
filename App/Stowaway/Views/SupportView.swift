@@ -175,16 +175,19 @@ struct SupportView: View {
   }
 
   private var thanks: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 10) {
         Image(systemName: "heart.fill").foregroundStyle(.pink).font(.title2)
         Text("Thank you").font(.title2.weight(.semibold))
       }
+      Image(nsImage: Logo.image(size: 72))
+        .frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
       Text(
-        store.ownedAudience == .business
-          ? "Your business purchase keeps prices low for people using it personally. Stowing is unlimited, for good."
-          : "Your purchase means everything to our 3-person team. Stowing is unlimited, for good."
+        "Your purchase means the world to us. Thank you for supporting independent software."
       )
+      .fixedSize(horizontal: false, vertical: true)
+      Text("Your stowage is now unlimited, forever.").font(.headline)
       if store.latestPurchase != nil {
         Button("Paid Invoice…") { showingInvoice = true }
       }

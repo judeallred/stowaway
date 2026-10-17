@@ -76,10 +76,6 @@ final class Store {
   func displayName(of productID: String) -> String? {
     products.values.joined().first { $0.id == productID }?.displayName
   }
-  var ownedAudience: Audience? {
-    if owned.contains(where: { $0.contains(".business.") }) { return .business }
-    return owned.isEmpty ? nil : .personal
-  }
 
   /// The limit `Engine.adopt` applies: none once anything's been bought, the free tier otherwise.
   var offloadLimit: Int64? { hasPurchased ? nil : Self.freeOffloadLimit }
