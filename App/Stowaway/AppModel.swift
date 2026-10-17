@@ -121,6 +121,9 @@ final class AppModel {
   func start() {
     store.start()
     refreshSettings()
+    let cache = ScanCache.load()
+    for folder in cache.folders { measured[folder.path] = (folder.bytes, folder.activity) }
+    rows = merge(candidates: cache.candidates, entries: engine.entries())
     showingOnboarding = !didOnboard && roots.isEmpty
     if !roots.isEmpty { didOnboard = true }
     watchVolumes()
@@ -448,6 +451,7 @@ final class AppModel {
     rows = merge(candidates: candidates, entries: engine.entries())
     refreshSettings()
     await measure()
+    saveCache(candidates)
     await autoOffload()
   }
 
@@ -456,7 +460,14 @@ final class AppModel {
   private func merge(candidates: [Candidate], entries: [Entry]) -> [Row] {
     var rows: [String: Row] = [:]
     for c in candidates {
-      rows[c.path] = Row(kind: c.kind, path: c.path, project: c.project, place: .mac)
+      var row = Row(kind: c.kind, path: c.path, project: c.project, place: .mac)
+      // Last known size and recency until this scan measures again, so totals are corrected
+      // rather than recounted from zero.
+      if let known = measured[c.path] {
+        row.localBytes = known.bytes
+        row.lastActivity = known.activity
+      }
+      rows[c.path] = row
     }
     for entry in entries {
       let container = Self.container(of: entry)
@@ -482,6 +493,20 @@ final class AppModel {
   private static func projectFolder(of entry: Entry, container: String) -> String? {
     guard entry.kind?.isGlobal != true else { return nil }
     return URL(fileURLWithPath: container).deletingLastPathComponent().path
+  }
+
+  private func saveCache(_ candidates: [Candidate]) {
+    let folders = candidates.compactMap { c in
+      measured[c.path].map {
+        ScanCache.Folder(
+          path: c.path, kind: c.kind.rawValue, project: c.project, bytes: $0.bytes,
+          activity: $0.activity)
+      }
+    }
+    // Forget folders that are gone, so the cache doesn't grow forever.
+    let current = Set(candidates.map(\.path))
+    measured = measured.filter { current.contains($0.key) }
+    ScanCache(folders: folders).save()
   }
 
   /// Measures sizes and recency in the background, a few folders at a time.

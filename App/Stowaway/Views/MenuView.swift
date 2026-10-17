@@ -21,7 +21,17 @@ struct MenuView: View {
       Divider()
       VStack(alignment: .leading, spacing: 2) {
         action("Open Stowaway…", "macwindow") { show { openWindow(id: "library") } }
-        action("Scan Now", "arrow.clockwise") { Task { await model.scan() } }
+        let onMac = model.rows.filter { $0.place == .mac }
+        if !onMac.isEmpty {
+          let size = Format.bytes(model.reclaimableBytes)
+          if model.driveConnected {
+            action("Stow All (\(size))", "shippingbox") { Task { await model.offload(onMac) } }
+              .disabled(model.activity != nil)
+          } else {
+            action("Purge All (\(size))…", "trash") { show { confirmPurge(onMac) } }
+              .disabled(model.activity != nil)
+          }
+        }
       }
       Divider()
       VStack(alignment: .leading, spacing: 2) {
@@ -55,7 +65,9 @@ struct MenuView: View {
         action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
           .padding(.horizontal, -6)
       }
-      if model.reclaimableBytes > 0 {
+      if let activity = model.activity {
+        Text(activity).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+      } else if model.reclaimableBytes > 0 {
         Text("\(Format.bytes(model.reclaimableBytes)) re-creatable on this Mac")
           .foregroundStyle(.secondary)
       }
@@ -99,6 +111,23 @@ struct MenuView: View {
         }
       })
     menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+  }
+
+  /// Deletes every re-creatable folder on this Mac, after asking. Offered when there's no drive
+  /// to stow them on.
+  private func confirmPurge(_ rows: [Row]) {
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText =
+      "Delete \(rows.count) folder\(rows.count == 1 ? "" : "s") (\(Format.bytes(model.reclaimableBytes)))?"
+    alert.informativeText =
+      "These are re-created by your tools (npm install, cargo build, Xcode…), which takes time and may need the network. Folders stowed on a drive aren't affected."
+    alert.addButton(withTitle: "Delete")
+    alert.addButton(withTitle: "Cancel")
+    alert.buttons[0].hasDestructiveAction = true
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    let model = model
+    Task { await model.delete(rows) }
   }
 
   private func show(_ open: () -> Void) {

@@ -17,7 +17,7 @@ HOW TO TRY IT (no external drive needed)
    and a Rust project with build files) and adds it to the folders it looks in. (Or go through
    the welcome steps and choose any folder of your own that holds code; each step is optional.)
 2. The library window lists the sample's node_modules and Cargo build files with their sizes.
-3. Click "Choose Stow Location…" (top right) and pick any folder, for example a new folder in
+3. Click "Connect External Storage…" (top right) and pick any folder, for example a new folder in
    Documents. An external drive works the same way, but isn't required.
 4. Select the row and click Stow. The folder moves to the drive, and Stowaway
    leaves a symbolic link where it was, so tools still find it. "Where" shows "Drive".

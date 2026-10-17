@@ -268,7 +268,7 @@ private struct DriveButton: View {
           name,
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
       } else {
-        Label("Choose Stow Location…", systemImage: "externaldrive.badge.plus")
+        Label("Connect External Storage…", systemImage: "externaldrive.badge.plus")
       }
     }
     .help(
