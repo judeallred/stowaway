@@ -269,8 +269,21 @@ final class AppModel {
     Task { await scan() }
   }
 
+  /// The chosen folders with any chosen inside another folded under it: the outer one already
+  /// covers them. (Their grants are kept, so removing the outer one leaves them working.)
+  var rootGroups: [(root: String, nested: [String])] {
+    func inside(_ path: String, _ other: String) -> Bool {
+      path != other && path.hasPrefix(other.hasSuffix("/") ? other : other + "/")
+    }
+    let sorted = roots.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    return sorted.filter { root in !sorted.contains { inside(root, $0) } }
+      .map { top in (top, sorted.filter { inside($0, top) }) }
+  }
+
+  /// Stops looking in a folder, and in any chosen folders inside it.
   func removeRoot(_ path: String) {
-    engine.revokeRoot(path)
+    let nested = rootGroups.first { $0.root == path }?.nested ?? []
+    for root in [path] + nested { engine.revokeRoot(root) }
     refreshSettings()
     Task { await scan() }
   }

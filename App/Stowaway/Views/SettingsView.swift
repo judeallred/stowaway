@@ -25,8 +25,19 @@ struct FoldersSettings: View {
   var body: some View {
     Form {
       Section {
-        List(model.roots, id: \.self, selection: $selection) { root in
-          Label(Format.path(root), systemImage: "folder.fill")
+        List(model.rootGroups, id: \.root, selection: $selection) { group in
+          Label {
+            VStack(alignment: .leading, spacing: 1) {
+              Text(Format.path(group.root))
+              if !group.nested.isEmpty {
+                Text("Includes \(group.nested.map(Format.path).joined(separator: ", "))")
+                  .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                  .truncationMode(.middle)
+              }
+            }
+          } icon: {
+            Image(systemName: "folder.fill")
+          }
         }
         .frame(minHeight: 120)
         HStack {

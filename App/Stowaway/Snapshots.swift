@@ -101,6 +101,7 @@
         SupportView(model: model, store: model.store), "support", width: 520, height: 420,
         in: folder)
       render(SettingsView(model: model), "settings", width: 520, height: 380, in: folder)
+      render(FoldersSettings(model: model), "settings-folders", width: 520, height: 380, in: folder)
       render(OffloadSettings(model: model), "settings-stow", width: 520, height: 640, in: folder)
       render(
         SuggestedFolders(model: model), "suggested-folders", width: 380, height: 300, in: folder)
@@ -168,7 +169,12 @@
         row(.huggingface, nil, ".cache/huggingface/hub", 22.9, 9, .drive),
         row(.pnpmStore, nil, "Library/pnpm/store", 6.3, 5, .mac),
       ]
-      applyDemo(drive: "/Volumes/Archive SSD", roots: ["\(home)/code", "\(home)/.cargo"])
+      applyDemo(
+        drive: "/Volumes/Archive SSD",
+        roots: [
+          "\(home)/code", "\(home)/.cargo", "\(home)/.gradle", "\(home)/.gradle/wrapper",
+          "\(home)/code/work",
+        ])
     }
   }
 #endif
