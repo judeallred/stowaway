@@ -181,6 +181,29 @@ public final class Engine: @unchecked Sendable {
     defaults.removeObject(forKey: "driveName")
   }
 
+  /// Forgets the offload location while folders are still on it (it's gone for good, say). Each
+  /// stowed folder becomes a local one, as when the drive is unplugged, for tools to rebuild
+  /// into; npm deep links dangle until the next install repairs them. The copies on the drive
+  /// are left where they are.
+  public func abandonDrive() throws {
+    try exclusively {
+      let fm = FileManager.default
+      for entry in entries() where entry.mode == .folder {
+        if isSymlink(entry.local) { try? fm.removeItem(atPath: entry.local) }
+        let parent = URL(fileURLWithPath: entry.local).deletingLastPathComponent().path
+        if !fm.fileExists(atPath: entry.local), isRealDirectory(parent) {
+          try? fm.createDirectory(atPath: entry.local, withIntermediateDirectories: false)
+        }
+      }
+      save([])
+      lock.withLock {
+        defaults.removeObject(forKey: "drive")
+        defaults.removeObject(forKey: "driveName")
+      }
+      note("forgot the offload location; its copies stay on the drive")
+    }
+  }
+
   public var rootPaths: [String] { rootBookmarks().compactMap(resolvePath) }
 
   public var drivePath: String? { defaults.data(forKey: "drive").flatMap(resolvePath) }

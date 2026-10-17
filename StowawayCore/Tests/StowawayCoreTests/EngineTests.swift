@@ -142,4 +142,23 @@ final class EngineTests: XCTestCase {
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
     XCTAssertTrue(engine.entries().isEmpty)
   }
+
+  func testAbandoningTheDriveLeavesLocalFoldersAndTheCopies() throws {
+    let s = try Scratch()
+    let (engine, code, drive) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/x", "x")
+    let next = code.appendingPathComponent("app/.next").path
+    try engine.adopt(next, kind: .next)
+    XCTAssertThrowsError(try engine.forgetDrive())
+    try engine.abandonDrive()
+    XCTAssertTrue(isRealDirectory(next))
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: next), [])
+    XCTAssertTrue(engine.entries().isEmpty)
+    XCTAssertFalse(engine.hasDrive)
+    XCTAssertNil(engine.driveName)
+    let store = drive.appendingPathComponent(Engine.storeFolderName).appendingPathComponent(
+      engine.installID)
+    XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: store.path).isEmpty)
+  }
 }

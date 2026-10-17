@@ -34,6 +34,15 @@ struct LibraryView: View {
       .sorted(using: sortOrder)
   }
 
+  /// What the row being worked on shows in the Where column.
+  private var working: String {
+    switch model.operation {
+    case .bringingBack: "Bringing back…"
+    case .deleting: "Deleting…"
+    default: "Stowing…"
+    }
+  }
+
   private var selected: [Row] { model.rows.filter { selection.contains($0.id) } }
 
   var body: some View {
@@ -120,7 +129,12 @@ struct LibraryView: View {
       .width(min: 90, ideal: 120)
       TableColumn("Where", value: \.placeOrder) { row in
         if model.busy.contains(row.path) {
-          ProgressView().controlSize(.small)
+          HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text(working).foregroundStyle(.secondary)
+          }
+        } else if model.queued.contains(row.path) {
+          Label("Queued", systemImage: "clock").foregroundStyle(.secondary)
         } else {
           PlaceLabel(place: row.place)
         }
@@ -292,26 +306,43 @@ private struct DriveButton: View {
   let model: AppModel
 
   var body: some View {
-    Button {
-      model.chooseDrive()
-    } label: {
-      Group {
-        if let name = model.driveName {
+    if let name = model.driveName {
+      HStack(spacing: 6) {
+        Button {
+          model.chooseDrive()
+        } label: {
           Label(
             name,
-            systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
-        } else {
-          Label("Connect External Storage…", systemImage: "externaldrive.badge.plus")
+            systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark"
+          )
+          .lineLimit(1)
+          .frame(maxWidth: .infinity)
         }
+        .help(
+          "Stowing on \(model.drivePath.map(Format.path) ?? name)\(model.driveConnected ? "" : " (disconnected)"). Click to choose a different drive."
+        )
+        Menu {
+          Button("Choose a Different Drive…") { model.chooseDrive() }
+          Button("Stop Using \(name)…") { model.stopUsingDrive() }
+        } label: {
+          Image(systemName: "ellipsis")
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Drive options")
       }
-      .lineLimit(1)
-      .frame(maxWidth: .infinity)
+      .controlSize(.large)
+    } else {
+      Button {
+        model.chooseDrive()
+      } label: {
+        Label("Connect External Storage…", systemImage: "externaldrive.badge.plus")
+          .lineLimit(1)
+          .frame(maxWidth: .infinity)
+      }
+      .controlSize(.large)
+      .help("Choose a drive, or a folder on one, to stow folders on")
     }
-    .controlSize(.large)
-    .help(
-      model.driveName.map {
-        "Stowing on \(model.drivePath.map(Format.path) ?? $0)\(model.driveConnected ? "" : " (disconnected)")"
-      } ?? "Choose a drive, or a folder on one, to stow folders on")
   }
 }
 

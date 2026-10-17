@@ -318,6 +318,85 @@ final class AppModel {
     grantDrive(url)
   }
 
+  /// Stops using the drive, after asking how: with folders stowed on it, bring them all back or
+  /// delete them; with the drive away, forget it and leave its copies there.
+  func stopUsingDrive() {
+    guard let name = driveName else { return }
+    let stowed = rows.filter { !$0.entryPaths.isEmpty }
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = "Stop using \(name)?"
+    NSApp.activate()
+    if stowed.isEmpty {
+      alert.informativeText = "Nothing is stowed on it. You can choose a drive again any time."
+      alert.addButton(withTitle: "Stop Using")
+      alert.addButton(withTitle: "Cancel")
+      if alert.runModal() == .alertFirstButtonReturn { forgetDrive() }
+      return
+    }
+    let bytes = Format.bytes(stowed.map(\.driveBytes).reduce(0, +))
+    let folders = "\(stowed.count) folder\(stowed.count == 1 ? "" : "s") (\(bytes))"
+    if driveConnected {
+      alert.informativeText =
+        "\(folders) are stowed on it. Bring them back to this Mac, which needs room for them, or delete them: your tools re-create them when they need them."
+      alert.addButton(withTitle: "Bring Everything Back")
+      alert.addButton(withTitle: "Delete Stowed Folders").hasDestructiveAction = true
+      alert.addButton(withTitle: "Cancel")
+      switch alert.runModal() {
+      case .alertFirstButtonReturn:
+        Task {
+          await bringBack(stowed)
+          forgetDriveIfEmpty(name)
+        }
+      case .alertSecondButtonReturn:
+        Task {
+          await delete(stowed)
+          forgetDriveIfEmpty(name)
+        }
+      default: break
+      }
+    } else {
+      alert.informativeText =
+        "\(folders) are stowed on it, and it isn't connected. Connect it to bring them back. Or forget it anyway: each becomes a local folder your tools rebuild into, and the copies stay on the drive, in its Stowaway.noindex folder."
+      alert.addButton(withTitle: "Forget Anyway").hasDestructiveAction = true
+      alert.addButton(withTitle: "Cancel")
+      guard alert.runModal() == .alertFirstButtonReturn else { return }
+      let engine = engine
+      Task {
+        do {
+          try await Task.detached { try engine.abandonDrive() }.value
+        } catch {
+          message = error.localizedDescription
+        }
+        driveForgotten()
+      }
+    }
+  }
+
+  private func forgetDriveIfEmpty(_ name: String) {
+    guard engine.entries().isEmpty else {
+      message = "Some folders couldn't be brought back or deleted, so Stowaway still uses \(name)."
+      return
+    }
+    forgetDrive()
+  }
+
+  private func forgetDrive() {
+    do {
+      try engine.forgetDrive()
+    } catch {
+      message = error.localizedDescription
+    }
+    driveForgotten()
+  }
+
+  private func driveForgotten() {
+    driveSpeed = nil
+    UserDefaults.standard.removeObject(forKey: "driveSpeed")
+    refreshSettings()
+    Task { await scan() }
+  }
+
   private func grantDrive(_ url: URL) {
     grant(url, as: .drive) { [weak self] in
       // A new location: test its speed, so Settings can say what it's good for.
@@ -631,8 +710,8 @@ final class AppModel {
     var failures: [(Row, any Error)] = []
     let stowing = doing == "Stowing"
     let op: Operation = stowing ? .stowing : doing == "Deleting" ? .deleting : .bringingBack
-    if stowing { queued = Set(rows.map(\.path)) }
-    defer { queued = [] }
+    if stowing { queued.formUnion(rows.map(\.path)) }
+    defer { queued.subtract(rows.map(\.path)) }
     for (i, row) in rows.enumerated() {
       activity = Self.describe(doing, row, index: i, of: rows.count)
       operation = op
@@ -702,19 +781,30 @@ final class AppModel {
     let gradleIDERunning = running.contains {
       $0.hasPrefix("com.google.android.studio") || $0.hasPrefix("com.jetbrains.intellij")
     }
-    for row in rows
-    where row.place == .mac && row.localBytes != nil && (row.lastActivity ?? .now) < cutoff {
-      if row.kind == .xcodeDerivedData && xcodeRunning { continue }
-      if row.kind == .gradleHome && gradleIDERunning { continue }
+    let due = rows.filter { row in
+      guard row.place == .mac, row.localBytes != nil, (row.lastActivity ?? .now) < cutoff,
+        !busy.contains(row.path)
+      else { return false }
+      if row.kind == .xcodeDerivedData && xcodeRunning { return false }
+      if row.kind == .gradleHome && gradleIDERunning { return false }
+      if let at = refused[row.path], at == row.lastActivity { return false }
+      return true
+    }
+    // Shown as queued in the library until their turn.
+    queued.formUnion(due.map(\.path))
+    defer { queued.subtract(due.map(\.path)) }
+    for (i, row) in due.enumerated() {
+      queued.remove(row.path)
       if Measure.isBusy(row.candidate) { continue }
-      if let at = refused[row.path], at == row.lastActivity { continue }
       let engine = engine
       let limit = store.offloadLimit
       let paths = row.kind.parts(of: row.candidate.url)?.map(\.path) ?? [row.path]
       let container = row.path
-      activity = Self.describe("Stowing", row, index: 0, of: 1)
+      activity = Self.describe("Stowing", row, index: i, of: due.count)
       operation = .stowing
+      busy.insert(row.path)
       defer {
+        busy.remove(row.path)
         activity = nil
         operation = nil
       }
@@ -794,6 +884,15 @@ final class AppModel {
       driveFreeBytes = 812_000_000_000
       driveTotalBytes = 2_000_000_000_000
       driveFormat = "APFS"
+      let onMac = rows.filter { $0.place == .mac }.map(\.path)
+      if onMac.count > 2 {
+        busy = [onMac[0]]
+        queued = Set(onMac[1...2])
+        operation = .stowing
+        activity = rows.first { $0.path == onMac[0] }.map {
+          Self.describe("Stowing", $0, index: 0, of: 3)
+        }
+      }
       driveSpeed = DriveSpeed(
         writeMBps: 2_710, readMBps: 2_950, smallFilesPerSecond: 9_400, measured: .now)
       offloadedBytes = rows.map(\.driveBytes).reduce(0, +)
