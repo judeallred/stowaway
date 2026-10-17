@@ -1,0 +1,149 @@
+cargo	local	clean-build	8.9136929512023926
+cargo	local	noop-build	0.62238597869873047
+cargo	local	incremental	1.7457401752471924
+cargo	core	clean-build	7.8071839809417725
+cargo	core	noop-build	0.54454302787780762
+cargo	core	incremental	0.8711857795715332
+cargo	lite	clean-build	8.0668439865112305
+cargo	lite	noop-build	0.69464492797851562
+cargo	lite	incremental	0.78838086128234863
+cargo	local	clean-build	7.1306309700012207
+cargo	local	noop-build	0.55115699768066406
+cargo	local	incremental	1.2056038379669189
+cargo	core	clean-build	8.07271409034729
+cargo	core	noop-build	0.54967904090881348
+cargo	core	incremental	1.4728131294250488
+cargo	lite	clean-build	7.562330961227417
+cargo	lite	noop-build	0.29708981513977051
+cargo	lite	incremental	0.68961501121520996
+cargo	local	clean-build	7.5822498798370361
+cargo	local	noop-build	0.57127714157104492
+cargo	local	incremental	1.5644979476928711
+cargo	core	clean-build	7.7890429496765137
+cargo	core	noop-build	0.53994607925415039
+cargo	core	incremental	0.84096121788024902
+cargo	lite	clean-build	7.6111631393432617
+cargo	lite	noop-build	0.28572320938110352
+cargo	lite	incremental	0.70972013473510742
+pnpm	local	first install (network)	18.141654014587402
+pnpm	core	first install (network)	8.0628788471221924
+pnpm	lite	first install (network)	9.571854829788208
+pnpm	local	install (offline)	7.885106086730957
+pnpm	local	walk store (find)	0.61208796501159668
+pnpm	local	require all	0.57650399208068848
+pnpm	local	tsc --noEmit	1.8824498653411865
+pnpm	core	install (offline)	2.3961679935455322
+pnpm	core	walk store (find)	0.33706784248352051
+pnpm	core	require all	0.30574893951416016
+pnpm	core	tsc --noEmit	1.8202199935913086
+pnpm	lite	install (offline)	2.3271110057830811
+pnpm	lite	walk store (find)	0.46129179000854492
+pnpm	lite	require all	0.36472105979919434
+pnpm	lite	tsc --noEmit	1.6879210472106934
+pnpm	local	install (offline)	7.2848718166351318
+pnpm	local	walk store (find)	0.75286006927490234
+pnpm	local	require all	0.94636702537536621
+pnpm	local	tsc --noEmit	2.2533259391784668
+pnpm	core	install (offline)	2.7021720409393311
+pnpm	core	walk store (find)	0.40560507774353027
+pnpm	core	require all	0.60537815093994141
+pnpm	core	tsc --noEmit	1.9081969261169434
+pnpm	lite	install (offline)	2.3188600540161133
+pnpm	lite	walk store (find)	0.47708487510681152
+pnpm	lite	require all	0.60390591621398926
+pnpm	lite	tsc --noEmit	1.9493851661682129
+pnpm	local	install (offline)	14.338018178939819
+pnpm	local	walk store (find)	1.7928810119628906
+pnpm	local	require all	1.0598080158233643
+pnpm	local	tsc --noEmit	2.6444039344787598
+pnpm	core	install (offline)	2.45113205909729
+pnpm	core	walk store (find)	0.35826420783996582
+pnpm	core	require all	0.31328582763671875
+pnpm	core	tsc --noEmit	1.585029125213623
+pnpm	lite	install (offline)	2.3259201049804688
+pnpm	lite	walk store (find)	0.40274906158447266
+pnpm	lite	require all	0.34507989883422852
+pnpm	lite	tsc --noEmit	1.6490769386291504
+adopt	core	adopt target	4.9870858192443848
+adopt	lite	adopt target	1.5861690044403076
+adopt	core	adopt node_modules	10.760645151138306
+adopt	lite	adopt node_modules	7.5836150646209717
+adopt	core	adopt target	3.7741448879241943
+adopt	lite	adopt target	0.63326382637023926
+adopt	core	adopt node_modules	9.7134358882904053
+adopt	lite	adopt node_modules	9.1946971416473389
+adopt	core	adopt target	3.6902279853820801
+adopt	lite	adopt target	0.83139586448669434
+adopt	core	adopt node_modules	9.0968079566955566
+adopt	lite	adopt node_modules	8.9796638488769531
+release	lite	bring target back	0.65340399742126465
+release	lite	bring store back	9.3708651065826416
+flip	core	unplug → local (ms)	5109
+flip	lite	unplug → local (ms)	513
+flip	core	replug → on drive (ms)	26432.989835739136
+flip	lite	replug → on drive (ms)	5674
+flip	core	unplug → local (ms)	5873
+flip	lite	unplug → local (ms)	720
+flip	core	replug → on drive (ms)	24293.941020965576
+flip	lite	replug → on drive (ms)	5271
+flip	core	unplug → local (ms)	5791
+flip	lite	unplug → local (ms)	858
+flip	core	replug → on drive (ms)	29863.378047943115
+flip	lite	replug → on drive (ms)	5314
+npm	local	npm install (lockfile)	4.6326301097869873
+npm	local	npm install (no changes)	0.39065694808959961
+npm	local	walk (find -L)	0.17937493324279785
+npm	local	require all	0.35142803192138672
+npm	local	tsc --noEmit	1.8063039779663086
+npm	core	npm install (lockfile)	2.5962691307067871
+npm	core	npm install (no changes)	0.23463320732116699
+npm	core	walk (find -L)	0.11377811431884766
+npm	core	require all	0.33912301063537598
+npm	core	tsc --noEmit	1.6163990497589111
+npm	lite	npm install (lockfile)	3.1440019607543945
+npm	lite	re-offload after install: relink	0.70999999999999996
+npm	lite	re-offload after install: cleanup (background)	2.47
+npm	lite	npm install (no changes)	0.27234077453613281
+npm	lite	re-offload, unchanged: relink	0
+npm	lite	re-offload, unchanged: cleanup (background)	0
+npm	lite	walk (find -L)	0.095096111297607422
+npm	lite	require all	0.30048799514770508
+npm	lite	tsc --noEmit	1.7154178619384766
+npm	local	npm install (lockfile)	3.2735331058502197
+npm	local	npm install (no changes)	0.24264788627624512
+npm	local	walk (find -L)	0.17365288734436035
+npm	local	require all	0.33399200439453125
+npm	local	tsc --noEmit	1.6224348545074463
+npm	core	npm install (lockfile)	2.7334890365600586
+npm	core	npm install (no changes)	0.23861789703369141
+npm	core	walk (find -L)	0.11815500259399414
+npm	core	require all	0.28712582588195801
+npm	core	tsc --noEmit	1.7016661167144775
+npm	lite	npm install (lockfile)	3.2152218818664551
+npm	lite	re-offload after install: relink	0.70999999999999996
+npm	lite	re-offload after install: cleanup (background)	2.26
+npm	lite	npm install (no changes)	0.27902698516845703
+npm	lite	re-offload, unchanged: relink	0
+npm	lite	re-offload, unchanged: cleanup (background)	0
+npm	lite	walk (find -L)	0.097873926162719727
+npm	lite	require all	0.29304218292236328
+npm	lite	tsc --noEmit	1.4539668560028076
+npm	local	npm install (lockfile)	3.8309609889984131
+npm	local	npm install (no changes)	0.23416304588317871
+npm	local	walk (find -L)	0.1562950611114502
+npm	local	require all	0.33142900466918945
+npm	local	tsc --noEmit	1.6737480163574219
+npm	core	npm install (lockfile)	2.7416341304779053
+npm	core	npm install (no changes)	0.24405789375305176
+npm	core	walk (find -L)	0.13030099868774414
+npm	core	require all	0.30928993225097656
+npm	core	tsc --noEmit	1.5802149772644043
+npm	lite	npm install (lockfile)	3.251129150390625
+npm	lite	re-offload after install: relink	0.69000000000000006
+npm	lite	re-offload after install: cleanup (background)	2.39
+npm	lite	npm install (no changes)	0.27730298042297363
+npm	lite	re-offload, unchanged: relink	0
+npm	lite	re-offload, unchanged: cleanup (background)	0
+npm	lite	walk (find -L)	0.10940408706665039
+npm	lite	require all	0.34151601791381836
+npm	lite	tsc --noEmit	1.5268809795379639

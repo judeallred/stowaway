@@ -72,3 +72,37 @@ sign --identifier dev.stowaway.sandbox-probe.agent --entitlements "$ent/Agent.en
 # APP_ENTITLEMENTS=AppExceptions builds variant B, with temporary exceptions.
 sign --entitlements "$ent/${APP_ENTITLEMENTS:-App}.entitlements" "$app"
 echo "Built $app"
+
+# Stowaway Lite: the sandbox-only edition (symlinks, no disk images).
+lite="$out/StowawayLite.app"
+rm -rf "$lite"
+mkdir -p "$lite/Contents/MacOS"
+cp "$bin/StowawayLite" "$lite/Contents/MacOS/StowawayLite"
+cat > "$lite/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>dev.stowaway.lite</string>
+  <key>CFBundleName</key><string>Stowaway Lite</string>
+  <key>CFBundleExecutable</key><string>StowawayLite</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Folder</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>None</string>
+      <key>LSItemContentTypes</key><array><string>public.folder</string><string>public.volume</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>
+PLIST
+sign --entitlements "$ent/AppExecutable.entitlements" "$lite"
+cp "$bin/stowbench" "$out/stowbench"
+echo "Built $lite"

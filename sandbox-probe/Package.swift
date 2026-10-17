@@ -12,9 +12,14 @@ let package = Package(
   products: [
     .executable(name: "SandboxProbe", targets: ["SandboxProbe"]),
     .executable(name: "ProbeAgent", targets: ["ProbeAgent"]),
+    .executable(name: "StowawayLite", targets: ["StowawayLite"]),
+    .executable(name: "stowbench", targets: ["stowbench"]),
   ],
   targets: [
     .executableTarget(name: "SandboxProbe", swiftSettings: strict),
+    .target(name: "LiteEngine", swiftSettings: strict),
+    .executableTarget(name: "StowawayLite", dependencies: ["LiteEngine"], swiftSettings: strict),
+    .executableTarget(name: "stowbench", dependencies: ["LiteEngine"], swiftSettings: strict),
     .executableTarget(
       name: "ProbeAgent",
       exclude: ["Info.plist"],

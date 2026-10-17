@@ -64,17 +64,24 @@ What it rests on, all tested:
   survives an unplug. Inside a granted folder the app can create symlinks, rename and delete.
   DevCleaner for Xcode ships on the App Store with this pattern. Granting `/` gives read-only
   access, so it's no use.
-- **Tools that accept symlinked folders.** Verified: npm cache, pnpm store, Yarn cache and Cargo
-  `target/` (`cargo clean` deletes the symlink, after which the app adopts again). Commonly done
-  but not re-tested here: DerivedData, Go, Gradle and Hugging Face.
-- **Node.** npm projects aren't covered. pnpm projects are, if they use pnpm's
-  `enableGlobalVirtualStore`: then `node_modules` is a 20 KB tree of symlinks into the store,
-  verified with React, lodash and TypeScript. The links go through the store path, so the
-  unplug flip works.
+- **Tools that accept symlinked folders.** Verified with each real tool through adopt, use from
+  the drive, unplug, replug and release (`scripts/lite-kinds-e2e.sh`): npm cache, `npx`, pnpm
+  store, Yarn cache, Cargo `target/` and registry, Go's module and build caches, Gradle's caches,
+  Xcode DerivedData, Hugging Face, uv's `.venv` and Next.js's `.next`. `cargo clean` deletes the
+  symlink, after which the app adopts again.
+- **Node.**
+  - **npm projects** are covered with deep links (see the prototype section below). Next.js
+    (webpack), `tsc` and `require` work, and `npm install` is as fast as with core. Projects that
+    build with Turbopack need `turbopack.root` set first.
+  - **pnpm projects** are covered if they use pnpm's `enableGlobalVirtualStore`: then
+    `node_modules` is a 20 KB tree of symlinks into the store, verified with React, lodash and
+    TypeScript. The links go through the store path, so the unplug flip works.
 
 **Lite's costs compared with full Stowaway:**
 
-- **No npm `node_modules`.** That's the biggest per-project folder.
+- **Newly installed npm packages sit on the Mac briefly.** An install that adds or upgrades
+  packages extracts them locally; Lite moves them to the drive once the project has been quiet
+  for 20 s.
 - **No idle check.** `lsof`, `ps` and `pgrep` all see nothing in the sandbox. Replace it with a
   quiet period of filesystem events, renaming before copying, and checking whether Xcode or
   Android Studio are running (`NSWorkspace.runningApplications`).
@@ -85,11 +92,59 @@ What it rests on, all tested:
 - **Setup takes a few clicks.** The user grants each cache's parent folder once, in a panel
   already open at that folder.
 
+## The Lite prototype and how it performs
+
+`StowawayLite.app` is a sandboxed prototype of the Lite edition. It's built by `bundle.sh`
+alongside the probe, from `Sources/LiteEngine` and `Sources/StowawayLite`:
+
+- **Window:** choose the drive, grant folders, offload a folder, bring it back, and watch status
+  live.
+- **Command-line modes, for scripting:** `--grant` (through `open -a`), `--adopt`, `--release`,
+  `--status`, `--reconcile` and `--watch`.
+- **npm projects (deep links):**
+  - `node_modules` and every package folder in it stay real; only each package's contents link
+    to a store on the drive. npm sees ordinary installed packages, so `npm install` with nothing
+    to change leaves everything alone.
+  - In the store, each package sits in its own `node_modules/<name>` under folders whose
+    `node_modules` entries link back to the project's local ones. Resolving from a file's real
+    path still goes through the tree npm maintains, so an upgraded dependency is never shadowed
+    by an old copy on the drive.
+  - npm's hidden lockfile moves to the drive too, and folder times are preserved. With the drive
+    connected, npm trusts it; without the drive, it can't read it and repairs everything locally,
+    even if Lite isn't running.
+  - It refuses pnpm projects (offload pnpm's store instead) and projects that build with
+    Turbopack unless `turbopack.root` is set, because Turbopack refuses packages outside the
+    project.
+  - `scripts/lite-npm-e2e.sh` checks all of it, including unplugging and installing offline.
+- **Build output in a JavaScript project** (`.next`) gets a `node_modules` link next to it on the
+  drive, back to the project's, because Next's compiled server code requires packages at run time.
+- **Engine:** a parallel copier, so adoption is never stuck on per-file latency. It copies
+  first and then swaps, so a folder stays usable until its symlink appears. At launch it
+  reconciles with whether the drive is there, and it re-adopts a folder a tool replaced (as
+  `cargo clean` does). Its folder on the drive is `Stowaway Lite.noindex`, so Spotlight skips it.
+
+[`results/bench.md`](results/bench.md) compares Lite with core's mounted images on your OWC
+SSD:
+
+- **Daily work:** day-to-day speed is the same. Cargo builds, pnpm installs, module resolution
+  and `tsc` all run at drive speed under both designs.
+- **Adopting:** Lite is up to 4.5× faster for small folders, because it skips creating,
+  attaching and remounting an image.
+- **npm projects:** as fast as core. `npm install` with nothing to change took 0.28 s, against
+  0.24 s for core; resolution and `tsc` are on par.
+- **The drive coming and going:** with 20 folders, Lite is about 8× faster on unplug (0.7 s vs
+  5.8 s) and about 5× faster when the drive returns (5 s vs 26 s). Core's time grows by about
+  1.2 s per image.
+
+The benchmark also turned up a **core bug**: `npm ci` fails with EACCES on the root-only
+`.fseventsd` folder in every mounted `node_modules`. All 55 of yours have it.
+
 ## How to sell it
 
 - **Recommended:** sell full Stowaway directly (Developer ID, notarization, license keys), which
-  is what the current design and `stowaway license` already support. Ship Stowaway Lite on the
-  App Store for discovery, with an in-app pointer to the full edition.
+  is what the current design and `stowaway license` already support. Ship the cleaner on the App
+  Store, with Lite offload as an in-app purchase. The full edition can honor App Store purchases
+  (3.1.3(b)). Linking out from inside the app is allowed only on the US storefront.
 - **Lite's review risks, in order:**
   1. `user-selected.executable`. Have a fallback: without it, Lite can still move data-only caches
      (npm cache, Cargo registry, Go modules, Gradle, Hugging Face), where quarantine does no harm.
@@ -115,7 +170,8 @@ APP_ENTITLEMENTS=App           scripts/bundle.sh "$PWD/build-App"            # p
 APP_ENTITLEMENTS=AppExecutable scripts/bundle.sh "$PWD/build-AppExecutable"  # + user-selected.executable (Lite)
 APP_ENTITLEMENTS=AppDocumented scripts/bundle.sh "$PWD/build-AppDocumented"  # + documented temporary exceptions
 APP_ENTITLEMENTS=AppExceptions scripts/bundle.sh "$PWD/build-AppExceptions"  # + raw SBPL (never shippable)
-scripts/lite-e2e.sh
+scripts/lite-e2e.sh                              # the probe's Lite flow, end to end
+scripts/bench.sh "/Volumes/<drive>" 3            # Lite vs core vs local (BENCH_ONLY=flip: unplug only)
 ```
 
 `SandboxProbe` takes these modes. The sandbox comes from the code signature, so all of them run
