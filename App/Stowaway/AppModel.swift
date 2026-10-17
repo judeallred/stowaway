@@ -762,25 +762,21 @@ final class AppModel {
   /// caches while an IDE that runs Gradle does.
   private enum AutoOutcome: Sendable { case stowed, refused, limit }
 
-  /// Bytes on this Mac that are about to be stowed: queued in a running batch, or, with
-  /// automatic stowing on and the drive connected, what it will move once quiet. Leaves out
-  /// folders it couldn't stow, and stops at the free allowance.
+  /// Bytes on this Mac still to be stowed: every re-creatable folder here that Stowaway can stow
+  /// (folders it couldn't, such as a pnpm project, are left out until they change). Stowed plus
+  /// pending is `eligibleBytes`.
   var pendingBytes: Int64 {
-    let automatic = autoOffloadMinutes != 0 && driveConnected
-    let bytes =
-      rows
+    rows
       .filter { row in
-        guard row.place == .mac, !busy.contains(row.path) || queued.contains(row.path) else {
-          return false
-        }
-        if queued.contains(row.path) { return true }
-        guard automatic else { return false }
+        guard row.place == .mac else { return false }
         if let at = refused[row.path], at == row.lastActivity { return false }
         return true
       }
       .compactMap(\.localBytes).reduce(0, +)
-    return freeAllowanceLeft.map { min(bytes, $0) } ?? bytes
   }
+
+  /// All the re-creatable data Stowaway manages: what's stowed plus what's pending.
+  var eligibleBytes: Int64 { offloadedBytes + pendingBytes }
 
   private func autoOffload() async {
     let minutes = autoOffloadMinutes

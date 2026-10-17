@@ -85,21 +85,13 @@ struct MenuView: View {
         Label(
           model.driveConnected ? "\(name) connected" : "\(name) disconnected",
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
-        Text(
-          model.pendingBytes > 0
-            ? "\(Format.bytes(model.offloadedBytes)) stowed · \(Format.bytes(model.pendingBytes)) pending"
-            : "\(Format.bytes(model.offloadedBytes)) stowed"
-        )
-        .foregroundStyle(.secondary)
+        StowageSummary(model: model)
       } else {
         action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
           .padding(.horizontal, -6)
       }
       if let activity = model.activity {
         Text(activity).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-      } else if model.reclaimableBytes > 0 {
-        Text("\(Format.bytes(model.reclaimableBytes)) re-creatable on this Mac")
-          .foregroundStyle(.secondary)
       }
     }
     .font(.callout)
