@@ -262,7 +262,7 @@ private struct SummaryHeader: View {
           Label("Free trial: \(days) day\(days == 1 ? "" : "s") left", systemImage: "clock")
             .font(.callout)
             .padding(.top, 6)
-          Button("Go Unlimited") { model.showingSupport = true }
+          Button("Go Unlimited…") { model.showingSupport = true }
             .buttonStyle(.link).font(.caption)
         }
       } else if let left = model.freeAllowanceLeft {
@@ -278,10 +278,8 @@ private struct SummaryHeader: View {
             .secondary
           )
           .fixedSize()
-          Button(model.store.canStartTrial ? "Try Unlimited Free…" : "Go Unlimited") {
-            model.showingSupport = true
-          }
-          .buttonStyle(.link).font(.caption)
+          Button("Go Unlimited…") { model.showingSupport = true }
+            .buttonStyle(.link).font(.caption)
         }
       }
       VStack(alignment: .leading, spacing: 6) {
