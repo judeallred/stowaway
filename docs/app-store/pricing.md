@@ -59,7 +59,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
   for the whole team", "Still cheaper than upgrading your storage", "We will send you a
   hand-written thank you card", "We'll send you a birthday card every year".
 - **Business:** ten prices from $50 to $500 in $50 steps, under "I can expense:", asking people to
-  pick what fits their auto-approve expense budget; then a full-width $5,000 "Diamond hands".
+  pick what fits their auto-approve expense budget; then a full-width $5,000 "Enterprise".
 - Apple's price points include round prices such as $8.00 and $50.00, but *verify* each in App
   Store Connect, especially $1,024 and $5,000 (prices above the default range must be requested).
 - **Sanity check:** a 1 TB external SSD costs about $80–120, and Apple typically charges around $200

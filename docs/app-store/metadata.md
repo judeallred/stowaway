@@ -106,7 +106,7 @@ sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the 
 | …`business.8` | Business 8 | Business License | Unlimited stowing, for use at work. | $400 | Off |
 | …`business.9` | Business 9 | Business License | Unlimited stowing, for use at work. | $450 | Off |
 | …`business.10` | Business 10 | Business License | Unlimited stowing, for use at work. | $500 | Off |
-| …`business.11` | Business 11 | Diamond Hands | Unlimited stowing, for use at work. | $5,000 | Off |
+| …`business.11` | Business 11 | Enterprise | Unlimited stowing, for use at work. | $5,000 | Off |
 
 (…= `com.brooklynspaceport.stowaway.`)
 

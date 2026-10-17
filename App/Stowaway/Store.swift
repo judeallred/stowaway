@@ -33,7 +33,7 @@ final class Store {
     "com.brooklynspaceport.stowaway.personal.6": "Still cheaper than upgrading your storage",
     "com.brooklynspaceport.stowaway.personal.7": "We will send you a hand-written thank you card",
     "com.brooklynspaceport.stowaway.personal.8": "We'll send you a birthday card every year",
-    "com.brooklynspaceport.stowaway.business.11": "Diamond hands",
+    "com.brooklynspaceport.stowaway.business.11": "Enterprise",
   ]
 
   private(set) var products: [Audience: [Product]] = [:]
@@ -57,7 +57,7 @@ final class Store {
         ("$512", "We will send you a hand-written thank you card"),
         ("$1,024", "We'll send you a birthday card every year"),
       ],
-      .business: (1...10).map { ("$\($0 * 50)", "") } + [("$5,000", "Diamond hands")],
+      .business: (1...10).map { ("$\($0 * 50)", "") } + [("$5,000", "Enterprise")],
     ]
   #endif
 
