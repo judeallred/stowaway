@@ -8,7 +8,13 @@ struct SupportView: View {
   let model: AppModel
   let store: Store
   @Environment(\.dismiss) private var dismiss
-  @State private var audience: Store.Audience = .personal
+
+  init(model: AppModel, store: Store, audience: Store.Audience = .personal) {
+    self.model = model
+    self.store = store
+    _audience = State(initialValue: audience)
+  }
+  @State private var audience: Store.Audience
   @State private var showingLetter = false
   @State private var showingInvoice = false
   @State private var redeeming = false
@@ -26,7 +32,9 @@ struct SupportView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         Text(audienceNote).font(.callout).foregroundStyle(.secondary).fixedSize(
-          horizontal: false, vertical: true)
+          horizontal: false, vertical: true
+        )
+        .tint(.accentColor)
         prices
         if audience == .business {
           VStack(alignment: .leading, spacing: 8) {
@@ -87,55 +95,77 @@ struct SupportView: View {
         "Stowing up to \(Format.bytes(Store.freeOffloadLimit)) is free. Any purchase, at a price you choose, makes it unlimited, for good."
       )
       .foregroundStyle(.secondary)
-      TrialOffer(store: store)
     }
   }
 
-  private var audienceNote: String {
+  private var audienceNote: AttributedString {
     switch audience {
-    case .personal: "Pay what you want. Shared with your family through Family Sharing."
+    case .personal:
+      AttributedString("Pay what you want. Shared with your family through Family Sharing.")
     case .business:
-      "At work and able to expense it? Please choose a business price. Business purchases keep prices low for everyone using it personally."
+      (try? AttributedString(
+        markdown:
+          "Every price point here is honestly cheaper than the cost of upgrading your storage. Please support small businesses by picking what fits within your auto-approve expense budget, or [contact us](\(Links.support.absoluteString)) if you think your business can purchase a site license."
+      ))
+        ?? AttributedString(
+          "Every price point here is honestly cheaper than the cost of upgrading your storage.")
+    }
+  }
+
+  /// One price button's content: the price and what it buys, and the product (nil for the
+  /// sample prices snapshots use).
+  private struct Price: Identifiable {
+    let id: String
+    let price: String
+    let tagline: String
+    let product: Product?
+  }
+
+  private var priceList: [Price] {
+    let products = store.products[audience] ?? []
+    if products.isEmpty, let demo = snapshotPrices {
+      return demo.map { Price(id: $0.price, price: $0.price, tagline: $0.name, product: nil) }
+    }
+    return products.map {
+      Price(
+        id: $0.id, price: $0.displayPrice, tagline: Store.taglines[$0.id] ?? "",
+        product: $0)
     }
   }
 
   @ViewBuilder private var prices: some View {
-    let products = store.products[audience] ?? []
-    if products.isEmpty, let demo = snapshotPrices {
-      HStack(spacing: 10) {
-        ForEach(demo, id: \.price) { item in
-          Button {
-          } label: {
-            VStack(spacing: 2) {
-              Text(item.price).font(.title3.weight(.semibold))
-              Text(item.name).font(.caption)
-            }
-            .frame(maxWidth: .infinity, minHeight: 44)
-          }
-          .controlSize(.large)
-        }
-      }
-    } else if products.isEmpty && store.loadError == nil {
+    let list = priceList
+    if list.isEmpty && store.loadError == nil {
       HStack {
         ProgressView().controlSize(.small)
         Text("Loading prices…").foregroundStyle(.secondary)
       }
-    } else {
-      HStack(spacing: 10) {
-        ForEach(products, id: \.id) { product in
+    } else if !list.isEmpty {
+      if audience == .business {
+        Text("I can expense:").font(.callout.weight(.medium))
+      }
+      // Personal prices have a line each; business prices are just amounts, five to a row.
+      LazyVGrid(
+        columns: Array(
+          repeating: GridItem(.flexible(), spacing: 10), count: audience == .business ? 5 : 2),
+        spacing: 10
+      ) {
+        ForEach(list) { item in
           Button {
-            Task {
-              _ = await store.purchase(product)
-            }
+            if let product = item.product { Task { _ = await store.purchase(product) } }
           } label: {
             VStack(spacing: 2) {
-              Text(product.displayPrice).font(.title3.weight(.semibold))
-              Text(product.displayName).font(.caption)
+              Text(item.price).font(.title3.weight(.semibold))
+              if !item.tagline.isEmpty {
+                Text(item.tagline).font(.caption).multilineTextAlignment(.center)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: audience == .business ? 36 : 50)
           }
           .controlSize(.large)
           .disabled(store.purchasing != nil)
+          .accessibilityLabel(item.tagline.isEmpty ? item.price : "\(item.price): \(item.tagline)")
         }
       }
     }
@@ -165,33 +195,5 @@ struct SupportView: View {
     #else
       nil
     #endif
-  }
-}
-
-/// The free trial: an offer to start it, with what happens afterwards (App Review 3.1.1 asks for
-/// the length, what stops, and what it costs to continue, before it starts), or the days left.
-struct TrialOffer: View {
-  let store: Store
-
-  var body: some View {
-    if store.canStartTrial {
-      VStack(alignment: .leading, spacing: 6) {
-        Button("Start 30-Day Free Trial") { Task { await store.startTrial() } }
-          .buttonStyle(.borderedProminent)
-          .disabled(store.purchasing != nil)
-        Text(
-          "Stow without a limit, free for \(Store.trialDays) days. When it ends, stowing is free up to \(Format.bytes(Store.freeOffloadLimit)); buy Stowaway at a price you choose to keep it unlimited. Folders already stowed keep working, bringing them back is always free, and nothing is charged automatically."
-        )
-        .font(.caption).foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      }
-    } else if let days = store.trialDaysLeft {
-      Label(
-        "Free trial: \(days) day\(days == 1 ? "" : "s") left",
-        systemImage: "clock")
-    } else if store.trialStarted != nil && !store.hasPurchased {
-      Label("Your free trial has ended.", systemImage: "clock")
-        .foregroundStyle(.secondary)
-    }
   }
 }

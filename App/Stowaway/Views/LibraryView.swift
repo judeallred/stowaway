@@ -257,15 +257,7 @@ private struct SummaryHeader: View {
           "On this Mac, about to be stowed: queued now, or waiting to be left unchanged long enough to stow automatically."
         )
       Spacer()
-      if let days = model.store.trialDaysLeft {
-        VStack(alignment: .leading, spacing: 6) {
-          Label("Free trial: \(days) day\(days == 1 ? "" : "s") left", systemImage: "clock")
-            .font(.callout)
-            .padding(.top, 6)
-          Button("Go Unlimited…") { model.showingSupport = true }
-            .buttonStyle(.link).font(.caption)
-        }
-      } else if let left = model.freeAllowanceLeft {
+      if let left = model.freeAllowanceLeft {
         VStack(alignment: .leading, spacing: 6) {
           StorageBar(
             segments: [(Store.freeOffloadLimit - left, .accentColor)],

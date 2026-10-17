@@ -56,7 +56,7 @@
         ),
         (
           "4-support", "Try it free. Then pay what you want.",
-          AnyView(SupportView(model: model, store: model.store)), CGSize(width: 560, height: 520)
+          AnyView(SupportView(model: model, store: model.store)), CGSize(width: 560, height: 700)
         ),
       ]
       for (name, caption, view, panel) in shots {
@@ -70,6 +70,8 @@
       let caption: String
       let panel: AnyView
       let panelSize: CGSize
+      /// 1.5×, or less for a tall panel, so it fits under the caption.
+      var scale: CGFloat { min(1.5, 700 / panelSize.height) }
 
       var body: some View {
         ZStack {
@@ -85,8 +87,8 @@
               .background(Color(nsColor: .windowBackgroundColor))
               .clipShape(RoundedRectangle(cornerRadius: 12))
               .shadow(radius: 30, y: 12)
-              .scaleEffect(1.5)
-              .frame(width: panelSize.width * 1.5, height: panelSize.height * 1.5)
+              .scaleEffect(scale)
+              .frame(width: panelSize.width * scale, height: panelSize.height * scale)
           }
         }
       }
@@ -104,9 +106,12 @@
           height: 460, in: folder)
       }
       render(
-        SupportView(model: model, store: model.store), "support", width: 560, height: 540,
+        SupportView(model: model, store: model.store), "support", width: 560, height: 720,
         in: folder)
       render(SettingsView(model: model), "settings", width: 520, height: 380, in: folder)
+      render(
+        SupportView(model: model, store: model.store, audience: .business), "support-business",
+        width: 560, height: 720, in: folder)
       render(BossLetterView(model: model), "expense-letter", width: 560, height: 520, in: folder)
       render(
         InvoiceView(model: model), "expense-invoice-preview", width: 560, height: 760, in: folder)

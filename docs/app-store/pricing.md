@@ -6,14 +6,13 @@ Connect before relying on it.
 ## What's built
 
 Stowaway is free to download. Finding and deleting folders is free, and so is stowing up to
-**25 GB**. A free **30-day trial** makes stowing unlimited for a month; **any** purchase, at any
-price, makes it unlimited for good. The upgrade sheet offers the trial (until it's been used) and
-two groups of prices, picked with a "For Me / For Work" switch:
+**100 GB**. **Any** purchase, at any price, makes stowing unlimited for good. The upgrade sheet
+offers two groups of prices, picked with a "For Me / For Work" switch:
 
 | Group | Product IDs | Family Sharing | Message |
 |---|---|---|---|
-| Personal, pay what you want | `com.brooklynspaceport.stowaway.personal.1` … `.3` | **On** | "Share the love… your purchase means everything to us." |
-| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.4` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
+| Personal, pay what you want | `com.brooklynspaceport.stowaway.personal.1` … `.8` | **On** | "Share the love… your purchase means everything to us." |
+| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.10` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
 
 - **Prices aren't in the code.** Product IDs name a slot, not a price, and the app shows whatever
   you set in App Store Connect, sorted low to high. You can reprice without an app update.
@@ -21,11 +20,7 @@ two groups of prices, picked with a "For Me / For Work" switch:
   exist in App Store Connect are simply not shown.
 - **Everything is non-consumable.** A purchase is restorable and applies on every Mac signed in
   to the same Apple Account.
-- **The trial** is a free non-consumable, `com.brooklynspaceport.stowaway.trial30`, named
-  "30-day Trial" as App Review guideline 3.1.1 requires for non-subscription trials. Its purchase
-  date, signed by the App Store, starts the clock, so reinstalling doesn't reset it. Before it
-  starts, the app states its length, what happens after, and that nothing is charged.
-- **The limit:** 25 GB is `Store.freeOffloadLimit`. The limit only stops *new* offloads: nothing
+- **The limit:** 100 GB is `Store.freeOffloadLimit`. The limit only stops *new* offloads: nothing
   already on the drive stops working, and bringing folders back and deleting are never limited.
   That last point matters for App Review and for trust.
 
@@ -59,17 +54,21 @@ two groups of prices, picked with a "For Me / For Work" switch:
 
 ## Suggested prices (yours to set in App Store Connect)
 
-- **Personal:** $5 / $10 / $20, as Thanks / Big Thanks / Huge Thanks. $5 is the floor.
-- **Business:** $50 / $100 / $200 / $500, as Business / Plus / Pro / Patron. $50 is the floor;
-  under about $100 usually needs no approval, and the Patron slot catches companies that want to
-  support you.
-- Apple's price points include round prices such as $5.00 and $50.00 (*verify* in App Store
-  Connect for each storefront).
+- **Personal:** eight prices doubling from $8 to $1,024, each with a line in the app: "A
+  sandwich", "A really nice sandwich", "Sandwiches for the whole team", "Dinner for one", "Dinner
+  for the whole team", "Still cheaper than upgrading your storage", "We will send you a
+  hand-written thank you card", "We'll send you a birthday card every year".
+- **Business:** ten prices from $50 to $500 in $50 steps, under "I can expense:". The sheet asks
+  people to pick what fits their auto-approve expense budget, and to contact you about a site
+  license (linked to the support page; outside the US, App Review may object to steering buyers
+  to a purchase outside the App Store, so be ready to drop that sentence).
+- Apple's price points include round prices such as $8.00 and $50.00, but *verify* each in App
+  Store Connect, especially $1,024 (prices above the default range must be requested).
 - **Sanity check:** a 1 TB external SSD costs about $80–120, and Apple typically charges around $200
   to go from 512 GB to 1 TB at purchase. A personal price well below the drive and a business price below
   the internal upgrade is an easy story.
-- **Later:** run an offer code for launch press, and revisit the 25 GB free limit and the trial
-  length once you see real usage. Each is one constant.
+- **Later:** run an offer code for launch press, and revisit the 100 GB free limit once you see
+  real usage. It's one constant.
 
 ## Copy
 

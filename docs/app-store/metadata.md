@@ -22,7 +22,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 ## Promotional text (170)
 
 > Your Mac fills up with node_modules, build files and caches. Stowaway finds them, deletes them
-> on request, or keeps them on an external drive. Try it free for 30 days.
+> on request, or keeps them on an external drive. Free up to 100 GB.
 
 ## Description (4,000)
 
@@ -56,9 +56,8 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 > • No accounts, no tracking, no data collected.
 >
 > FREE, WITH UNLIMITED STOWING WHEN YOU'RE READY
-> Finding and deleting folders is free, and so is stowing up to 25 GB. Try unlimited stowing
-> free for 30 days; after that, any purchase, at a price you choose, keeps it unlimited. Are we
-> helping you
+> Finding and deleting folders is free, and so is stowing up to 100 GB. Any purchase, at a
+> price you choose, makes stowing unlimited. Are we helping you
 > avoid an expensive storage upgrade? Any purchase, at a price you choose, makes stowing
 > unlimited. Using it at work? Please choose a business price: business purchases
 > keep Stowaway free for everyone using it personally.
@@ -81,21 +80,32 @@ browser page the user submits themselves.
 
 ## In-app purchases
 
-Create each as **Non-Consumable**. The trial is free (price $0) and must keep the
-"30-day Trial" name. Prices for the rest are yours to choose (see `pricing.md`); every one
+Create each as **Non-Consumable**. The app shows its own line under each personal price
+(`Store.taglines`), since display names are capped at 30 characters; the display names here are
+what Apple's receipts and the invoice show. Prices are yours to choose (see `pricing.md`); every one
 unlocks the same thing, unlimited stowing. Each needs a review screenshot of the upgrade
 sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the app.
 
-| Product ID | Reference name | Display name (30) | Description (45) | Family Sharing |
-|---|---|---|---|---|
-| …`trial30` | 30-day Trial | 30-day Trial | Unlimited stowing for 30 days, free. | Off |
-| …`personal.1` | Personal 1 | Thanks | Unlimited stowing. Pay what you want. | On |
-| …`personal.2` | Personal 2 | Big Thanks | Unlimited stowing. Pay what you want. | On |
-| …`personal.3` | Personal 3 | Huge Thanks | Unlimited stowing. Pay what you want. | On |
-| …`business.1` | Business 1 | Business | Unlimited stowing for use at work. | Off |
-| …`business.2` | Business 2 | Business Plus | Unlimited stowing for use at work. | Off |
-| …`business.3` | Business 3 | Business Pro | Unlimited stowing for use at work. | Off |
-| …`business.4` | Business 4 | Business Patron | Unlimited stowing for use at work. | Off |
+| Product ID | Reference name | Display name (30) | Description (45) | Price | Family Sharing |
+|---|---|---|---|---|---|
+| …`personal.1` | Personal 1 | A Sandwich | Unlimited stowing. Pay what you want. | $8 | On |
+| …`personal.2` | Personal 2 | A Really Nice Sandwich | Unlimited stowing. Pay what you want. | $16 | On |
+| …`personal.3` | Personal 3 | Team Sandwiches | Unlimited stowing. Pay what you want. | $32 | On |
+| …`personal.4` | Personal 4 | Dinner for One | Unlimited stowing. Pay what you want. | $64 | On |
+| …`personal.5` | Personal 5 | Team Dinner | Unlimited stowing. Pay what you want. | $128 | On |
+| …`personal.6` | Personal 6 | Cheaper Than Storage | Unlimited stowing. Pay what you want. | $256 | On |
+| …`personal.7` | Personal 7 | Thank-You Card | Unlimited stowing. Pay what you want. | $512 | On |
+| …`personal.8` | Personal 8 | Birthday Cards | Unlimited stowing. Pay what you want. | $1,024 | On |
+| …`business.1` | Business 1 | Business License | Unlimited stowing, for use at work. | $50 | Off |
+| …`business.2` | Business 2 | Business License | Unlimited stowing, for use at work. | $100 | Off |
+| …`business.3` | Business 3 | Business License | Unlimited stowing, for use at work. | $150 | Off |
+| …`business.4` | Business 4 | Business License | Unlimited stowing, for use at work. | $200 | Off |
+| …`business.5` | Business 5 | Business License | Unlimited stowing, for use at work. | $250 | Off |
+| …`business.6` | Business 6 | Business License | Unlimited stowing, for use at work. | $300 | Off |
+| …`business.7` | Business 7 | Business License | Unlimited stowing, for use at work. | $350 | Off |
+| …`business.8` | Business 8 | Business License | Unlimited stowing, for use at work. | $400 | Off |
+| …`business.9` | Business 9 | Business License | Unlimited stowing, for use at work. | $450 | Off |
+| …`business.10` | Business 10 | Business License | Unlimited stowing, for use at work. | $500 | Off |
 
 (…= `com.brooklynspaceport.stowaway.`)
 

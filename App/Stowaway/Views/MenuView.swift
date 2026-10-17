@@ -95,9 +95,6 @@ struct MenuView: View {
         action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
           .padding(.horizontal, -6)
       }
-      if let days = model.store.trialDaysLeft {
-        Text("Free trial: \(days) day\(days == 1 ? "" : "s") left").foregroundStyle(.secondary)
-      }
       if let activity = model.activity {
         Text(activity).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
       } else if model.reclaimableBytes > 0 {
