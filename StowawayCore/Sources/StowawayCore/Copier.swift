@@ -28,11 +28,18 @@ public enum Copier {
 
   /// Copies the contents of `src` into `dst`, creating `dst` if needed. Existing files in `dst`
   /// are replaced, so this also merges.
+  ///
+  /// Never writes through a symlink found in `dst`: `dst` may be on a shared drive, where a folder
+  /// could have been swapped for a link to somewhere else. Such links are replaced with real
+  /// folders. (The caller checks that `dst`'s parents are real folders.) Read-only folders in `dst`
+  /// (Go's module cache) are made writable while files go in; their permissions are restored
+  /// from `src` afterwards.
   public static func copyContents(of src: URL, into dst: URL) throws -> CopyStats {
     let start = Date()
     var stats = CopyStats()
     let fm = FileManager.default
-    try fm.createDirectory(at: dst, withIntermediateDirectories: true)
+    try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try realDirectory(dst.standardizedFileURL.path)
 
     var dirs: [(String, String)] = []
     var leaves: [(String, String)] = []
@@ -47,7 +54,7 @@ public enum Copier {
       var st = stat()
       guard lstat(from, &st) == 0 else { throw StowawayError.posix("reading", from) }
       if st.st_mode & S_IFMT == S_IFDIR {
-        if mkdir(to, 0o700) != 0 && errno != EEXIST { throw StowawayError.posix("creating", to) }
+        try realDirectory(to)
         dirs.append((from, to))
       } else {
         leaves.append((from, to))
@@ -78,6 +85,22 @@ public enum Copier {
     stats.directories = dirs.count
     stats.seconds = Date().timeIntervalSince(start)
     return stats
+  }
+
+  /// Makes sure `path` is a real, writable folder: creates it, or replaces a symlink or file there
+  /// with one (never following the link).
+  static func realDirectory(_ path: String) throws {
+    var st = stat()
+    if lstat(path, &st) == 0 {
+      if st.st_mode & S_IFMT == S_IFDIR {
+        if st.st_mode & S_IWUSR == 0 { chmod(path, st.st_mode | S_IWUSR | S_IXUSR) }
+        return
+      }
+      if st.st_mode & S_IFMT == S_IFLNK || st.st_mode & S_IFMT == S_IFREG {
+        guard unlink(path) == 0 else { throw StowawayError.posix("replacing", path) }
+      }
+    }
+    if mkdir(path, 0o700) != 0 && errno != EEXIST { throw StowawayError.posix("creating", path) }
   }
 
   /// Deletes a tree as fast as `rm -rf`. Works relative to open directory handles (`unlinkat`), so

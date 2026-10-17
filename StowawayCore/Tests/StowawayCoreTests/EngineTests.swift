@@ -113,14 +113,14 @@ final class EngineTests: XCTestCase {
     try s.file("code/a/.next/big", String(repeating: "x", count: 200_000))
     try s.file("code/b/package.json", "{}")
     try s.file("code/b/.next/big", String(repeating: "x", count: 200_000))
-    engine.offloadLimit = 300_000
-    try engine.adopt(code.appendingPathComponent("a/.next").path, kind: .next)
-    XCTAssertThrowsError(try engine.adopt(code.appendingPathComponent("b/.next").path, kind: .next))
-    {
+    let next = { (project: String) in code.appendingPathComponent("\(project)/.next").path }
+    try engine.adopt(next("a"), kind: .next, limit: 300_000)
+    XCTAssertThrowsError(try engine.adopt(next("b"), kind: .next, limit: 300_000)) {
       XCTAssertTrue($0 is OffloadLimitReached)
     }
     try engine.release(code.appendingPathComponent("a/.next").path)
-    XCTAssertNoThrow(try engine.adopt(code.appendingPathComponent("b/.next").path, kind: .next))
+    XCTAssertNoThrow(
+      try engine.adopt(code.appendingPathComponent("b/.next").path, kind: .next, limit: 300_000))
   }
 
   func testDiscardDeletesBothCopies() throws {

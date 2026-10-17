@@ -25,6 +25,8 @@ final class Store {
   private(set) var owned: Set<String> = []
   private(set) var loadError: String?
   private(set) var purchasing: String?
+  /// Set once entitlements have been read, so a paying user's actions never see the free limit.
+  private(set) var loaded = false
   private var updates: Task<Void, Never>?
   #if DEBUG
     /// Snapshots only: price labels to show when the App Store isn't reachable.
@@ -83,6 +85,14 @@ final class Store {
       }
     }
     owned = ids
+    loaded = true
+  }
+
+  /// Waits (briefly) for the first entitlement check.
+  func waitUntilLoaded() async {
+    for _ in 0..<50 where !loaded {
+      try? await Task.sleep(for: .milliseconds(100))
+    }
   }
 
   /// Buys a product. Returns true if it went through.

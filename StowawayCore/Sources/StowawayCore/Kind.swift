@@ -151,6 +151,28 @@ func isRealDirectory(_ path: String) -> Bool {
   return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
 }
 
+/// `path` with every symlink resolved (so `/var/…` and `/private/var/…` compare equal). For a
+/// path that doesn't exist yet, its deepest existing ancestor is resolved and the rest appended.
+func canonicalPath(_ path: String) -> String {
+  var head = path
+  var tail: [String] = []
+  while head != "/" && !head.isEmpty {
+    if let resolved = realpath(head, nil) {
+      defer { free(resolved) }
+      return ([String(cString: resolved)] + tail.reversed()).joined(separator: "/")
+    }
+    tail.append((head as NSString).lastPathComponent)
+    head = (head as NSString).deletingLastPathComponent
+  }
+  return path
+}
+
+/// Whether `path` is strictly inside `base`, comparing canonical paths.
+func isInside(_ path: String, _ base: String) -> Bool {
+  let base = canonicalPath(base)
+  return canonicalPath(path).hasPrefix(base.hasSuffix("/") ? base : base + "/")
+}
+
 /// Whether `path` is a symlink.
 func isSymlink(_ path: String) -> Bool {
   var st = stat()

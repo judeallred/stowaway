@@ -44,6 +44,8 @@ final class AppModel {
   private(set) var busy: Set<String> = []
   private(set) var roots: [String] = []
   private(set) var drivePath: String?
+  /// The offload location's name, known even while it's unplugged.
+  private(set) var driveName: String?
   private(set) var driveConnected = false
   private(set) var driveFreeBytes: Int64?
   private(set) var offloadedBytes: Int64 = 0
@@ -80,8 +82,14 @@ final class AppModel {
     timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
       Task { @MainActor in self?.queueReconcile() }
     }
-    queueReconcile()
-    Task { await scan() }
+    let engine = engine
+    Task {
+      // Finish anything a quit or crash interrupted before doing anything else.
+      await Task.detached { engine.recover() }.value
+      await store.waitUntilLoaded()
+      queueReconcile()
+      await scan()
+    }
   }
 
   // MARK: Settings
@@ -89,6 +97,7 @@ final class AppModel {
   func refreshSettings() {
     roots = engine.rootPaths
     drivePath = engine.drivePath
+    driveName = engine.driveName
     loginItemEnabled = SMAppService.mainApp.status == .enabled
     let engine = engine
     Task.detached {
@@ -141,6 +150,27 @@ final class AppModel {
     return true
   }
 
+  /// Folders dropped on the app's icon: a drive becomes the offload location if none is set yet;
+  /// anything else is added to the folders Stowaway looks in.
+  func open(_ urls: [URL]) {
+    for url in urls {
+      let isVolume = (try? url.resourceValues(forKeys: [.isVolumeKey]).isVolume) ?? false
+      do {
+        if isVolume, url.path != "/", drivePath == nil {
+          try engine.grant(url, as: .drive)
+          message = "Offloading to \(url.lastPathComponent)."
+        } else {
+          try engine.grant(url, as: .root)
+          message = "Added \(Format.path(url.path))."
+        }
+      } catch {
+        message = "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)"
+      }
+    }
+    refreshSettings()
+    Task { await scan() }
+  }
+
   /// Creates the sample workspace in a folder the user picks and starts looking in it.
   func createSampleProject() {
     guard
@@ -172,10 +202,6 @@ final class AppModel {
         "Choose where offloaded folders go: an external drive, or a folder on one.",
         at: URL(fileURLWithPath: "/Volumes"))
     else { return }
-    if let current = drivePath, current != url.standardizedFileURL.path, !engine.entries().isEmpty {
-      message = "Bring every folder back before choosing a different offload location."
-      return
-    }
     do {
       try engine.grant(url, as: .drive)
     } catch {
@@ -260,17 +286,9 @@ final class AppModel {
     return rows.values.sorted { ($0.name, $0.path) < ($1.name, $1.path) }
   }
 
+  /// The row an entry belongs to: the container recorded when it was offloaded.
   static func container(of entry: Entry) -> String {
-    let marker: String? =
-      switch entry.kind {
-      case .cargoTarget: "/target/"
-      case .xcodeDerivedData: "/DerivedData/"
-      default: nil
-      }
-    if let marker, let range = entry.local.range(of: marker) {
-      return String(entry.local[..<range.lowerBound]) + marker.dropLast()
-    }
-    return entry.local
+    entry.container ?? entry.local
   }
 
   private static func projectFolder(of entry: Entry, container: String) -> String? {
@@ -317,8 +335,9 @@ final class AppModel {
       paths = [row.path]
     }
     await perform(row) { engine, limit in
-      engine.offloadLimit = limit
-      for path in paths { try engine.adopt(path, kind: row.kind) }
+      for path in paths {
+        try engine.adopt(path, kind: row.kind, container: row.path, limit: limit)
+      }
     }
   }
 
@@ -336,8 +355,9 @@ final class AppModel {
       } else {
         for path in row.entryPaths { try engine.discard(path) }
         // A Cargo target's remaining local part (built programs) goes too: delete means delete.
+        // Through the cleaner, so it gets the same checks as any other delete.
         if row.kind == .cargoTarget, FileManager.default.fileExists(atPath: row.path) {
-          try Copier.remove(row.candidate.url)
+          try Cleaner().delete(row.candidate, roots: roots, offloaded: engine.entries())
         }
       }
     }
@@ -348,6 +368,7 @@ final class AppModel {
   {
     busy.insert(row.path)
     defer { busy.remove(row.path) }
+    await store.waitUntilLoaded()
     let engine = engine
     let limit = store.offloadLimit
     let failure: (any Error)? = await Task.detached {
@@ -370,17 +391,18 @@ final class AppModel {
   private func autoOffload() async {
     let days = autoOffloadDays
     guard days > 0, driveConnected else { return }
+    await store.waitUntilLoaded()
     let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
     for row in rows
     where row.place == .mac && (row.lastActivity ?? .now) < cutoff && !row.kind.isGlobal {
       let engine = engine
       let limit = store.offloadLimit
       let paths = row.kind.parts(of: row.candidate.url)?.map(\.path) ?? [row.path]
+      let container = row.path
       let stop = await Task.detached { () -> Bool in
-        engine.offloadLimit = limit
         for path in paths {
           do {
-            try engine.adopt(path, kind: row.kind)
+            try engine.adopt(path, kind: row.kind, container: container, limit: limit)
           } catch is OffloadLimitReached {
             return true
           } catch {

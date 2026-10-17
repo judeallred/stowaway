@@ -143,6 +143,28 @@ extension Engine {
     }
   }
 
+  /// Where an entry links to, if it's a link into `store`.
+  static func storeLinkTarget(_ entry: URL, store: URL) -> String? {
+    guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: entry.path),
+      isInside(target, store.path)
+    else { return nil }
+    return target
+  }
+
+  /// The slot a package's existing links point into, if any (they all share one).
+  static func linkedSlot(of package: URL, store: URL) -> URL? {
+    for entry in contents(of: package) {
+      if let target = storeLinkTarget(package.appendingPathComponent(entry), store: store),
+        let slot = validated(
+          URL(fileURLWithPath: target).deletingLastPathComponent().path, in: store),
+        isRealDirectory(slot.path)
+      {
+        return slot
+      }
+    }
+    return nil
+  }
+
   /// Whether every entry of a package (but its nested node_modules) already links into `store`.
   static func isOffloaded(_ package: URL, store: URL) -> Bool {
     contents(of: package).allSatisfy { entry in
@@ -181,16 +203,28 @@ extension Engine {
     if !todo.isEmpty { try fm.createDirectory(at: trash, withIntermediateDirectories: false) }
     for (i, package) in todo.enumerated() {
       let rel = Self.relative(package.path, to: local)
+      // Only entries that are still real files move; links already pointing into the store stay.
+      let real = Self.contents(of: package.path).filter {
+        Self.storeLinkTarget(package.path.appendingPathComponent($0), store: store) == nil
+      }
       let target: URL
-      if reuse.contains(rel),
+      if let slot = Self.linkedSlot(of: package.path, store: store) {
+        // Partly linked already (a native build added files): add the new ones to the same slot.
+        try checkContained(slot, in: store)
+        let stats = try Self.copyContents(of: package.path, names: real, into: slot)
+        total.files += stats.files
+        total.bytes += stats.bytes
+        target = slot
+      } else if reuse.contains(rel),
         let existing = manifest[rel].flatMap({ Self.validated($0, in: store) })
       {
+        try checkContained(existing, in: store)
         target = existing
         total.reused += 1
       } else {
         target = try Self.makeSlot(
           in: store, name: package.name, chain: package.chain, package: package.path)
-        let stats = try Self.copyContents(of: package.path, into: target)
+        let stats = try Self.copyContents(of: package.path, names: real, into: target)
         total.files += stats.files
         total.directories += stats.directories
         total.bytes += stats.bytes
@@ -201,7 +235,7 @@ extension Engine {
       lstat(package.path.path, &st)
       let aside = trash.appendingPathComponent("\(i)")
       try fm.createDirectory(at: aside, withIntermediateDirectories: false)
-      for entry in Self.contents(of: package.path) {
+      for entry in real {
         let source = package.path.appendingPathComponent(entry)
         try fm.moveItem(at: source, to: aside.appendingPathComponent(entry))
         try fm.createSymbolicLink(
@@ -244,11 +278,10 @@ extension Engine {
     return target
   }
 
-  /// Copies a package's contents, but not its nested node_modules, into its slot.
-  static func copyContents(of package: URL, into target: URL) throws -> CopyStats {
+  /// Copies the named entries of a package (never its nested node_modules) into its slot.
+  static func copyContents(of package: URL, names: [String], into target: URL) throws -> CopyStats {
     var total = CopyStats()
-    let fm = FileManager.default
-    for entry in contents(of: package) {
+    for entry in names where entry != "node_modules" {
       let source = package.appendingPathComponent(entry)
       let destination = target.appendingPathComponent(entry)
       if isRealDirectory(source.path) {
@@ -257,7 +290,12 @@ extension Engine {
         total.directories += stats.directories
         total.bytes += stats.bytes
       } else {
-        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
+        // Replace whatever is there without following it (it may be a link on a shared drive).
+        if isRealDirectory(destination.path) {
+          try Copier.remove(destination)
+        } else {
+          unlink(destination.path)
+        }
         if copyfile(
           source.path, destination.path, nil, copyfile_flags_t(COPYFILE_ALL | COPYFILE_NOFOLLOW))
           != 0
@@ -295,10 +333,12 @@ extension Engine {
   /// A manifest target as a URL, if it's inside `store`. The manifest lives on the drive, which may
   /// be shared, so its paths aren't trusted.
   static func validated(_ target: String, in store: URL) -> URL? {
-    let url = URL(fileURLWithPath: target).standardizedFileURL
-    let base = store.standardizedFileURL.path + "/"
-    guard url.path.hasPrefix(base), !target.split(separator: "/").contains("..") else { return nil }
-    return url
+    guard !target.split(separator: "/").contains(".."), isInside(target, store.path) else {
+      return nil
+    }
+    // Rebuild it from the store's own URL, so later checks compare like with like.
+    let base = canonicalPath(store.path)
+    return store.appendingPathComponent(String(canonicalPath(target).dropFirst(base.count + 1)))
   }
 
   static func setTimes(_ url: URL, from st: stat) {
@@ -339,21 +379,51 @@ extension Engine {
         }
       }
     }
+    if Date().timeIntervalSince(newest) <= quietPeriod { return false }
+    // Packages with real files may still be being written (a postinstall compiling for minutes
+    // touches only its own folder): look inside those too.
+    for package in Self.packages(in: local, chain: [])
+    where Self.contents(of: package.path).contains(where: {
+      !isSymlink(package.path.appendingPathComponent($0).path)
+    }) {
+      newest = max(newest, Self.newestChange(under: package.path))
+    }
     return Date().timeIntervalSince(newest) > quietPeriod
+  }
+
+  /// The newest modification time of anything under `root`, not following links.
+  static func newestChange(under root: URL) -> Date {
+    var newest = Date.distantPast
+    var paths: [UnsafeMutablePointer<CChar>?] = [strdup(root.path), nil]
+    defer { free(paths[0]) }
+    guard let fts = fts_open(&paths, FTS_PHYSICAL | FTS_NOCHDIR, nil) else { return newest }
+    defer { fts_close(fts) }
+    while let entry = fts_read(fts) {
+      if let st = entry.pointee.fts_statp {
+        newest = max(
+          newest, Date(timeIntervalSince1970: TimeInterval(st.pointee.st_mtimespec.tv_sec)))
+      }
+    }
+    return newest
   }
 
   // MARK: Comparing
 
   /// Whether two package folders hold the same files (ignoring their nested node_modules): the
-  /// same package.json, the same number of files and the same total size.
+  /// same package.json and the same file names, sizes and modification times. npm sets file
+  /// times from the package tarball, so an identical reinstall matches.
   static func sameTree(_ a: URL, _ b: URL) -> Bool {
     guard let x = fingerprint(a), let y = fingerprint(b), !x.manifests.isEmpty else { return false }
     return x.files == y.files && x.bytes == y.bytes && x.manifests == y.manifests
+      && x.listing == y.listing
   }
 
   /// Counts files and bytes under `root` with fts (as fast as `find`), skipping its nested
   /// node_modules, and keeps its package.json.
-  static func fingerprint(_ root: URL) -> (files: Int, bytes: Int64, manifests: [String: Data])? {
+  static func fingerprint(_ root: URL) -> (
+    files: Int, bytes: Int64, manifests: [String: Data], listing: [String]
+  )? {
+    var listing: [String] = []
     var files = 0
     var bytes: Int64 = 0
     var manifests: [String: Data] = [:]
@@ -371,7 +441,9 @@ extension Engine {
       switch Int32(entry.pointee.fts_info) {
       case FTS_F, FTS_SL, FTS_SLNONE, FTS_DEFAULT:
         files += 1
-        bytes += Int64(entry.pointee.fts_statp.pointee.st_size)
+        let st = entry.pointee.fts_statp.pointee
+        bytes += Int64(st.st_size)
+        listing.append("\(path.dropFirst(rootPath.count)) \(st.st_size) \(st.st_mtimespec.tv_sec)")
         if entry.pointee.fts_level == 1, path.hasSuffix("/package.json") {
           manifests["package.json"] = FileManager.default.contents(atPath: path)
         }
@@ -381,7 +453,7 @@ extension Engine {
         break
       }
     }
-    return (files, bytes, manifests)
+    return (files, bytes, manifests, listing.sorted())
   }
 
   // MARK: The drive coming and going
@@ -433,12 +505,41 @@ extension Engine {
       // outside the store is dropped, never deleted.
       if let target = Self.validated(target, in: store) {
         let slot = String(target.path.dropFirst(store.path.count + 1).prefix { $0 != "/" })
-        if !slot.isEmpty { try? Copier.remove(store.appendingPathComponent(slot)) }
+        let url = store.appendingPathComponent(slot)
+        if !slot.isEmpty, (try? checkContained(url, in: store)) != nil { try? Copier.remove(url) }
       }
       manifest[rel] = nil
       removed += 1
     }
     if removed > 0 { try? Self.writeManifest(manifest, to: store) }
+  }
+
+  /// After an interrupted re-offload: deletes the trash (its contents are already on the drive)
+  /// and restores links that were set aside but not yet created.
+  func recoverPackages(_ entry: Entry, store mine: URL) {
+    let fm = FileManager.default
+    let local = URL(fileURLWithPath: entry.local)
+    for name in (try? fm.contentsOfDirectory(atPath: local.path)) ?? []
+    where name.hasPrefix(".stowaway-trash-") {
+      try? Copier.remove(local.appendingPathComponent(name))
+    }
+    guard let store = try? storePath(entry.remote, in: mine) else { return }
+    for (rel, target) in Self.readManifest(store) {
+      let package = local.appendingPathComponent(rel)
+      guard let slot = Self.validated(target, in: store),
+        (try? checkContained(slot, in: store)) != nil,
+        isRealDirectory(package.path), Self.linkedSlot(of: package, store: store)?.path == slot.path
+      else { continue }
+      for name in (try? fm.contentsOfDirectory(atPath: slot.path)) ?? []
+      where name != "node_modules" {
+        let path = package.appendingPathComponent(name)
+        var st = stat()
+        if lstat(path.path, &st) != 0 {
+          try? fm.createSymbolicLink(
+            at: path, withDestinationURL: slot.appendingPathComponent(name))
+        }
+      }
+    }
   }
 
   // MARK: Releasing
@@ -455,10 +556,15 @@ extension Engine {
       lstat(package.path.path, &st)
       for name in Self.contents(of: package.path) {
         let path = package.path.appendingPathComponent(name)
-        guard let target = try? fm.destinationOfSymbolicLink(atPath: path.path),
-          target.hasPrefix(store.path)
-        else { continue }
-        let staging = package.path.appendingPathComponent(".\(name).stowaway-releasing")
+        guard let link = Self.storeLinkTarget(path, store: store) else { continue }
+        // Follow chains only within the store (an older release could have left one), and refuse
+        // anything else: the drive isn't trusted.
+        let target = canonicalPath(link)
+        guard isInside(target, store.path), !isSymlink(target) else {
+          throw StowawayError(
+            "\(path.path) links to \(link), outside Stowaway's store; leaving it alone")
+        }
+        let staging = Self.leftoverName(for: path, kind: "releasing")
         if isRealDirectory(target) {
           _ = try Copier.copyContents(of: URL(fileURLWithPath: target), into: staging)
         } else {
@@ -475,13 +581,14 @@ extension Engine {
       Self.setTimes(package.path, from: st)
     }
     let lockfile = local.appendingPathComponent(Self.hiddenLockfile)
-    if let target = try? fm.destinationOfSymbolicLink(atPath: lockfile.path) {
+    if let target = Self.storeLinkTarget(lockfile, store: store) {
       var dirStat = stat()
       lstat(local.path, &dirStat)
       try fm.removeItem(at: lockfile)
       _ = copyfile(target, lockfile.path, nil, copyfile_flags_t(COPYFILE_ALL))
       Self.setTimes(local, from: dirStat)
     }
+    try checkContained(store, in: mine)
     try Copier.remove(store)
     note("released \(entry.local)")
   }

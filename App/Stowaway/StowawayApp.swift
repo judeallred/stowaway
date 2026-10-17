@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct StowawayApp: App {
   @State private var model = AppModel()
+  @NSApplicationDelegateAdaptor private var delegate: AppDelegate
 
   var body: some Scene {
     MenuBarExtra {
@@ -27,6 +28,18 @@ struct StowawayApp: App {
   }
 }
 
+/// Receives folders dropped on Stowaway's icon or opened with it ("Open With → Stowaway").
+/// macOS grants access to them the same way as choosing them in an open panel.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+  @MainActor static var model: AppModel?
+
+  func application(_ application: NSApplication, open urls: [URL]) {
+    MainActor.assumeIsolated {
+      Self.model?.open(urls)
+    }
+  }
+}
+
 /// The menu bar icon. It's the first view to appear, so it starts the model and, on first
 /// launch, opens the library window (a menu bar app has no Dock icon to click).
 private struct MenuBarLabel: View {
@@ -39,6 +52,7 @@ private struct MenuBarLabel: View {
       .task {
         guard !model.started else { return }
         model.started = true
+        AppDelegate.model = model
         #if DEBUG
           if let folder = Snapshots.folder {
             Snapshots.run(into: folder)

@@ -38,6 +38,12 @@ targets:
         NSHumanReadableCopyright: © 2026 Jude Allred
         # Only Apple's own encryption (HTTPS through system frameworks): exempt.
         ITSAppUsesNonExemptEncryption: false
+        # Folders and drives can be dropped on the app or opened with it.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Folder
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: None
+            LSItemContentTypes: [public.folder, public.volume]
     entitlements:
       path: Stowaway/Stowaway.entitlements
       properties:

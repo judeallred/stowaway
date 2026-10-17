@@ -13,8 +13,12 @@ public struct Entry: Codable, Sendable, Identifiable, Equatable {
   public var adoptedAt: Date
   public var mode: Mode = .folder
   public var kind: Kind?
-  /// Bytes moved to the drive when it was offloaded.
+  /// Bytes the folder takes on the drive.
   public var bytes: Int64 = 0
+  /// The folder this entry is part of, when it's one of several (a Cargo `target/`'s build
+  /// folders, DerivedData's intermediates); the folder itself otherwise. Recorded when offloaded,
+  /// so it's never guessed from the path.
+  public var container: String?
 
   public enum Mode: String, Codable, Sendable {
     /// The whole folder is a symlink to the drive.
@@ -26,7 +30,7 @@ public struct Entry: Codable, Sendable, Identifiable, Equatable {
 
   public init(
     id: String, local: String, remote: String, online: Bool, adoptedAt: Date, mode: Mode = .folder,
-    kind: Kind? = nil, bytes: Int64 = 0
+    kind: Kind? = nil, bytes: Int64 = 0, container: String? = nil
   ) {
     self.id = id
     self.local = local
@@ -36,10 +40,11 @@ public struct Entry: Codable, Sendable, Identifiable, Equatable {
     self.mode = mode
     self.kind = kind
     self.bytes = bytes
+    self.container = container
   }
 
   private enum CodingKeys: String, CodingKey {
-    case id, local, remote, online, adoptedAt, mode, kind, bytes
+    case id, local, remote, online, adoptedAt, mode, kind, bytes, container
   }
 
   public init(from decoder: any Decoder) throws {
@@ -52,6 +57,7 @@ public struct Entry: Codable, Sendable, Identifiable, Equatable {
     mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? .folder
     kind = try c.decodeIfPresent(Kind.self, forKey: .kind)
     bytes = try c.decodeIfPresent(Int64.self, forKey: .bytes) ?? 0
+    container = try c.decodeIfPresent(String.self, forKey: .container)
   }
 }
 
@@ -79,7 +85,9 @@ public final class Engine: @unchecked Sendable {
   private let defaults: UserDefaults
   let stateDirectory: URL
   private let lock = NSLock()
-  private var scoped: [URL] = []
+  /// Folders being accessed, by path. Access is started once and kept for the life of the
+  /// process: stopping it while another thread is mid-operation would make that operation fail.
+  private var scoped: [String: URL] = [:]
   let logger = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "engine")
 
   /// Receives one line per notable event (the app shows the latest; tests print them).
@@ -90,10 +98,6 @@ public final class Engine: @unchecked Sendable {
   /// How long an npm node_modules must be untouched before packages an install brought back are
   /// offloaded again.
   public var quietPeriod: TimeInterval = 20
-  /// How much a new offload may bring the drive's total to, or nil for no limit (the free tier
-  /// has one; any purchase lifts it). Only new offloads are refused: folders already on the
-  /// drive keep working, and bringing folders back or deleting them is never limited.
-  public var offloadLimit: Int64?
 
   public init(defaults: UserDefaults = .standard, stateDirectory: URL? = nil) {
     self.defaults = defaults
@@ -125,23 +129,48 @@ public final class Engine: @unchecked Sendable {
   // MARK: Grants
 
   /// Saves a folder the user granted in an open panel.
+  ///
+  /// A different offload location is refused while folders are offloaded, even when the current
+  /// one is unplugged (it can't be resolved then, but the folders are still on it). Choosing the
+  /// same drive again is fine: it already holds this Mac's store.
   public func grant(_ url: URL, as role: GrantRole) throws {
     let data = try url.bookmarkData(
       options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
     switch role {
     case .drive:
-      defaults.set(data, forKey: "drive")
+      let ours = url.appendingPathComponent(Self.storeFolderName).appendingPathComponent(installID)
+      if !entries().isEmpty, !isRealDirectory(ours.path) {
+        throw StowawayError(
+          "Stowaway keeps folders on \(driveName ?? "another drive"). Bring them back before choosing a different location."
+        )
+      }
+      lock.withLock {
+        defaults.set(data, forKey: "drive")
+        defaults.set(url.lastPathComponent, forKey: "driveName")
+      }
     case .root:
-      var roots = rootBookmarks().filter { resolvePath($0) != url.standardizedFileURL.path }
-      roots.append(data)
-      defaults.set(roots, forKey: "roots")
+      lock.withLock {
+        var roots = rootBookmarks().filter { resolvePath($0) != url.standardizedFileURL.path }
+        roots.append(data)
+        defaults.set(roots, forKey: "roots")
+      }
     }
   }
 
   /// Forgets a root. Folders already offloaded from it stay managed.
   public func revokeRoot(_ path: String) {
-    defaults.set(rootBookmarks().filter { resolvePath($0) != path }, forKey: "roots")
+    lock.withLock {
+      defaults.set(rootBookmarks().filter { resolvePath($0) != path }, forKey: "roots")
+    }
   }
+
+  /// The offload location's name, remembered so it can be shown while it's unplugged.
+  public var driveName: String? {
+    defaults.data(forKey: "drive") == nil ? nil : defaults.string(forKey: "driveName")
+  }
+
+  /// Whether an offload location has been chosen (it may be unplugged).
+  public var hasDrive: Bool { defaults.data(forKey: "drive") != nil }
 
   /// Forgets the offload location. Refused while anything is on it.
   public func forgetDrive() throws {
@@ -149,6 +178,7 @@ public final class Engine: @unchecked Sendable {
       throw StowawayError("bring every folder back before choosing a different location")
     }
     defaults.removeObject(forKey: "drive")
+    defaults.removeObject(forKey: "driveName")
   }
 
   public var rootPaths: [String] { rootBookmarks().compactMap(resolvePath) }
@@ -171,23 +201,16 @@ public final class Engine: @unchecked Sendable {
   @discardableResult
   public func enterGrants() -> URL? {
     lock.withLock {
-      for url in scoped { url.stopAccessingSecurityScopedResource() }
-      scoped = []
+      let roots = rootBookmarks()
       var refreshed: [Data] = []
-      for data in rootBookmarks() {
-        if let (url, fresh) = access(data) {
-          scoped.append(url)
-          refreshed.append(fresh)
-        } else {
-          refreshed.append(data)
-        }
+      for data in roots {
+        refreshed.append(access(data)?.1 ?? data)
       }
-      defaults.set(refreshed, forKey: "roots")
+      if refreshed != roots { defaults.set(refreshed, forKey: "roots") }
       guard let data = defaults.data(forKey: "drive"), let (drive, fresh) = access(data) else {
         return nil
       }
-      defaults.set(fresh, forKey: "drive")
-      scoped.append(drive)
+      if fresh != data { defaults.set(fresh, forKey: "drive") }
       guard FileManager.default.fileExists(atPath: drive.path) else { return nil }
       let store = drive.appendingPathComponent(Self.storeFolderName).appendingPathComponent(
         installID)
@@ -205,8 +228,9 @@ public final class Engine: @unchecked Sendable {
         resolvingBookmarkData: data, options: [.withSecurityScope, .withoutMounting, .withoutUI],
         relativeTo: nil,
         bookmarkDataIsStale: &stale),
-      url.startAccessingSecurityScopedResource()
+      scoped[url.standardizedFileURL.path] != nil || url.startAccessingSecurityScopedResource()
     else { return nil }
+    scoped[url.standardizedFileURL.path] = url
     if stale,
       let fresh = try? url.bookmarkData(
         options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
@@ -260,21 +284,31 @@ public final class Engine: @unchecked Sendable {
 
   /// Moves `path` onto the offload location: npm's node_modules package by package, anything
   /// else as one folder behind a symlink.
+  ///
+  /// `limit` is how much a new offload may bring the drive's total to (the free tier has one; any
+  /// purchase lifts it). Only new offloads are refused: folders already on the drive keep working,
+  /// and bringing folders back or deleting them is never limited. `container` is the folder this
+  /// is part of, when it's one of several (a Cargo `target/`'s build folders).
   @discardableResult
-  public func adopt(_ path: String, kind: Kind? = nil, allowTurbopack: Bool = false) throws
-    -> CopyStats
-  {
-    try exclusively { try adoptUnlocked(path, kind: kind, allowTurbopack: allowTurbopack) }
+  public func adopt(
+    _ path: String, kind: Kind? = nil, container: String? = nil, limit: Int64? = nil,
+    allowTurbopack: Bool = false
+  ) throws -> CopyStats {
+    try exclusively {
+      try adoptUnlocked(
+        path, kind: kind, container: container, limit: limit, allowTurbopack: allowTurbopack)
+    }
   }
 
-  private func adoptUnlocked(_ path: String, kind: Kind?, allowTurbopack: Bool) throws -> CopyStats
-  {
+  private func adoptUnlocked(
+    _ path: String, kind: Kind?, container: String?, limit: Int64?, allowTurbopack: Bool
+  ) throws -> CopyStats {
     let local = URL(fileURLWithPath: path).standardizedFileURL
     guard let store = enterGrants() else {
       throw StowawayError("the offload location isn't connected")
     }
     try validateAdoptable(local, store: store)
-    if let limit = offloadLimit {
+    if let limit {
       let needed = Measure.allocatedSize(local.path)
       let used = offloadedBytes
       if used + needed > limit {
@@ -289,6 +323,7 @@ public final class Engine: @unchecked Sendable {
     let slot = "\(local.lastPathComponent)-\(id)"
     let remoteRel = "\(slot)/\(local.lastPathComponent)"
     let remote = store.appendingPathComponent(remoteRel)
+    try checkContained(remote, in: store)
     let stats = try Copier.copyContents(of: local, into: remote)
     // Build output in a JavaScript project (Next.js's .next) requires the project's packages at
     // run time, and Node looks for them from the file's real path on the drive: put a
@@ -299,22 +334,24 @@ public final class Engine: @unchecked Sendable {
         at: store.appendingPathComponent(slot).appendingPathComponent("node_modules"),
         withDestinationURL: project.appendingPathComponent("node_modules"))
     }
-    let old = local.deletingLastPathComponent().appendingPathComponent(
-      ".\(local.lastPathComponent).stowaway-old-\(id)")
-    try fm.moveItem(at: local, to: old)
-    do {
-      try fm.createSymbolicLink(at: local, withDestinationURL: remote)
-    } catch {
-      try? fm.moveItem(at: old, to: local)
-      throw error
-    }
+    // Record the entry before touching the local folder: from here on, a crash at any point
+    // leaves something `recover` and `reconcile` can finish (the copy on the drive is complete).
     var all = entries()
     all.append(
       Entry(
         id: id, local: local.path, remote: remoteRel, online: true, adoptedAt: Date(),
         kind: kind ?? Kind.forFolderName(local.lastPathComponent),
-        bytes: stats.bytes))
+        bytes: stats.bytes, container: container ?? local.path))
     save(all)
+    let old = Self.leftoverName(for: local)
+    try fm.moveItem(at: local, to: old)
+    do {
+      try fm.createSymbolicLink(at: local, withDestinationURL: remote)
+    } catch {
+      try? fm.moveItem(at: old, to: local)
+      save(entries().filter { $0.id != id })
+      throw error
+    }
     deleteSoon(old)
     note("offloaded \(local.path): \(stats)")
     return stats
@@ -335,6 +372,9 @@ public final class Engine: @unchecked Sendable {
       || entry.local.hasPrefix(local.path + "/")
     {
       throw StowawayError("\(local.path) overlaps \(entry.local), which is already offloaded")
+    }
+    if GitIndex.containsRepository(local) {
+      throw StowawayError("\(local.path) contains a git repository, so Stowaway leaves it alone")
     }
     switch GitIndex.tracking(of: local) {
     case .untracked: break
@@ -362,13 +402,24 @@ public final class Engine: @unchecked Sendable {
       save(entries().filter { $0.id != entry.id })
       return
     }
-    if entry.online {
-      guard let store else {
-        throw StowawayError("connect the offload location to bring \(path) back")
+    guard let store else {
+      throw StowawayError("connect the offload location to bring \(path) back")
+    }
+    var current = entry
+    if !current.online {
+      // The drive is connected but this folder is still local (the reconnect didn't finish):
+      // merge it onto the drive first, so nothing on either side is lost.
+      goOnline(current, store: store)
+      guard let fresh = entries().first(where: { $0.id == entry.id }), fresh.online else {
+        throw StowawayError("couldn't merge \(path) with its copy on the drive; try again")
       }
-      let remote = try storePath(entry.remote, in: store)
+      current = fresh
+    }
+    do {
+      let remote = try storePath(current.remote, in: store)
+      try checkContained(remote, in: store)
       guard isSymlink(path) else { throw StowawayError("\(path) isn't Stowaway's link any more") }
-      let staging = URL(fileURLWithPath: path + ".stowaway-releasing")
+      let staging = Self.leftoverName(for: URL(fileURLWithPath: path), kind: "releasing")
       let stats = try Copier.copyContents(of: remote, into: staging)
       try fm.removeItem(atPath: path)
       try fm.moveItem(at: staging, to: URL(fileURLWithPath: path))
@@ -376,6 +427,37 @@ public final class Engine: @unchecked Sendable {
       note("brought back \(path): \(stats)")
     }
     save(entries().filter { $0.id != entry.id })
+  }
+
+  /// A unique hidden name next to `url` for a copy being set aside (`old`) or put in place
+  /// (`releasing`). Unique, so a leftover from an interrupted operation never blocks a later one;
+  /// `recover` sweeps leftovers.
+  static func leftoverName(for url: URL, kind: String = "old") -> URL {
+    url.deletingLastPathComponent().appendingPathComponent(
+      ".\(url.lastPathComponent).stowaway-\(kind)-\(UUID().uuidString.prefix(8).lowercased())")
+  }
+
+  /// Refuses a path in the store whose folders aren't all real folders: a shared drive could have
+  /// had one swapped for a symlink leading elsewhere.
+  func checkContained(_ url: URL, in store: URL) throws {
+    // Both are built from the same store URL, so compare them as they are (standardizing can
+    // rewrite /private/var as /var on one side only). `..` is rejected by `storePath`.
+    let base = store.path
+    let target = url.path
+    guard target == base || target.hasPrefix(base + "/"),
+      !target.split(separator: "/").contains("..")
+    else {
+      throw StowawayError("refusing a path outside the store: \(target)")
+    }
+    var current = store
+    for component in target.dropFirst(base.count).split(separator: "/") {
+      current.appendPathComponent(String(component))
+      var st = stat()
+      guard lstat(current.path, &st) == 0 else { return }  // the rest doesn't exist yet
+      if st.st_mode & S_IFMT == S_IFLNK {
+        throw StowawayError("refusing a symlink on the drive: \(current.path)")
+      }
+    }
   }
 
   /// Deletes an offloaded folder everywhere: the link (or the local folder while the drive is
@@ -390,7 +472,9 @@ public final class Engine: @unchecked Sendable {
         throw StowawayError("connect the offload location to delete \(path)")
       }
       let remote = try storePath(entry.remote, in: store)
-      try Copier.remove(entry.mode == .packages ? remote : remote.deletingLastPathComponent())
+      let slot = entry.mode == .packages ? remote : remote.deletingLastPathComponent()
+      try checkContained(slot, in: store)
+      try Copier.remove(slot)
       try Copier.remove(URL(fileURLWithPath: path))
       if entry.kind?.isGlobal == true {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false)
@@ -433,6 +517,11 @@ public final class Engine: @unchecked Sendable {
       } else if store == nil, entry.online {
         goOffline(entry)
       } else if let store, entry.online, !isLink,
+        !FileManager.default.fileExists(atPath: entry.local)
+      {
+        // Interrupted between setting the folder aside and linking it: link it now.
+        relink(entry, store: store)
+      } else if let store, entry.online, !isLink,
         FileManager.default.fileExists(atPath: entry.local)
       {
         // A tool replaced the symlink (cargo clean, uv venv --clear): merge what's there.
@@ -464,11 +553,11 @@ public final class Engine: @unchecked Sendable {
     let local = URL(fileURLWithPath: entry.local)
     do {
       let remote = try storePath(entry.remote, in: store)
+      try checkContained(remote, in: store)
       var stats = CopyStats()
       if isRealDirectory(local.path) {
         stats = try Copier.copyContents(of: local, into: remote)
-        let old = local.deletingLastPathComponent().appendingPathComponent(
-          ".\(local.lastPathComponent).stowaway-old-\(entry.id)")
+        let old = Self.leftoverName(for: local)
         try fm.moveItem(at: local, to: old)
         try fm.createSymbolicLink(at: local, withDestinationURL: remote)
         deleteSoon(old)
@@ -477,13 +566,59 @@ public final class Engine: @unchecked Sendable {
         guard fm.fileExists(atPath: local.deletingLastPathComponent().path) else { return }
         try fm.createSymbolicLink(at: local, withDestinationURL: remote)
       }
+      // Recount rather than add: merged files may have replaced ones already counted.
+      let bytes = stats.files > 0 ? Measure.allocatedSize(remote.path) : entry.bytes
       update(entry.id) {
         $0.online = true
-        $0.bytes += stats.bytes
+        $0.bytes = bytes
       }
       note("the drive is back: \(entry.local) is on it again (\(stats))")
     } catch {
       note("couldn't move \(entry.local) back onto the drive: \(error.localizedDescription)")
+    }
+  }
+
+  private func relink(_ entry: Entry, store: URL) {
+    do {
+      let remote = try storePath(entry.remote, in: store)
+      try checkContained(remote, in: store)
+      guard isRealDirectory(remote.path),
+        FileManager.default.fileExists(
+          atPath: URL(fileURLWithPath: entry.local).deletingLastPathComponent().path)
+      else { return }
+      try FileManager.default.createSymbolicLink(
+        at: URL(fileURLWithPath: entry.local), withDestinationURL: remote)
+      note("restored the link at \(entry.local)")
+    } catch {
+      note("couldn't restore the link at \(entry.local): \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: Recovery
+
+  /// Finishes or cleans up after operations a quit or crash interrupted. Run at launch.
+  ///
+  /// Every copy set aside next to an offloaded folder (`.<name>.stowaway-old-…`) or half put in
+  /// place (`…stowaway-releasing-…`) is safe to delete while its entry exists: the entry's data
+  /// is complete on the drive. npm deep links get their trash swept and any missing links back.
+  public func recover() {
+    _ = try? exclusively {
+      let store = enterGrants()
+      let fm = FileManager.default
+      for entry in entries() {
+        let local = URL(fileURLWithPath: entry.local)
+        let parent = local.deletingLastPathComponent()
+        for name in (try? fm.contentsOfDirectory(atPath: parent.path)) ?? []
+        where name.hasPrefix(".\(local.lastPathComponent).stowaway-old-")
+          || name.hasPrefix(".\(local.lastPathComponent).stowaway-releasing-")
+        {
+          try? Copier.remove(parent.appendingPathComponent(name))
+        }
+        if entry.mode == .packages, let store {
+          recoverPackages(entry, store: store)
+        }
+      }
+      reconcileUnlocked()
     }
   }
 

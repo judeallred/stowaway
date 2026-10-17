@@ -23,9 +23,11 @@ public struct Cleaner: Sendable {
     // Re-check that the folder still is what the scan said it was.
     if let rule = candidate.kind.projectRule, let project = candidate.project {
       guard FileManager.default.fileExists(atPath: project + "/" + rule.manifest),
-        URL(fileURLWithPath: path).lastPathComponent == rule.folderName
+        URL(fileURLWithPath: path).lastPathComponent == rule.folderName,
+        rule.requiredMarker.map({ FileManager.default.fileExists(atPath: path + "/" + $0) }) ?? true
       else { return "it no longer looks like \(candidate.kind.label)" }
     }
+    if GitIndex.containsRepository(candidate.url) { return "it contains a git repository" }
     switch GitIndex.tracking(of: candidate.url) {
     case .untracked: return nil
     case .tracked: return "git tracks files in it"

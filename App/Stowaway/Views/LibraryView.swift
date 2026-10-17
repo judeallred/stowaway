@@ -142,7 +142,7 @@ struct LibraryView: View {
       Button("Offload to Drive") {
         Task { for row in rows where row.place == .mac { await model.offload(row) } }
       }
-      .disabled(model.drivePath == nil || !model.driveConnected)
+      .disabled(!model.driveConnected)
     }
     if rows.contains(where: { $0.place != .mac }) {
       Button("Bring Back to Mac") {
@@ -175,7 +175,7 @@ struct LibraryView: View {
         Task { for row in rows where row.place == .mac { await model.offload(row) } }
       }
       .disabled(
-        !rows.contains { $0.place == .mac } || model.drivePath == nil || !model.driveConnected
+        !rows.contains { $0.place == .mac } || !model.driveConnected
       )
       .keyboardShortcut(.defaultAction)
     }
@@ -248,17 +248,17 @@ private struct DriveButton: View {
     Button {
       model.chooseDrive()
     } label: {
-      if let drive = model.drivePath {
+      if let name = model.driveName {
         Label(
-          URL(fileURLWithPath: drive).lastPathComponent,
+          name,
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
       } else {
         Label("Choose Offload Location…", systemImage: "externaldrive.badge.plus")
       }
     }
     .help(
-      model.drivePath.map {
-        "Offloading to \(Format.path($0))\(model.driveConnected ? "" : " (disconnected)")"
+      model.driveName.map {
+        "Offloading to \(model.drivePath.map(Format.path) ?? $0)\(model.driveConnected ? "" : " (disconnected)")"
       } ?? "")
   }
 }

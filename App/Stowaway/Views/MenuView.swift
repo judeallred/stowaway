@@ -55,11 +55,9 @@ struct MenuView: View {
 
   @ViewBuilder private var status: some View {
     VStack(alignment: .leading, spacing: 4) {
-      if let drive = model.drivePath {
+      if let name = model.driveName {
         Label(
-          model.driveConnected
-            ? "\(URL(fileURLWithPath: drive).lastPathComponent) connected"
-            : "\(URL(fileURLWithPath: drive).lastPathComponent) disconnected",
+          model.driveConnected ? "\(name) connected" : "\(name) disconnected",
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
         Text("\(Format.bytes(model.offloadedBytes)) offloaded")
           .foregroundStyle(.secondary)

@@ -25,6 +25,23 @@ public enum GitIndex {
     return paths.contains { $0 == rel || $0.hasPrefix(prefix) } ? .tracked : .untracked
   }
 
+  /// Whether `folder` is, or directly holds, a git repository (a package cloned by hand into
+  /// node_modules, say): uncommitted work could be inside, so Stowaway leaves it alone.
+  public static func containsRepository(_ folder: URL) -> Bool {
+    func hasGit(_ dir: URL) -> Bool {
+      var st = stat()
+      return lstat(dir.appendingPathComponent(".git").path, &st) == 0
+    }
+    if hasGit(folder) { return true }
+    for child in subdirectories(of: folder) {
+      if hasGit(child) { return true }
+      if child.lastPathComponent.hasPrefix("@"), subdirectories(of: child).contains(where: hasGit) {
+        return true
+      }
+    }
+    return false
+  }
+
   /// The working tree's root and its index file, for the repository `folder` is in.
   static func repository(containing folder: URL) -> (root: URL, index: URL)? {
     var dir = folder.standardizedFileURL.deletingLastPathComponent()
@@ -102,6 +119,14 @@ public enum GitIndex {
       }
       previous = name
       paths.append(String(decoding: name, as: UTF8.self))
+    }
+    // Extensions follow the entries. A split index ("link") keeps most entries in a shared index
+    // elsewhere, and a sparse index ("sdir") folds whole directories into one entry, so this list
+    // could miss tracked files: fail closed.
+    while offset + 8 <= bytes.count - 20 {
+      let signature = String(decoding: bytes[offset..<offset + 4], as: UTF8.self)
+      if signature == "link" || signature == "sdir" { return nil }
+      offset += 8 + u32(offset + 4)
     }
     return paths
   }

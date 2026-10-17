@@ -73,9 +73,9 @@ private struct OffloadSettings: View {
     Form {
       Section("Offload location") {
         HStack {
-          if let drive = model.drivePath {
+          if let name = model.driveName {
             Label(
-              Format.path(drive),
+              model.drivePath.map(Format.path) ?? name,
               systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark"
             )
             if !model.driveConnected { Text("disconnected").foregroundStyle(.secondary) }
@@ -83,7 +83,7 @@ private struct OffloadSettings: View {
             Text("None chosen").foregroundStyle(.secondary)
           }
           Spacer()
-          Button(model.drivePath == nil ? "Choose…" : "Change…") { model.chooseDrive() }
+          Button(model.driveName == nil ? "Choose…" : "Change…") { model.chooseDrive() }
         }
         if let free = model.driveFreeBytes {
           LabeledContent("Free space", value: Format.bytes(free))
