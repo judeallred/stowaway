@@ -69,29 +69,20 @@ struct OnboardingView: View {
       ForEach(model.roots, id: \.self) { root in
         Label(Format.path(root), systemImage: "checkmark.circle.fill")
       }
-      let suggestions = Array(
-        model.suggestedProjectFolders.filter { !model.roots.contains($0.path) }.prefix(3))
-      if !suggestions.isEmpty {
-        HStack {
-          ForEach(suggestions, id: \.self) { folder in
-            Button("Use \(Format.path(folder.path))") {
-              model.addRoot(
-                startingAt: folder,
-                message: "Click Choose to let Stowaway look in \(Format.path(folder.path)).")
-            }
-          }
+      let suggestions = Array(model.suggestedProjectFolders.prefix(3))
+      ForEach(suggestions, id: \.self) { suggestion in
+        if suggestion == suggestions.first {
+          suggest(suggestion).buttonStyle(.borderedProminent)
+        } else {
+          suggest(suggestion)
         }
       }
       Button(suggestions.isEmpty ? "Choose a Folder…" : "Choose Another Folder…") {
         model.addRoot(startingAt: realHomeDirectory)
       }
       found
-      Button("No projects handy? Try a sample project") { model.createSampleProject() }
-        .buttonStyle(.link)
-        .help(
-          "Creates a small sample web and Rust project to try Stowaway on, without touching your own."
-        )
     }
+    .task { await model.detectProjectFolders() }
   }
 
   private var caches: some View {
@@ -193,6 +184,18 @@ struct OnboardingView: View {
   }
 
   // MARK: Parts
+
+  /// A button that opens the folder panel at a suggested project folder.
+  private func suggest(_ suggestion: ProjectFinder.Suggestion) -> some View {
+    let path = Format.path(suggestion.folder.path)
+    let count = suggestion.projects
+    return Button(
+      count > 0 ? "Use \(path) (\(count) project\(count == 1 ? "" : "s"))" : "Use \(path)"
+    ) {
+      model.addRoot(
+        startingAt: suggestion.folder, message: "Click Choose to let Stowaway look in \(path).")
+    }
+  }
 
   /// What the scan has found so far, under the project step.
   @ViewBuilder private var found: some View {

@@ -16,6 +16,10 @@ as a security-scoped bookmark (`Engine.grant`), in two roles:
   `Stowaway.noindex/<install-id>/` there. Spotlight skips `*.noindex` folders, and the random
   install ID keeps two Macs sharing a drive apart.
 
+To suggest which folder to choose, onboarding asks Spotlight for project manifests
+(`ProjectFinder`): the sandbox lets Spotlight return paths across the home folder, though not
+read the files. Editors' recent-project lists (VS Code, Cursor, Xcode) are out of reach.
+
 Bookmarks are resolved without mounting or prompting, so an unplugged drive fails fast, and stale
 bookmarks are re-created. The entitlement `files.user-selected.executable` stops the sandbox from
 quarantining the files Stowaway copies; without it, binaries on the drive wouldn't run.
@@ -118,7 +122,8 @@ offers Open at Login.
 
 Once an offload location is chosen, the app rescans every 2 minutes and offloads every folder,
 caches included, that hasn't changed for the window set in Settings (5 minutes by default; it can
-be turned off). "Changed" looks two levels into the folder, so a build writing into
+be turned off). "Immediately" offloads anything that's been quiet for 30 seconds, so a folder is
+never copied mid-write. "Changed" looks two levels into the folder, so a build writing into
 `target/debug/deps` counts. It skips folders a tool is using right now:
 - a Cargo `target/` whose `.cargo-lock` is held (`Measure.isBusy`);
 - DerivedData while Xcode is running;

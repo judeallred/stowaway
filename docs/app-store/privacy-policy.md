@@ -16,7 +16,9 @@ anyone else.
 ## What Stowaway does on your Mac
 
 To find re-creatable folders (such as `node_modules` and build folders), Stowaway reads the
-names, sizes and modification dates of files in the folders you choose. To offload a folder,
+names, sizes and modification dates of files in the folders you choose. When you first set it
+up, it asks Spotlight, the Mac's built-in search, where files like `package.json` are, so it
+can suggest a folder such as `~/code`; it uses only those paths. To offload a folder,
 it copies it to the location you choose (such as an external drive) and leaves a link in its
 place. All of this happens on your Mac and on the drive you choose. None of it leaves them.
 

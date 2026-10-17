@@ -11,12 +11,11 @@ chooses, and can delete them or keep them on an external drive.
 
 HOW TO TRY IT (no external drive needed)
 
-1. On first launch the Stowaway window opens with a short welcome. Click Get Started, then
-   "No projects handy? Try a sample project", and choose any folder, such as Documents.
-   Stowaway creates a small sample (a web project with node_modules and a Rust project with
-   build files) and adds it to the folders it looks in. (Or choose any folder of your own that
-   holds code.) Click Continue through the remaining steps; each is optional, and "Set Up Later"
-   skips the rest.
+1. On first launch the Stowaway window opens with a short welcome. Click "Set Up Later" to go
+   straight to the library, then click "Or Create a Sample Project to Try It…" and choose any
+   folder, such as Documents. Stowaway creates a small sample (a web project with node_modules
+   and a Rust project with build files) and adds it to the folders it looks in. (Or go through
+   the welcome steps and choose any folder of your own that holds code; each step is optional.)
 2. The library window lists the sample's node_modules and Cargo build files with their sizes.
 3. Click "Choose Offload Location…" (top right) and pick any folder, for example a new folder in
    Documents. An external drive works the same way, but isn't required.
@@ -25,7 +24,8 @@ HOW TO TRY IT (no external drive needed)
 5. Click Bring Back to restore it, or Delete… to remove it. Neither ever requires a purchase.
 
 Once an offload location is chosen, Stowaway also offloads folders that have been left unchanged
-for 5 minutes on its own (Settings → "Offload automatically"; it can be turned off). Nothing is
+for 5 minutes on its own (Settings → "Offload automatically": immediately, after a set time, or
+never). Nothing is
 offloaded automatically before the user chooses a location, and nothing is ever deleted
 automatically.
 
@@ -53,6 +53,8 @@ working.
 
 DATA
 
-Stowaway collects no data and makes no network requests of its own. "Report a Bug…" opens a
+Stowaway collects no data and makes no network requests of its own. During onboarding it asks
+Spotlight where project files such as package.json are, to suggest folders like ~/code; it reads
+only the paths Spotlight returns, on the Mac, and still asks the user to choose the folder. "Report a Bug…" opens a
 prefilled GitHub issue in the browser for the user to review and submit; it contains only
 version numbers and counts, no paths.

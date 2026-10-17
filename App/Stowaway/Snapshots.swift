@@ -13,10 +13,17 @@
       ProcessInfo.processInfo.environment["STOWAWAY_SNAPSHOTS"].map { URL(fileURLWithPath: $0) }
     }
 
-    static func run(into folder: URL) {
+    static func run(into folder: URL) async {
+      // The project step as this Mac would see it on first launch: no folders chosen yet, and
+      // suggestions from Spotlight.
+      let fresh = AppModel()
+      await fresh.detectProjectFolders()
       for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
         NSApp.appearance = NSAppearance(named: appearance)
         renderAll(into: folder.appendingPathComponent(name))
+        render(
+          OnboardingView(model: fresh, step: .projects), "onboarding-1-this-mac", width: 560,
+          height: 460, in: folder.appendingPathComponent(name))
       }
       NSApp.appearance = NSAppearance(named: .aqua)
       renderAppStore(into: folder.appendingPathComponent("appstore"))
@@ -38,8 +45,8 @@
           CGSize(width: 290, height: 360)
         ),
         (
-          "3-welcome", "Unplug the drive, keep working", AnyView(OnboardingView(model: model)),
-          CGSize(width: 520, height: 420)
+          "3-welcome", "Never touches your source code", AnyView(OnboardingView(model: model)),
+          CGSize(width: 560, height: 460)
         ),
         (
           "4-support", "Free up to 100 GB. Pay what you want.",

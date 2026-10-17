@@ -25,11 +25,13 @@
 		DAD3CAB6FFD564F0E9C0E8FF /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 733FBCEB8E4E38C0DB765291 /* MenuView.swift */; };
 		E8E42283977144435B31579A /* Products.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 83216434CA2022F8DE1FD81B /* Products.storekit */; };
 		F089BD7648CE04AAEBB38345 /* Logo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C4956EE0571AC3F00B7DB3 /* Logo.swift */; };
+		F8E4A7E21BF6FCF4E5A359DC /* ProjectFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12D5081333372AF939802B7B /* ProjectFinder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0B43FD7B635E6C995001192B /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		11C4956EE0571AC3F00B7DB3 /* Logo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logo.swift; sourceTree = "<group>"; };
+		12D5081333372AF939802B7B /* ProjectFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFinder.swift; sourceTree = "<group>"; };
 		26022092A5847F8F62977F32 /* StowawayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StowawayApp.swift; sourceTree = "<group>"; };
 		28B0A2BE706D7AB3CAB8289F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		4BE30E561F181554DAD7D9D0 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 				28B0A2BE706D7AB3CAB8289F /* Format.swift */,
 				AC38304823DC0655220A64AD /* Info.plist */,
 				A742B6F999B77AA3279FB057 /* Links.swift */,
+				12D5081333372AF939802B7B /* ProjectFinder.swift */,
 				A3A1E91EAA4D2D64CA8B8A2D /* Snapshots.swift */,
 				B55E149D6E1A327024713710 /* Store.swift */,
 				9069B2BD2372B72ACD4E8687 /* Stowaway.entitlements */,
@@ -225,6 +228,7 @@
 				4F55172FADD12752E7339CF2 /* MenuBarImage.swift in Sources */,
 				DAD3CAB6FFD564F0E9C0E8FF /* MenuView.swift in Sources */,
 				4E50A3A41B040AB486A93725 /* OnboardingView.swift in Sources */,
+				F8E4A7E21BF6FCF4E5A359DC /* ProjectFinder.swift in Sources */,
 				1CAB8B6495BBEF743D66C50B /* SettingsView.swift in Sources */,
 				54A43427C4D5DD91101E2ED4 /* Snapshots.swift in Sources */,
 				B088F092456D9D21DF53AF36 /* Store.swift in Sources */,

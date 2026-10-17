@@ -61,10 +61,11 @@ final class AppModel {
   /// Last measurement per folder, so a rescan only re-measures folders that changed.
   private var measured: [String: (bytes: Int64, activity: Date)] = [:]
   private var reconcileQueued = false
+  private var detectedProjectFolders: [ProjectFinder.Suggestion] = []
 
   /// Offload folders automatically once they've been unchanged this many minutes (0 = only by
-  /// hand). Five minutes unless the user changes it: folders move to the drive soon after work
-  /// in them stops.
+  /// hand, `immediately` = as soon as a scan finds them). Five minutes unless the user changes
+  /// it: folders move to the drive soon after work in them stops.
   var autoOffloadMinutes: Int {
     get {
       UserDefaults.standard.object(forKey: "autoOffloadMinutes") == nil
@@ -75,6 +76,10 @@ final class AppModel {
       Task { await autoOffload() }
     }
   }
+
+  /// `autoOffloadMinutes` for offloading as soon as a scan finds a folder. Even then a folder
+  /// must have been quiet for 30 seconds, so Stowaway never copies one mid-write.
+  static let immediately = -1
 
   /// Opens the library window (set by the menu bar label, which has SwiftUI's openWindow).
   var openLibrary: (() -> Void)?
@@ -274,11 +279,20 @@ final class AppModel {
     }
   }
 
-  /// Folders where developers usually keep projects that exist here and aren't chosen yet.
-  var suggestedProjectFolders: [URL] {
-    ["code", "Developer", "Projects", "src", "dev", "GitHub", "repos", "workspace"]
+  /// Where the user seems to keep projects (found with Spotlight), minus folders already
+  /// chosen. Falls back to the usual names when Spotlight finds nothing.
+  var suggestedProjectFolders: [ProjectFinder.Suggestion] {
+    let found = detectedProjectFolders.filter { !isCovered($0.folder.path) }
+    if !detectedProjectFolders.isEmpty { return found }
+    return ["code", "Developer", "Projects", "src", "dev", "GitHub", "repos", "workspace"]
       .map { realHomeDirectory.appendingPathComponent($0) }
       .filter { FileManager.default.fileExists(atPath: $0.path) && !isCovered($0.path) }
+      .map { ProjectFinder.Suggestion(folder: $0, projects: 0) }
+  }
+
+  /// Fills `detectedProjectFolders` from Spotlight. Called when onboarding shows.
+  func detectProjectFolders() async {
+    detectedProjectFolders = await ProjectFinder.suggestions()
   }
 
   /// External drives that are mounted now, for choosing the offload location in one click.
@@ -501,9 +515,10 @@ final class AppModel {
   /// caches while an IDE that runs Gradle does.
   private func autoOffload() async {
     let minutes = autoOffloadMinutes
-    guard minutes > 0, driveConnected else { return }
+    guard minutes != 0, driveConnected else { return }
     await store.waitUntilLoaded()
-    let cutoff = Date().addingTimeInterval(-Double(minutes) * 60)
+    let cutoff = Date().addingTimeInterval(
+      minutes == Self.immediately ? -30 : -Double(minutes) * 60)
     let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
     let xcodeRunning = running.contains { $0.hasPrefix("com.apple.dt.Xcode") }
     let gradleIDERunning = running.contains {

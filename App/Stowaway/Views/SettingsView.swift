@@ -92,6 +92,7 @@ private struct OffloadSettings: View {
       }
       Section {
         Picker("Offload automatically", selection: $model.autoOffloadMinutes) {
+          Text("Immediately").tag(AppModel.immediately)
           Text("After 5 minutes unchanged").tag(5)
           Text("After 1 hour unchanged").tag(60)
           Text("After 1 day unchanged").tag(1440)
@@ -100,7 +101,7 @@ private struct OffloadSettings: View {
         }
       } footer: {
         Text(
-          "Folders that haven't changed for this long move to the drive while it's connected. A running Cargo build, or Xcode or a Gradle IDE that's open, holds off the folders they use."
+          "Folders that haven't changed for this long move to the drive while it's connected. Immediately moves them as soon as Stowaway finds them, so builds read and write on the drive: best with a fast one. A running Cargo build, or Xcode or a Gradle IDE that's open, holds off the folders they use."
         )
         .font(.caption).foregroundStyle(.secondary)
       }

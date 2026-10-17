@@ -66,7 +66,7 @@ private struct MenuBarLabel: View {
         model.openLibrary = { openWindow(id: "library") }
         #if DEBUG
           if let folder = Snapshots.folder {
-            Snapshots.run(into: folder)
+            await Snapshots.run(into: folder)
             return
           }
         #endif
