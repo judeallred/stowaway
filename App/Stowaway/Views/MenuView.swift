@@ -11,6 +11,9 @@ struct MenuView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
+      if model.freeStowageFull {
+        fullNotice
+      }
       HStack(spacing: 8) {
         Image(nsImage: Logo.image(size: 22))
         Text("Stowaway").font(.headline)
@@ -51,6 +54,29 @@ struct MenuView: View {
     }
     .padding(12)
     .frame(width: 290)
+  }
+
+  /// At the very top when the free stowage is used up.
+  private var fullNotice: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Label("Free stowage is full", systemImage: "exclamationmark.circle.fill")
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(.orange)
+      Text("New folders stay on this Mac until you go unlimited.")
+        .font(.caption).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Button("Go Unlimited…") {
+        show {
+          openWindow(id: "library")
+          model.showingSupport = true
+        }
+      }
+      .buttonStyle(.link).font(.callout)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(10)
+    .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.orange.opacity(0.6)))
   }
 
   @ViewBuilder private var status: some View {

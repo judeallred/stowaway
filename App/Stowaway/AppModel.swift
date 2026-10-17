@@ -541,6 +541,18 @@ final class AppModel {
     }
     let engine = engine
     let roots = engine.rootPaths
+    // Caches first: they're found instantly, while walking the folders can take a while.
+    let caches = await Task.detached {
+      engine.enterGrants()
+      return Scanner().caches(roots: roots)
+    }.value
+    let known = Set(rows.map(\.path))
+    let newCaches = caches.filter { !known.contains($0.path) }
+    if !newCaches.isEmpty {
+      rows = merge(
+        candidates: rows.filter { $0.entryPaths.isEmpty }.map(\.candidate) + newCaches,
+        entries: engine.entries())
+    }
     let candidates = await Task.detached {
       engine.enterGrants()
       return Scanner().scan(roots: roots)
@@ -861,6 +873,10 @@ final class AppModel {
 
   var reclaimableBytes: Int64 {
     rows.filter { $0.place == .mac }.compactMap(\.localBytes).reduce(0, +)
+  }
+  /// Whether the free stowage is (nearly) used up: under 5% left, too little for most folders.
+  var freeStowageFull: Bool {
+    freeAllowanceLeft.map { $0 < Store.freeOffloadLimit / 20 } ?? false
   }
   /// Free stowage left, or nil when stowing is unlimited.
   var freeAllowanceLeft: Int64? {

@@ -274,13 +274,28 @@ private struct SummaryHeader: View {
           .frame(width: 160)
           .padding(.top, 8)
           .accessibilityLabel("Free stowage used")
-          Text("\(Format.bytes(left)) of free stowage left").font(.caption).foregroundStyle(
-            .secondary
+          Text(
+            model.freeStowageFull
+              ? "Free stowage is full" : "\(Format.bytes(left)) of free stowage left"
+          )
+          .font(.caption)
+          .foregroundStyle(
+            model.freeStowageFull ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary)
           )
           .fixedSize()
           Button("Go Unlimited…") { model.showingSupport = true }
             .buttonStyle(.link).font(.caption)
         }
+        // When it's full, a box calls attention to it (drawn outside, so nothing moves).
+        .padding(8)
+        .background {
+          if model.freeStowageFull {
+            RoundedRectangle(cornerRadius: 8)
+              .fill(.orange.opacity(0.1))
+              .strokeBorder(.orange.opacity(0.7), lineWidth: 1)
+          }
+        }
+        .padding(-8)
       }
       VStack(alignment: .leading, spacing: 6) {
         DriveButton(model: model)

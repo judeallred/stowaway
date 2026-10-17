@@ -34,6 +34,15 @@ public struct Scanner: Sendable {
   static let checkoutFolders = [".claude/worktrees"]
 
   public var maxDepth = 6
+  /// Folders in the home folder that never hold projects but take minutes to walk. The caches
+  /// inside Library are found at their known locations instead (`caches(roots:)`).
+  static let homeSkips: Set<String> = [
+    "Library", "Pictures", "Music", "Movies", "Applications", "Public",
+  ]
+  /// Packages that look like folders but are documents or apps.
+  static let packageExtensions: Set<String> = [
+    "app", "photoslibrary", "musiclibrary", "tvlibrary", "fcpbundle", "logicx", "xcarchive",
+  ]
 
   public init() {}
 
@@ -47,6 +56,14 @@ public struct Scanner: Sendable {
       visit(
         URL(fileURLWithPath: root), device: st.st_dev, depth: 0, nodeAncestor: false, into: &found)
     }
+    found += caches(roots: roots)
+    return found.filter { seen.insert($0.path).inserted }
+  }
+
+  /// The machine-wide caches that exist under the roots. Instant, unlike walking the roots, so
+  /// the app can show them while the walk runs.
+  public func caches(roots: [String]) -> [Candidate] {
+    var found: [Candidate] = []
     for kind in Kind.allCases where kind.isGlobal {
       for rel in kind.defaultLocations {
         let path = realHomeDirectory.appendingPathComponent(rel).standardizedFileURL.path
@@ -58,7 +75,7 @@ public struct Scanner: Sendable {
         }
       }
     }
-    return found.filter { seen.insert($0.path).inserted }
+    return found
   }
 
   private func visit(
@@ -91,7 +108,13 @@ public struct Scanner: Sendable {
     }
 
     guard depth < maxDepth else { return }
-    for name in names.sorted() where !name.hasPrefix(".") && !skip.contains(name) {
+    if dir.standardizedFileURL.path == realHomeDirectory.standardizedFileURL.path {
+      skip.formUnion(Self.homeSkips)
+    }
+    for name in names.sorted()
+    where !name.hasPrefix(".") && !skip.contains(name)
+      && !Self.packageExtensions.contains((name as NSString).pathExtension.lowercased())
+    {
       let child = dir.appendingPathComponent(name)
       if isLocalDirectory(child.path, device: device) {
         visit(

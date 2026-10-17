@@ -182,3 +182,20 @@ final class DriveSpeedTests: XCTestCase {
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
   }
 }
+
+final class ScannerSkipTests: XCTestCase {
+  func testPackagesAreNotWalked() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "skip-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    for dir in ["Thing.app/web", "Photos.photoslibrary/web", "code/web"] {
+      let web = root.appendingPathComponent(dir)
+      try FileManager.default.createDirectory(
+        at: web.appendingPathComponent("node_modules"), withIntermediateDirectories: true)
+      try "{}".write(
+        to: web.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+    }
+    let found = Scanner().scan(roots: [root.path]).map(\.path)
+    XCTAssertEqual(found, [root.appendingPathComponent("code/web/node_modules").path])
+  }
+}
