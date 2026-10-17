@@ -27,7 +27,11 @@ struct SupportView: View {
         prices
       }
       if let error = store.loadError {
-        Text(error).font(.caption).foregroundStyle(.red)
+        HStack {
+          Text(error).font(.caption).foregroundStyle(.red)
+          Button("Try Again") { Task { await store.loadProducts() } }
+            .controlSize(.small)
+        }
       }
       Divider()
       HStack {
@@ -52,7 +56,7 @@ struct SupportView: View {
         Text("Share the love").font(.title2.weight(.semibold))
       }
       Text(
-        "Is Stowaway saving you from paying for a bigger internal drive? Please share the love. We're a small, independent software company, and your purchase means everything to us."
+        "Are we helping you avoid an expensive storage upgrade? Please share the love. We're Brooklyn Spaceport, a 3-person team making creative products, and your purchase would mean everything to us."
       )
       Text(
         "Stowing up to \(Format.bytes(Store.freeOffloadLimit)) is free. Any purchase, at any price, makes it unlimited, for good."
@@ -85,7 +89,7 @@ struct SupportView: View {
           .controlSize(.large)
         }
       }
-    } else if products.isEmpty {
+    } else if products.isEmpty && store.loadError == nil {
       HStack {
         ProgressView().controlSize(.small)
         Text("Loading prices…").foregroundStyle(.secondary)
@@ -120,7 +124,7 @@ struct SupportView: View {
       Text(
         store.ownedAudience == .business
           ? "Your business purchase keeps Stowaway free for people using it personally. Stowing is unlimited."
-          : "Your purchase means everything to a small, independent company. Stowing is unlimited."
+          : "Your purchase means everything to our 3-person team. Stowing is unlimited."
       )
     }
   }
