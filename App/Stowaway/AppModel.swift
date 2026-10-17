@@ -67,6 +67,10 @@ final class AppModel {
   private(set) var loginItemEnabled = false
   /// What Stowaway is doing right now ("Scanning…", what's moving), for the status line.
   private(set) var activity: String?
+  /// The kind of work `activity` describes, for the menu bar icon's badge.
+  private(set) var operation: Operation?
+
+  enum Operation { case scanning, stowing, bringingBack, deleting, testing }
   /// A problem with something the user just did. Cleared after a few seconds: the status line
   /// is for what's happening now, not a log.
   var message: String? {
@@ -184,9 +188,11 @@ final class AppModel {
     guard !testingSpeed else { return }
     testingSpeed = true
     activity = "Testing the drive's speed…"
+    operation = .testing
     defer {
       testingSpeed = false
       activity = nil
+      operation = nil
     }
     let engine = engine
     let result = await Task.detached { () -> Result<DriveSpeed, Error>? in
@@ -366,6 +372,11 @@ final class AppModel {
       .map { ProjectFinder.Suggestion(folder: $0, projects: 0) }
   }
 
+  /// How many folders Settings → Suggested Folders would offer.
+  var suggestionCount: Int {
+    suggestedProjectFolders.filter { $0.projects > 0 }.count + ungrantedCaches.count
+  }
+
   /// Fills `detectedProjectFolders` from Spotlight. Called when onboarding shows.
   func detectProjectFolders() async {
     detectedProjectFolders = await ProjectFinder.suggestions()
@@ -442,10 +453,16 @@ final class AppModel {
   func scan() async {
     guard !scanning else { return }
     scanning = true
-    activity = activity ?? "Scanning your folders…"
+    if activity == nil {
+      activity = "Scanning your folders…"
+      operation = .scanning
+    }
     defer {
       scanning = false
-      if activity == "Scanning your folders…" { activity = nil }
+      if operation == .scanning {
+        activity = nil
+        operation = nil
+      }
     }
     let engine = engine
     let roots = engine.rootPaths
@@ -617,10 +634,12 @@ final class AppModel {
     let engine = engine
     var failures: [(Row, any Error)] = []
     let stowing = doing == "Stowing"
+    let op: Operation = stowing ? .stowing : doing == "Deleting" ? .deleting : .bringingBack
     if stowing { queued = Set(rows.map(\.path)) }
     defer { queued = [] }
     for (i, row) in rows.enumerated() {
       activity = Self.describe(doing, row, index: i, of: rows.count)
+      operation = op
       queued.remove(row.path)
       busy.insert(row.path)
       let limit = store.offloadLimit
@@ -643,6 +662,7 @@ final class AppModel {
       }
     }
     activity = nil
+    operation = nil
     // One folder: say why it couldn't be done. Several: skip what can't be, quietly.
     if rows.count == 1, let (_, error) = failures.first {
       message = error.localizedDescription
@@ -697,7 +717,11 @@ final class AppModel {
       let paths = row.kind.parts(of: row.candidate.url)?.map(\.path) ?? [row.path]
       let container = row.path
       activity = Self.describe("Stowing", row, index: 0, of: 1)
-      defer { activity = nil }
+      operation = .stowing
+      defer {
+        activity = nil
+        operation = nil
+      }
       let outcome = await Task.detached { () -> AutoOutcome in
         var outcome = AutoOutcome.stowed
         for path in paths {

@@ -57,8 +57,8 @@ private struct MenuBarLabel: View {
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    Image(nsImage: MenuBarImage.image(badge: model.badge))
-      .accessibilityLabel(model.badgeDescription)
+    Image(nsImage: MenuBarImage.image(badge: model.iconState.badge))
+      .accessibilityLabel(model.iconState.description)
       .task {
         guard !model.started else { return }
         model.started = true
@@ -80,13 +80,70 @@ private struct MenuBarLabel: View {
 }
 
 extension AppModel {
-  /// A small badge on the menu bar icon when something needs attention.
-  var badge: String? {
-    if !rows.filter({ $0.place == .driveAway }).isEmpty { return "exclamationmark" }
-    return nil
+  /// What the menu bar icon shows: the plain logo when all is well, or a small badge for
+  /// what's happening now or what needs attention. Problems outrank work in progress.
+  enum IconState {
+    case idle, scanning, stowing, bringingBack, deleting, testing, disconnected, warning, error
+
+    /// The SF Symbol on the logo's corner, nil for the plain logo. Badges never animate.
+    var badge: String? {
+      switch self {
+      case .idle: nil
+      case .scanning: "magnifyingglass"
+      case .stowing: "arrow.down"
+      case .bringingBack: "arrow.uturn.backward"
+      case .deleting: "trash.fill"
+      case .testing: "speedometer"
+      case .disconnected: "xmark.circle.fill"
+      case .warning: "exclamationmark.circle.fill"
+      case .error: "exclamationmark.triangle.fill"
+      }
+    }
+
+    /// Spoken by VoiceOver.
+    var description: String {
+      switch self {
+      case .idle: "Stowaway"
+      case .scanning: "Stowaway, scanning folders"
+      case .stowing: "Stowaway, stowing folders on the drive"
+      case .bringingBack: "Stowaway, bringing folders back"
+      case .deleting: "Stowaway, deleting folders"
+      case .testing: "Stowaway, testing the drive"
+      case .disconnected: "Stowaway, drive disconnected"
+      case .warning: "Stowaway, needs attention"
+      case .error: "Stowaway, problem"
+      }
+    }
   }
 
-  var badgeDescription: String {
-    badge == nil ? "Stowaway" : "Stowaway: your drive is disconnected"
+  var iconState: IconState {
+    if message != nil { return .error }
+    if driveName != nil && !driveConnected { return .disconnected }
+    switch operation {
+    case .stowing: return .stowing
+    case .bringingBack: return .bringingBack
+    case .deleting: return .deleting
+    case .testing: return .testing
+    case .scanning: return .scanning
+    case nil: break
+    }
+    if needsAttention { return .warning }
+    return .idle
+  }
+
+  /// The drive is nearly full (under 5% or 10 GB free), or the free stowage is used up while
+  /// there's more waiting to be stowed.
+  private var needsAttention: Bool {
+    if driveConnected, let free = driveFreeBytes, let total = driveTotalBytes, total > 0,
+      free < max(10_000_000_000, total / 20)
+    {
+      return true
+    }
+    if freeAllowanceLeft == 0 && rows.contains(where: { $0.place == .mac })
+      && autoOffloadMinutes != 0
+    {
+      return true
+    }
+    return false
   }
 }

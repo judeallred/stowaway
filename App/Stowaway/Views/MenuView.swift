@@ -59,8 +59,12 @@ struct MenuView: View {
         Label(
           model.driveConnected ? "\(name) connected" : "\(name) disconnected",
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
-        Text("\(Format.bytes(model.offloadedBytes)) stowed")
-          .foregroundStyle(.secondary)
+        Text(
+          model.pendingBytes > 0
+            ? "\(Format.bytes(model.offloadedBytes)) stowed · \(Format.bytes(model.pendingBytes)) pending"
+            : "\(Format.bytes(model.offloadedBytes)) stowed"
+        )
+        .foregroundStyle(.secondary)
       } else {
         action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
           .padding(.horizontal, -6)

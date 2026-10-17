@@ -42,10 +42,13 @@ struct FoldersSettings: View {
         .frame(minHeight: 120)
         HStack {
           Button("Add Folder…") { model.addRoot(startingAt: realHomeDirectory) }
-          Button("Suggested Folders…") { suggesting = true }
-            .popover(isPresented: $suggesting, arrowEdge: .bottom) {
-              SuggestedFolders(model: model)
-            }
+          let count = model.suggestionCount
+          Button(count > 0 ? "Suggested Folders (\(count))…" : "Suggested Folders…") {
+            suggesting = true
+          }
+          .popover(isPresented: $suggesting, arrowEdge: .bottom) {
+            SuggestedFolders(model: model)
+          }
           Button("Remove") {
             if let selection { model.removeRoot(selection) }
           }
@@ -61,6 +64,7 @@ struct FoldersSettings: View {
       }
     }
     .formStyle(.grouped)
+    .task { await model.detectProjectFolders() }
   }
 }
 
