@@ -90,6 +90,14 @@ struct MenuView: View {
     ] {
       menu.addItem(ClosureMenuItem(title) { NSWorkspace.shared.open(url) })
     }
+    menu.addItem(.separator())
+    menu.addItem(
+      ClosureMenuItem("Show Setup Again…") {
+        show {
+          openWindow(id: "library")
+          model.showingOnboarding = true
+        }
+      })
     menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
   }
 
