@@ -17,7 +17,7 @@ public struct Cleaner: Sendable {
     if offloaded.contains(where: {
       path == $0.local || path.hasPrefix($0.local + "/") || $0.local.hasPrefix(path + "/")
     }) {
-      return "it's offloaded; bring it back first, or delete it from the offload location"
+      return "it's stowed; bring it back first, or delete it from the drive"
     }
     guard isRealDirectory(path) else { return "it isn't a folder any more" }
     // Re-check that the folder still is what the scan said it was.

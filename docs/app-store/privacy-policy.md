@@ -18,12 +18,12 @@ anyone else.
 To find re-creatable folders (such as `node_modules` and build folders), Stowaway reads the
 names, sizes and modification dates of files in the folders you choose. When you first set it
 up, it asks Spotlight, the Mac's built-in search, where files like `package.json` are, so it
-can suggest a folder such as `~/code`; it uses only those paths. To offload a folder,
+can suggest a folder such as `~/code`; it uses only those paths. To stow a folder,
 it copies it to the location you choose (such as an external drive) and leaves a link in its
 place. All of this happens on your Mac and on the drive you choose. None of it leaves them.
 
-Stowaway keeps its settings, and a list of the folders it has offloaded, in its own container
-on your Mac, plus a small index file in the `Stowaway.noindex` folder on your offload drive.
+Stowaway keeps its settings, and a list of the folders it has stowed, in its own container
+on your Mac, plus a small index file in the `Stowaway.noindex` folder on your drive.
 Deleting Stowaway and that folder removes them.
 
 ## Purchases
@@ -34,7 +34,7 @@ your Apple Account information. Apple's privacy policy covers those transactions
 ## Reporting a bug
 
 "Report a Bug…" opens a prefilled issue on GitHub in your browser. It contains only the app and
-macOS versions, whether an offload location is set, and counts of the kinds of folders found.
+macOS versions, whether a drive is set, and counts of the kinds of folders found.
 It doesn't contain file names or paths. Nothing is sent unless you choose to submit it, and
 GitHub's privacy policy then applies.
 

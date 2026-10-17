@@ -87,6 +87,6 @@ extension AppModel {
   }
 
   var badgeDescription: String {
-    badge == nil ? "Stowaway" : "Stowaway: the offload drive is disconnected"
+    badge == nil ? "Stowaway" : "Stowaway: your drive is disconnected"
   }
 }

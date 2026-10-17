@@ -34,17 +34,7 @@ struct MenuView: View {
             }
           }
         }
-        Menu {
-          Button("Stowaway Website") { NSWorkspace.shared.open(Links.website) }
-          Button("Get Help") { NSWorkspace.shared.open(Links.support) }
-          Button("Report a Bug…") { NSWorkspace.shared.open(BugReport.url(model: model)) }
-          Button("Privacy Policy") { NSWorkspace.shared.open(Links.privacyPolicy) }
-        } label: {
-          Label("Help", systemImage: "questionmark.circle")
-        }
-        .menuStyle(.borderlessButton)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        action("Help", "questionmark.circle", submenu: true) { showHelp() }
       }
       Divider()
       action("Quit Stowaway", "power") { NSApp.terminate(nil) }
@@ -59,10 +49,10 @@ struct MenuView: View {
         Label(
           model.driveConnected ? "\(name) connected" : "\(name) disconnected",
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
-        Text("\(Format.bytes(model.offloadedBytes)) offloaded")
+        Text("\(Format.bytes(model.offloadedBytes)) stowed")
           .foregroundStyle(.secondary)
       } else {
-        Label("No offload location yet", systemImage: "externaldrive")
+        Label("No drive chosen yet", systemImage: "externaldrive")
           .foregroundStyle(.secondary)
       }
       if model.reclaimableBytes > 0 {
@@ -73,15 +63,34 @@ struct MenuView: View {
     .font(.callout)
   }
 
-  private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
+  private func action(
+    _ title: String, _ symbol: String, submenu: Bool = false, _ run: @escaping () -> Void
+  ) -> some View {
     Button(action: run) {
-      Label(title, systemImage: symbol)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+      HStack {
+        Label(title, systemImage: symbol)
+        Spacer()
+        if submenu { Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true) }
+      }
+      .contentShape(Rectangle())
     }
     .buttonStyle(.borderless)
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
+  }
+
+  /// Help's items in a native menu at the pointer, so the Help row itself looks like every
+  /// other action (a SwiftUI Menu draws its title differently).
+  private func showHelp() {
+    let menu = NSMenu()
+    let model = model
+    for (title, url) in [
+      ("Stowaway Website", Links.website), ("Get Help", Links.support),
+      ("Report a Bug…", BugReport.url(model: model)), ("Privacy Policy", Links.privacyPolicy),
+    ] {
+      menu.addItem(ClosureMenuItem(title) { NSWorkspace.shared.open(url) })
+    }
+    menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
   }
 
   private func show(_ open: () -> Void) {
@@ -89,4 +98,19 @@ struct MenuView: View {
     NSApp.activate()
     open()
   }
+}
+
+/// An NSMenuItem that runs a closure.
+private final class ClosureMenuItem: NSMenuItem {
+  private let run: () -> Void
+
+  init(_ title: String, run: @escaping () -> Void) {
+    self.run = run
+    super.init(title: title, action: #selector(fire), keyEquivalent: "")
+    target = self
+  }
+
+  required init(coder: NSCoder) { fatalError("not used") }
+
+  @objc private func fire() { run() }
 }

@@ -6,14 +6,14 @@ Stowaway is a Mac App Store app for developers. It finds the folders your tools 
 (`node_modules`, Cargo and Xcode build files, package caches, downloaded models), shows how much
 space they take, and lets you delete them, or keep them on an external drive instead:
 
-- **Offload:** the folder moves to your drive and a link takes its place, so npm, Cargo, Xcode
+- **Stow:** the folder moves to your drive and a link takes its place, so npm, Cargo, Xcode
   and your other tools find it where it always was.
 - **Unplug:** your tools rebuild locally, without asking.
 - **Plug back in:** everything moves back to the drive, including anything built while it was
   away.
 
-Finding and deleting folders is free, and so is offloading up to 100 GB. Any purchase, at a
-price you choose, makes offloading unlimited.
+Finding and deleting folders is free, and so is stowing up to 100 GB. Any purchase, at a
+price you choose, makes stowing unlimited.
 
 **Website:** [brooklynspaceport.com/stowaway](https://brooklynspaceport.com/stowaway)
 

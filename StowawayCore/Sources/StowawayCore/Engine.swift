@@ -305,7 +305,7 @@ public final class Engine: @unchecked Sendable {
   ) throws -> CopyStats {
     let local = URL(fileURLWithPath: path).standardizedFileURL
     guard let store = enterGrants() else {
-      throw StowawayError("the offload location isn't connected")
+      throw StowawayError("the drive isn't connected")
     }
     try validateAdoptable(local, store: store)
     if let limit {
@@ -365,13 +365,13 @@ public final class Engine: @unchecked Sendable {
     }
     let storePath = store.standardizedFileURL.path
     guard !local.path.hasPrefix(storePath), !storePath.hasPrefix(local.path + "/") else {
-      throw StowawayError("\(local.path) overlaps the offload location")
+      throw StowawayError("\(local.path) overlaps where Stowaway stows folders")
     }
     for entry in entries()
     where local.path == entry.local || local.path.hasPrefix(entry.local + "/")
       || entry.local.hasPrefix(local.path + "/")
     {
-      throw StowawayError("\(local.path) overlaps \(entry.local), which is already offloaded")
+      throw StowawayError("\(local.path) overlaps \(entry.local), which is already stowed")
     }
     if GitIndex.containsRepository(local) {
       throw StowawayError("\(local.path) contains a git repository, so Stowaway leaves it alone")
@@ -395,7 +395,7 @@ public final class Engine: @unchecked Sendable {
     let store = enterGrants()
     let fm = FileManager.default
     guard let entry = entries().first(where: { $0.local == path }) else {
-      throw StowawayError("\(path) isn't offloaded")
+      throw StowawayError("\(path) isn't stowed")
     }
     if entry.mode == .packages {
       try releasePackages(entry, store: store)
@@ -403,7 +403,7 @@ public final class Engine: @unchecked Sendable {
       return
     }
     guard let store else {
-      throw StowawayError("connect the offload location to bring \(path) back")
+      throw StowawayError("connect the drive to bring \(path) back")
     }
     var current = entry
     if !current.online {
@@ -466,10 +466,10 @@ public final class Engine: @unchecked Sendable {
   public func discard(_ path: String) throws {
     try exclusively {
       guard let entry = entries().first(where: { $0.local == path }) else {
-        throw StowawayError("\(path) isn't offloaded")
+        throw StowawayError("\(path) isn't stowed")
       }
       guard let store = enterGrants() else {
-        throw StowawayError("connect the offload location to delete \(path)")
+        throw StowawayError("connect the drive to delete \(path)")
       }
       let remote = try storePath(entry.remote, in: store)
       let slot = entry.mode == .packages ? remote : remote.deletingLastPathComponent()
@@ -640,7 +640,7 @@ public struct OffloadLimitReached: LocalizedError, Equatable {
   public let needed: Int64
   public var errorDescription: String? {
     let format = ByteCountFormatter()
-    return "Offloading this would take you past the free \(format.string(fromByteCount: limit))."
+    return "Stowing this would take you past the free \(format.string(fromByteCount: limit))."
   }
 }
 

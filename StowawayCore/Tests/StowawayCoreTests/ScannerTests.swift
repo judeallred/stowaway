@@ -164,3 +164,21 @@ final class ScannerTests: XCTestCase {
     XCTAssertGreaterThan(Measure.lastActivity(of: candidate), Date(timeIntervalSinceNow: -60))
   }
 }
+
+final class DriveSpeedTests: XCTestCase {
+  func testMeasuresAndCleansUp() throws {
+    let store = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "speed-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: store) }
+    // A leftover from a crashed run is swept.
+    try FileManager.default.createDirectory(
+      at: store.appendingPathComponent(".stowaway-speedtest-old"),
+      withIntermediateDirectories: false)
+    let speed = try DriveSpeed.measure(in: store, bytes: 16 << 20, smallFiles: 100)
+    XCTAssertGreaterThan(speed.writeMBps, 0)
+    XCTAssertGreaterThan(speed.readMBps, 0)
+    XCTAssertGreaterThan(speed.smallFilesPerSecond, 0)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
+  }
+}

@@ -50,7 +50,7 @@ struct OnboardingView: View {
       VStack(alignment: .leading, spacing: 8) {
         Label("Never touches source code, or anything git tracks.", systemImage: "checkmark.shield")
         Label(
-          "Offloaded folders stay where your tools expect them.",
+          "Stowed folders stay where your tools expect them.",
           systemImage: "folder.badge.gearshape")
         Label(
           "Unplug the drive any time: builds keep working.",
@@ -143,7 +143,7 @@ struct OnboardingView: View {
     VStack(alignment: .leading, spacing: 14) {
       Text("Almost done").font(.title2.weight(.semibold))
       VStack(alignment: .leading, spacing: 8) {
-        Text("Offload to an external drive (optional)").font(.headline)
+        Text("Stow on an external drive (optional)").font(.headline)
         if let name = model.driveName {
           Label(name, systemImage: "externaldrive.fill")
           Text(

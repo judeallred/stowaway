@@ -55,7 +55,7 @@ struct SupportView: View {
         "Is Stowaway saving you from paying for a bigger internal drive? Please share the love. We're a small, independent software company, and your purchase means everything to us."
       )
       Text(
-        "Offloading up to \(Format.bytes(Store.freeOffloadLimit)) is free. Any purchase, at any price, makes it unlimited, for good."
+        "Stowing up to \(Format.bytes(Store.freeOffloadLimit)) is free. Any purchase, at any price, makes it unlimited, for good."
       )
       .foregroundStyle(.secondary)
     }
@@ -95,9 +95,7 @@ struct SupportView: View {
         ForEach(products, id: \.id) { product in
           Button {
             Task {
-              if await store.purchase(product) {
-                model.message = "Thank you! Offloading is now unlimited."
-              }
+              _ = await store.purchase(product)
             }
           } label: {
             VStack(spacing: 2) {
@@ -121,8 +119,8 @@ struct SupportView: View {
       }
       Text(
         store.ownedAudience == .business
-          ? "Your business purchase keeps Stowaway free for people using it personally. Offloading is unlimited."
-          : "Your purchase means everything to a small, independent company. Offloading is unlimited."
+          ? "Your business purchase keeps Stowaway free for people using it personally. Stowing is unlimited."
+          : "Your purchase means everything to a small, independent company. Stowing is unlimited."
       )
     }
   }

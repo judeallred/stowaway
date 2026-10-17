@@ -36,16 +36,16 @@ extension Engine {
     guard nodeModules.lastPathComponent == "node_modules",
       let data = fm.contents(atPath: project.appendingPathComponent("package.json").path),
       let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-    else { return "only a project's node_modules (next to package.json) can be offloaded this way" }
+    else { return "only a project's node_modules (next to package.json) can be stowed this way" }
     if fm.fileExists(atPath: nodeModules.appendingPathComponent(".pnpm").path)
       || fm.fileExists(atPath: project.appendingPathComponent("pnpm-lock.yaml").path)
     {
       return
-        "this is a pnpm project: offload pnpm's store instead (with enableGlobalVirtualStore, node_modules is only links)"
+        "this is a pnpm project: stow pnpm's store instead (with enableGlobalVirtualStore, node_modules is only links)"
     }
     if !allowTurbopack, usesTurbopack(manifest) {
       return
-        "this project builds with Turbopack, which refuses packages outside the project. Set `turbopack.root` in next.config (for example to \"/\"), then offload it with Turbopack allowed"
+        "this project builds with Turbopack, which refuses packages outside the project. Set `turbopack.root` in next.config (for example to \"/\"), then stow it with Turbopack allowed"
     }
     return nil
   }
@@ -548,7 +548,7 @@ extension Engine {
     let fm = FileManager.default
     let local = URL(fileURLWithPath: entry.local)
     guard let mine else {
-      throw StowawayError("connect the offload location to bring \(entry.local) back")
+      throw StowawayError("connect the drive to bring \(entry.local) back")
     }
     let store = try storePath(entry.remote, in: mine)
     for package in Self.packages(in: local, chain: []) {

@@ -48,9 +48,31 @@ final class AppModel {
   private(set) var driveName: String?
   private(set) var driveConnected = false
   private(set) var driveFreeBytes: Int64?
+  private(set) var driveTotalBytes: Int64?
+  /// The drive's format, such as "APFS" or "ExFAT".
+  private(set) var driveFormat: String?
+  /// The last speed test of the offload location (kept until the location changes).
+  private(set) var driveSpeed: DriveSpeed? = {
+    UserDefaults.standard.data(forKey: "driveSpeed").flatMap {
+      try? JSONDecoder().decode(DriveSpeed.self, from: $0)
+    }
+  }()
+  private(set) var testingSpeed = false
   private(set) var offloadedBytes: Int64 = 0
   private(set) var loginItemEnabled = false
-  var message: String?
+  /// What Stowaway is doing right now ("Scanning…", what's moving), for the status line.
+  private(set) var activity: String?
+  /// A problem with something the user just did. Cleared after a few seconds: the status line
+  /// is for what's happening now, not a log.
+  var message: String? {
+    didSet {
+      guard let message else { return }
+      Task {
+        try? await Task.sleep(for: .seconds(8))
+        if self.message == message { self.message = nil }
+      }
+    }
+  }
   var showingSupport = false
   var showingOnboarding = false
   var started = false
@@ -97,7 +119,6 @@ final class AppModel {
   }
 
   func start() {
-    engine.log = { [weak self] line in Task { @MainActor in self?.message = line } }
     store.start()
     refreshSettings()
     showingOnboarding = !didOnboard && roots.isEmpty
@@ -130,16 +151,48 @@ final class AppModel {
     let engine = engine
     Task.detached {
       let store = engine.enterGrants()
-      let free = store.flatMap {
-        try? $0.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-          .volumeAvailableCapacityForImportantUsage
+      let values = store.flatMap {
+        try? $0.resourceValues(forKeys: [
+          .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
+          .volumeLocalizedFormatDescriptionKey,
+        ])
       }
+      let free = values?.volumeAvailableCapacityForImportantUsage
+      let total = values?.volumeTotalCapacity.map(Int64.init)
+      let format = values?.volumeLocalizedFormatDescription
       let bytes = engine.offloadedBytes
       await MainActor.run {
         self.driveConnected = store != nil
         self.driveFreeBytes = free
+        self.driveTotalBytes = total
+        self.driveFormat = format
         self.offloadedBytes = bytes
       }
+    }
+  }
+
+  /// Measures the offload location's speed (a few seconds; writes and removes a 256 MB file).
+  func testDriveSpeed() async {
+    guard !testingSpeed else { return }
+    testingSpeed = true
+    activity = "Testing the drive's speed…"
+    defer {
+      testingSpeed = false
+      activity = nil
+    }
+    let engine = engine
+    let result = await Task.detached { () -> Result<DriveSpeed, Error>? in
+      guard let store = engine.enterGrants() else { return nil }
+      return Result { try DriveSpeed.measure(in: store) }
+    }.value
+    switch result {
+    case .success(let speed):
+      driveSpeed = speed
+      UserDefaults.standard.set(try? JSONEncoder().encode(speed), forKey: "driveSpeed")
+    case .failure(let error):
+      message = "Couldn't test the drive: \(error.localizedDescription)"
+    case nil:
+      message = "Connect your drive to test it."
     }
   }
 
@@ -186,10 +239,8 @@ final class AppModel {
       do {
         if isVolume, url.path != "/", drivePath == nil {
           try engine.grant(url, as: .drive)
-          message = "Offloading to \(url.lastPathComponent)."
         } else {
           try engine.grant(url, as: .root)
-          message = "Added \(Format.path(url.path))."
         }
       } catch {
         message = "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)"
@@ -210,7 +261,7 @@ final class AppModel {
       let root = try SampleProject.create(in: parent)
       try engine.grant(root, as: .root)
       message =
-        "Created a sample in \(Format.path(root.path)). Try offloading, bringing back or deleting it."
+        "Created a sample in \(Format.path(root.path)). Try stowing, bringing back or deleting it."
     } catch {
       message = "Couldn't create the sample: \(error.localizedDescription)"
     }
@@ -227,7 +278,7 @@ final class AppModel {
   func chooseDrive() {
     guard
       let url = choose(
-        "Choose where offloaded folders go: an external drive, or a folder on one.",
+        "Choose where stowed folders go: an external drive, or a folder on one.",
         at: URL(fileURLWithPath: "/Volumes"))
     else { return }
     grantDrive(url)
@@ -236,6 +287,10 @@ final class AppModel {
   private func grantDrive(_ url: URL) {
     do {
       try engine.grant(url, as: .drive)
+      // A new location: test its speed, so Settings can say what it's good for.
+      driveSpeed = nil
+      UserDefaults.standard.removeObject(forKey: "driveSpeed")
+      Task { await testDriveSpeed() }
     } catch {
       message = error.localizedDescription
     }
@@ -328,7 +383,6 @@ final class AppModel {
     }
     do {
       try engine.grant(url, as: .root)
-      message = "Stowaway can now see your home folder."
     } catch {
       message = "Couldn't remember your home folder: \(error.localizedDescription)"
     }
@@ -340,7 +394,7 @@ final class AppModel {
   func chooseDrive(_ volume: URL) {
     guard
       let url = choose(
-        "Click Choose to keep offloaded folders on \(volume.lastPathComponent).", at: volume)
+        "Click Choose to keep stowed folders on \(volume.lastPathComponent).", at: volume)
     else { return }
     grantDrive(url)
   }
@@ -367,7 +421,11 @@ final class AppModel {
   func scan() async {
     guard !scanning else { return }
     scanning = true
-    defer { scanning = false }
+    activity = activity ?? "Scanning your folders…"
+    defer {
+      scanning = false
+      if activity == "Scanning your folders…" { activity = nil }
+    }
     let engine = engine
     let roots = engine.rootPaths
     let candidates = await Task.detached {
@@ -442,37 +500,40 @@ final class AppModel {
 
   // MARK: Actions
 
-  func offload(_ row: Row) async {
+  func offload(_ row: Row) async { await offload([row]) }
+  func bringBack(_ row: Row) async { await bringBack([row]) }
+  func delete(_ row: Row) async { await delete([row]) }
+
+  /// Offloads each folder in turn. With several, folders Stowaway can't offload (a pnpm
+  /// project, say) are skipped and counted in the summary rather than stopping the rest.
+  func offload(_ rows: [Row]) async {
     guard drivePath != nil else {
-      message = "Choose an offload location first."
+      message = "Choose where to stow first."
       return
     }
-    let paths: [String]
-    if let parts = row.kind.parts(of: row.candidate.url) {
-      paths = parts.map(\.path).filter { !row.entryPaths.contains($0) }
-      if paths.isEmpty {
-        message = "\(row.name) has no build folders to offload yet."
-        return
+    await bulk(rows, doing: "Stowing") { row, engine, limit in
+      let paths: [String]
+      if let parts = row.kind.parts(of: row.candidate.url) {
+        paths = parts.map(\.path).filter { !row.entryPaths.contains($0) }
+        if paths.isEmpty { throw NothingToOffload(name: row.name) }
+      } else {
+        paths = [row.path]
       }
-    } else {
-      paths = [row.path]
-    }
-    await perform(row) { engine, limit in
       for path in paths {
         try engine.adopt(path, kind: row.kind, container: row.path, limit: limit)
       }
     }
   }
 
-  func bringBack(_ row: Row) async {
-    await perform(row) { engine, _ in
+  func bringBack(_ rows: [Row]) async {
+    await bulk(rows, doing: "Bringing back") { row, engine, _ in
       for path in row.entryPaths { try engine.release(path) }
     }
   }
 
-  func delete(_ row: Row) async {
+  func delete(_ rows: [Row]) async {
     let roots = roots
-    await perform(row) { engine, _ in
+    await bulk(rows, doing: "Deleting") { row, engine, _ in
       if row.entryPaths.isEmpty {
         try Cleaner().delete(row.candidate, roots: roots, offloaded: engine.entries())
       } else {
@@ -486,26 +547,55 @@ final class AppModel {
     }
   }
 
-  private func perform(_ row: Row, _ body: @escaping @Sendable (Engine, Int64?) throws -> Void)
-    async
-  {
-    busy.insert(row.path)
-    defer { busy.remove(row.path) }
+  /// "Stowing node_modules in alchemist (2.8 GB) · 3 of 12…"
+  private static func describe(_ verb: String, _ row: Row, index: Int, of count: Int) -> String {
+    let what = row.project == nil ? row.kind.label : "\(row.kind.label) in \(row.name)"
+    let bytes = row.place == .mac ? row.localBytes : row.driveBytes
+    var text = "\(verb) \(what)"
+    if let bytes, bytes > 0 { text += " (\(Format.bytes(bytes)))" }
+    if count > 1 { text += " · \(index + 1) of \(count)" }
+    return text + "…"
+  }
+
+  private struct NothingToOffload: LocalizedError {
+    let name: String
+    var errorDescription: String? { "\(name) has no build folders to stow yet." }
+  }
+
+  /// Runs `body` for each row, one at a time, then rescans once. One row's failure is shown as
+  /// is; with several, failures are skipped and summarized. Reaching the free limit stops the
+  /// run and offers the upgrade.
+  private func bulk(
+    _ rows: [Row], doing: String,
+    _ body: @escaping @Sendable (Row, Engine, Int64?) throws -> Void
+  ) async {
+    guard !rows.isEmpty else { return }
     await store.waitUntilLoaded()
     let engine = engine
-    let limit = store.offloadLimit
-    let failure: (any Error)? = await Task.detached {
-      do {
-        try body(engine, limit)
-        return nil
-      } catch {
-        return error
+    var failures: [(Row, any Error)] = []
+    for (i, row) in rows.enumerated() {
+      activity = Self.describe(doing, row, index: i, of: rows.count)
+      busy.insert(row.path)
+      let limit = store.offloadLimit
+      let failure: (any Error)? = await Task.detached {
+        do {
+          try body(row, engine, limit)
+          return nil
+        } catch {
+          return error
+        }
+      }.value
+      busy.remove(row.path)
+      if failure is OffloadLimitReached {
+        showingSupport = true
+        break
       }
-    }.value
-    if failure is OffloadLimitReached {
-      showingSupport = true
-    } else if let failure {
-      message = failure.localizedDescription
+      if let failure { failures.append((row, failure)) }
+    }
+    activity = nil
+    // One folder: say why it couldn't be done. Several: skip what can't be, quietly.
+    if rows.count == 1, let (_, error) = failures.first {
+      message = error.localizedDescription
     }
     await scan()
   }
@@ -533,6 +623,8 @@ final class AppModel {
       let limit = store.offloadLimit
       let paths = row.kind.parts(of: row.candidate.url)?.map(\.path) ?? [row.path]
       let container = row.path
+      activity = Self.describe("Stowing", row, index: 0, of: 1)
+      defer { activity = nil }
       let stop = await Task.detached { () -> Bool in
         for path in paths {
           do {
@@ -600,8 +692,13 @@ final class AppModel {
     func applyDemo(drive: String, roots: [String]) {
       self.roots = roots
       drivePath = drive
+      driveName = URL(fileURLWithPath: drive).lastPathComponent
       driveConnected = true
       driveFreeBytes = 812_000_000_000
+      driveTotalBytes = 2_000_000_000_000
+      driveFormat = "APFS"
+      driveSpeed = DriveSpeed(
+        writeMBps: 2_710, readMBps: 2_950, smallFilesPerSecond: 9_400, measured: .now)
       offloadedBytes = rows.map(\.driveBytes).reduce(0, +)
     }
   }

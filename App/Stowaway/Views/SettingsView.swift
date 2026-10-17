@@ -9,7 +9,7 @@ struct SettingsView: View {
       FoldersSettings(model: model)
         .tabItem { Label("Folders", systemImage: "folder") }
       OffloadSettings(model: model)
-        .tabItem { Label("Offload", systemImage: "externaldrive") }
+        .tabItem { Label("Stow", systemImage: "externaldrive") }
       GeneralSettings(model: model)
         .tabItem { Label("General", systemImage: "gearshape") }
     }
@@ -17,9 +17,10 @@ struct SettingsView: View {
   }
 }
 
-private struct FoldersSettings: View {
+struct FoldersSettings: View {
   let model: AppModel
   @State private var selection: String?
+  @State private var suggesting = false
 
   var body: some View {
     Form {
@@ -30,6 +31,10 @@ private struct FoldersSettings: View {
         .frame(minHeight: 120)
         HStack {
           Button("Add Folder…") { model.addRoot(startingAt: realHomeDirectory) }
+          Button("Suggested Folders…") { suggesting = true }
+            .popover(isPresented: $suggesting, arrowEdge: .bottom) {
+              SuggestedFolders(model: model)
+            }
           Button("Remove") {
             if let selection { model.removeRoot(selection) }
           }
@@ -39,39 +44,21 @@ private struct FoldersSettings: View {
         Text("Stowaway looks in these folders")
       } footer: {
         Text(
-          "Removing a folder doesn't touch anything in it, and folders already offloaded stay on the drive. To skip a folder inside one of these, put a file named .stowaway-ignore in it."
+          "Removing a folder doesn't touch anything in it, and folders already stowed stay on the drive. To skip a folder inside one of these, put a file named .stowaway-ignore in it."
         )
         .font(.caption).foregroundStyle(.secondary)
-      }
-      let caches = model.ungrantedCaches
-      if !caches.isEmpty {
-        Section("Caches Stowaway can't reach yet") {
-          ForEach(caches, id: \.folder) { cache in
-            HStack {
-              Text("\(cache.kind.label) in \(Format.path(cache.folder.path))")
-              Spacer()
-              Button("Allow…") {
-                model.addRoot(
-                  startingAt: cache.folder,
-                  message:
-                    "Click Choose to let Stowaway manage \(cache.kind.label) in \(Format.path(cache.folder.path))."
-                )
-              }
-            }
-          }
-        }
       }
     }
     .formStyle(.grouped)
   }
 }
 
-private struct OffloadSettings: View {
+struct OffloadSettings: View {
   @Bindable var model: AppModel
 
   var body: some View {
     Form {
-      Section("Offload location") {
+      Section("Stow location") {
         HStack {
           if let name = model.driveName {
             Label(
@@ -85,13 +72,61 @@ private struct OffloadSettings: View {
           Spacer()
           Button(model.driveName == nil ? "Choose…" : "Change…") { model.chooseDrive() }
         }
-        if let free = model.driveFreeBytes {
-          LabeledContent("Free space", value: Format.bytes(free))
+        if model.driveConnected, let free = model.driveFreeBytes {
+          LabeledContent("Free space") {
+            if let total = model.driveTotalBytes, total > 0 {
+              VStack(alignment: .trailing, spacing: 3) {
+                Text("\(Format.bytes(free)) of \(Format.bytes(total))")
+                ProgressView(value: Double(total - free), total: Double(total))
+                  .frame(width: 140)
+                  .accessibilityLabel("Drive space used")
+              }
+            } else {
+              Text(Format.bytes(free))
+            }
+          }
         }
-        LabeledContent("Offloaded", value: Format.bytes(model.offloadedBytes))
+        if model.driveConnected, let format = model.driveFormat {
+          LabeledContent("Format", value: format)
+        }
+        LabeledContent("Stowed", value: Format.bytes(model.offloadedBytes))
+      }
+      if model.driveName != nil {
+        Section {
+          if let speed = model.driveSpeed {
+            LabeledContent("Read", value: "\(Int(speed.readMBps).formatted()) MB/s")
+            LabeledContent("Write", value: "\(Int(speed.writeMBps).formatted()) MB/s")
+            LabeledContent(
+              "Small files", value: "\(Int(speed.smallFilesPerSecond).formatted()) per second")
+          }
+          HStack {
+            if let speed = model.driveSpeed {
+              Label(speed.verdict, systemImage: speed.symbol).foregroundStyle(speed.color)
+            } else if !model.testingSpeed {
+              Text("Not tested yet").foregroundStyle(.secondary)
+            }
+            Spacer()
+            if model.testingSpeed {
+              ProgressView().controlSize(.small)
+              Text("Testing…").foregroundStyle(.secondary)
+            } else {
+              Button(model.driveSpeed == nil ? "Test Speed" : "Test Again") {
+                Task { await model.testDriveSpeed() }
+              }
+              .disabled(!model.driveConnected)
+            }
+          }
+        } header: {
+          Text("Speed")
+        } footer: {
+          Text(
+            "Writes and reads a 256 MB file, and 2,000 small ones like node_modules has, then removes them."
+          )
+          .font(.caption).foregroundStyle(.secondary)
+        }
       }
       Section {
-        Picker("Offload automatically", selection: $model.autoOffloadMinutes) {
+        Picker("Stow automatically", selection: $model.autoOffloadMinutes) {
           Text("Immediately").tag(AppModel.immediately)
           Text("After 5 minutes unchanged").tag(5)
           Text("After 1 hour unchanged").tag(60)
@@ -107,10 +142,10 @@ private struct OffloadSettings: View {
       }
       Section("Plan") {
         if let left = model.freeAllowanceLeft {
-          LabeledContent("Free offloading left", value: Format.bytes(left))
+          LabeledContent("Free stowing left", value: Format.bytes(left))
           Button("Make It Unlimited…") { model.showingSupport = true }
         } else {
-          Label("Unlimited offloading. Thank you!", systemImage: "heart.fill")
+          Label("Unlimited stowing. Thank you!", systemImage: "heart.fill")
         }
       }
     }
@@ -128,7 +163,7 @@ private struct GeneralSettings: View {
           "Open Stowaway at login",
           isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
       } footer: {
-        Text("Stowaway can only switch offloaded folders to local ones while it's running.")
+        Text("Stowaway can only switch stowed folders to local ones while it's running.")
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("Purchases") {
@@ -148,5 +183,85 @@ private struct GeneralSettings: View {
     let info = Bundle.main.infoDictionary
     return
       "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+  }
+}
+
+extension DriveSpeed {
+  var verdict: String {
+    switch rating {
+    case .fast: "Fast: fine for building on the drive, even stowing immediately."
+    case .moderate: "Good for stowing. Builds on the drive will be slower than on your Mac."
+    case .slow: "Slow. Best for folders you rarely use: stow after a day or more."
+    }
+  }
+
+  var symbol: String {
+    switch rating {
+    case .fast: "hare"
+    case .moderate: "gauge.with.dots.needle.50percent"
+    case .slow: "tortoise"
+    }
+  }
+
+  var color: Color {
+    switch rating {
+    case .fast: .green
+    case .moderate: .primary
+    case .slow: .orange
+    }
+  }
+}
+
+/// Folders Stowaway could look in but can't yet: where Spotlight finds projects, and shared
+/// caches outside the chosen folders.
+struct SuggestedFolders: View {
+  let model: AppModel
+
+  var body: some View {
+    let projects = model.suggestedProjectFolders.filter { $0.projects > 0 }
+    let caches = model.ungrantedCaches
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Suggested folders").font(.headline)
+      if projects.isEmpty && caches.isEmpty {
+        Text("Stowaway can already see every folder it would suggest.")
+          .foregroundStyle(.secondary)
+      }
+      if !projects.isEmpty {
+        Text("Projects").font(.subheadline).foregroundStyle(.secondary)
+        ForEach(projects, id: \.self) { suggestion in
+          row(
+            Format.path(suggestion.folder.path),
+            "\(suggestion.projects) project\(suggestion.projects == 1 ? "" : "s")",
+            folder: suggestion.folder)
+        }
+      }
+      if !caches.isEmpty {
+        Text("Shared caches").font(.subheadline).foregroundStyle(.secondary)
+        ForEach(caches, id: \.folder) { cache in
+          row(cache.kind.label, Format.path(cache.folder.path), folder: cache.folder)
+        }
+        Button("Allow All…") { model.allowHomeFolder() }
+          .help("Lets Stowaway see your home folder, which covers every cache above.")
+      }
+    }
+    .padding(16)
+    .frame(width: 380)
+    .task { await model.detectProjectFolders() }
+  }
+
+  private func row(_ title: String, _ detail: String, folder: URL) -> some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 1) {
+        Text(title)
+        Text(detail).font(.caption).foregroundStyle(.secondary)
+      }
+      Spacer()
+      Button("Allow…") {
+        model.addRoot(
+          startingAt: folder,
+          message: "Click Choose to let Stowaway look in \(Format.path(folder.path)).")
+      }
+      .accessibilityLabel("Allow \(title)")
+    }
   }
 }

@@ -8,7 +8,7 @@
       "internalID": "10001",
       "localizations": [
         {
-          "description": "Unlimited offloading. Pay what you want.",
+          "description": "Unlimited stowing. Pay what you want.",
           "displayName": "Thanks",
           "locale": "en_US"
         }
@@ -23,7 +23,7 @@
       "internalID": "10002",
       "localizations": [
         {
-          "description": "Unlimited offloading. Pay what you want.",
+          "description": "Unlimited stowing. Pay what you want.",
           "displayName": "Big Thanks",
           "locale": "en_US"
         }
@@ -38,7 +38,7 @@
       "internalID": "10003",
       "localizations": [
         {
-          "description": "Unlimited offloading. Pay what you want.",
+          "description": "Unlimited stowing. Pay what you want.",
           "displayName": "Huge Thanks",
           "locale": "en_US"
         }
@@ -53,7 +53,7 @@
       "internalID": "10101",
       "localizations": [
         {
-          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
           "displayName": "Business",
           "locale": "en_US"
         }
@@ -68,7 +68,7 @@
       "internalID": "10102",
       "localizations": [
         {
-          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
           "displayName": "Business Plus",
           "locale": "en_US"
         }
@@ -83,7 +83,7 @@
       "internalID": "10103",
       "localizations": [
         {
-          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
           "displayName": "Business Pro",
           "locale": "en_US"
         }
@@ -98,7 +98,7 @@
       "internalID": "10104",
       "localizations": [
         {
-          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
           "displayName": "Business Patron",
           "locale": "en_US"
         }

@@ -14,7 +14,7 @@ struct LibraryView: View {
   enum Filter: String, CaseIterable, Identifiable {
     case all = "All"
     case mac = "On This Mac"
-    case drive = "Offloaded"
+    case drive = "Stowed"
     var id: String { rawValue }
   }
 
@@ -73,14 +73,10 @@ struct LibraryView: View {
         .pickerStyle(.segmented)
       }
       ToolbarItem {
-        Button {
-          Task { await model.scan() }
-        } label: {
-          Label("Scan Again", systemImage: "arrow.clockwise")
-            .labelStyle(.titleAndIcon)
+        SettingsLink {
+          Label("Settings", systemImage: "gearshape")
         }
-        .disabled(model.scanning)
-        .help("Look for re-creatable folders again")
+        .help("Settings")
       }
     }
     .confirmationDialog(
@@ -91,11 +87,11 @@ struct LibraryView: View {
     ) {
       Button("Delete", role: .destructive) {
         let rows = confirmingDelete
-        Task { for row in rows { await model.delete(row) } }
+        Task { await model.delete(rows) }
       }
     } message: {
       Text(
-        "These folders are re-created by your tools (npm install, cargo build, Xcode…), which takes time and may need the network. Offloaded copies on the drive are deleted too."
+        "These folders are re-created by your tools (npm install, cargo build, Xcode…), which takes time and may need the network. Stowed copies on the drive are deleted too."
       )
     }
   }
@@ -140,14 +136,14 @@ struct LibraryView: View {
   @ViewBuilder
   private func actions(for rows: [Row]) -> some View {
     if rows.contains(where: { $0.place == .mac }) {
-      Button("Offload to Drive") {
-        Task { for row in rows where row.place == .mac { await model.offload(row) } }
+      Button("Stow on Drive") {
+        Task { await model.offload(rows.filter { $0.place == .mac }) }
       }
       .disabled(!model.driveConnected)
     }
     if rows.contains(where: { $0.place != .mac }) {
       Button("Bring Back to Mac") {
-        Task { for row in rows where row.place != .mac { await model.bringBack(row) } }
+        Task { await model.bringBack(rows.filter { $0.place != .mac }) }
       }
       .disabled(!model.driveConnected)
     }
@@ -158,27 +154,42 @@ struct LibraryView: View {
     Button("Delete…", role: .destructive) { confirmingDelete = rows }
   }
 
+  /// Acts on the selection, or on every folder shown when nothing is selected.
   private var actionBar: some View {
     HStack {
-      if let message = model.message {
-        Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(
-          .enabled)
+      if let activity = model.activity {
+        ProgressView().controlSize(.small)
+        Text(activity).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+          .truncationMode(.middle)
+      } else if let message = model.message {
+        Label(message, systemImage: "exclamationmark.triangle")
+          .font(.callout).foregroundStyle(.orange).lineLimit(2)
       }
       Spacer()
-      let rows = selected
-      Button("Delete…", role: .destructive) { confirmingDelete = rows }
+      // Scanning runs on its own every couple of minutes; ⌘R looks again now.
+      Button("Scan Again") { Task { await model.scan() } }
+        .keyboardShortcut("r", modifiers: .command)
+        .disabled(model.scanning)
+        .hidden()
+        .frame(width: 0)
+      let all = selection.isEmpty
+      let rows = all ? visible : selected
+      let onMac = rows.filter { $0.place == .mac }
+      let offloaded = rows.filter { $0.place != .mac }
+      Button(all ? "Delete All…" : "Delete…", role: .destructive) { confirmingDelete = rows }
         .disabled(rows.isEmpty)
-      Button("Bring Back") {
-        Task { for row in rows where row.place != .mac { await model.bringBack(row) } }
+        .help(all ? "Delete every folder shown" : "Delete the selected folders")
+      Button(all ? "Bring All Back" : "Bring Back") {
+        Task { await model.bringBack(offloaded) }
       }
-      .disabled(!rows.contains { $0.place != .mac } || !model.driveConnected)
-      Button("Offload") {
-        Task { for row in rows where row.place == .mac { await model.offload(row) } }
+      .disabled(offloaded.isEmpty || !model.driveConnected)
+      let offload = Button(all ? "Stow All" : "Stow") {
+        Task { await model.offload(onMac) }
       }
-      .disabled(
-        !rows.contains { $0.place == .mac } || !model.driveConnected
-      )
-      .keyboardShortcut(.defaultAction)
+      .disabled(onMac.isEmpty || !model.driveConnected)
+      .help(model.driveConnected ? "" : "Connect your drive first")
+      // Return offloads a selection, never everything.
+      if all { offload } else { offload.keyboardShortcut(.defaultAction) }
     }
     .padding(10)
   }
@@ -212,7 +223,7 @@ private struct SummaryHeader: View {
   var body: some View {
     HStack(alignment: .center, spacing: 24) {
       stat(Format.bytes(model.reclaimableBytes), "re-creatable on this Mac")
-      stat(Format.bytes(model.offloadedBytes), "offloaded")
+      stat(Format.bytes(model.offloadedBytes), "stowed")
       Spacer()
       if let left = model.freeAllowanceLeft {
         VStack(alignment: .trailing, spacing: 4) {
@@ -221,14 +232,17 @@ private struct SummaryHeader: View {
           )
           .frame(width: 160)
           HStack(spacing: 6) {
-            Text("\(Format.bytes(left)) of free offloading left").font(.caption).foregroundStyle(
+            Text("\(Format.bytes(left)) of free stowing left").font(.caption).foregroundStyle(
               .secondary)
             Button("Go Unlimited") { model.showingSupport = true }
               .buttonStyle(.link).font(.caption)
           }
         }
       }
-      DriveButton(model: model)
+      VStack(alignment: .trailing, spacing: 4) {
+        DriveButton(model: model)
+        DriveStats(model: model)
+      }
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 12)
@@ -254,13 +268,37 @@ private struct DriveButton: View {
           name,
           systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
       } else {
-        Label("Choose Offload Location…", systemImage: "externaldrive.badge.plus")
+        Label("Choose Stow Location…", systemImage: "externaldrive.badge.plus")
       }
     }
     .help(
       model.driveName.map {
-        "Offloading to \(model.drivePath.map(Format.path) ?? $0)\(model.driveConnected ? "" : " (disconnected)")"
+        "Stowing on \(model.drivePath.map(Format.path) ?? $0)\(model.driveConnected ? "" : " (disconnected)")"
       } ?? "")
+  }
+}
+
+/// Space on the offload drive, under its button.
+private struct DriveStats: View {
+  let model: AppModel
+
+  var body: some View {
+    if model.driveName != nil {
+      if model.driveConnected, let free = model.driveFreeBytes, let total = model.driveTotalBytes,
+        total > 0
+      {
+        VStack(alignment: .trailing, spacing: 3) {
+          ProgressView(value: Double(total - free), total: Double(total))
+            .frame(width: 160)
+            .accessibilityLabel("Drive space used")
+          Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
+            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+      } else if !model.driveConnected {
+        Text("Disconnected: your tools use local folders meanwhile")
+          .font(.caption).foregroundStyle(.orange)
+      }
+    }
   }
 }
 

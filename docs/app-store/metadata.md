@@ -7,7 +7,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 | Field | Value | Limit |
 |---|---|---|
 | Name | Stowaway | 30. If taken: "Stowaway: Dev Disk Space" |
-| Subtitle | Offload build files and caches | 30 (30) |
+| Subtitle | Stow build files and caches | 30 (30) |
 | Bundle ID | com.brooklynspaceport.stowaway | |
 | SKU | stowaway-mac | |
 | Primary category | Developer Tools | |
@@ -32,14 +32,14 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 >
 > Or keep them on an external drive instead.
 >
-> OFFLOAD TO AN EXTERNAL DRIVE
+> STOW ON AN EXTERNAL DRIVE
 > • Stowaway moves a folder to your drive and leaves a link behind, so npm, Cargo, Xcode and
 >   your other tools find it exactly where it always was.
 > • Unplug the drive and your tools rebuild locally, without asking.
 > • Plug it back in and everything moves back to the drive, including anything built while it
 >   was away.
 > • Folders you haven't changed in 5 minutes move to the drive on their own, so your Mac stays
->   tidy without you thinking about it. (Or offload by hand: it's a setting.)
+>   tidy without you thinking about it. (Or stow by hand: it's a setting.)
 > • npm projects stay fast: `npm install` with nothing to change takes as long as it always did.
 >
 > FINDS WHAT YOU CAN SAFELY REMOVE
@@ -55,10 +55,10 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 > • Bringing folders back and deleting them are always free.
 > • No accounts, no tracking, no data collected.
 >
-> FREE, WITH UNLIMITED OFFLOADING WHEN YOU'RE READY
-> Finding and deleting folders is free, and so is offloading up to 100 GB. Is Stowaway saving
+> FREE, WITH UNLIMITED STOWING WHEN YOU'RE READY
+> Finding and deleting folders is free, and so is stowing up to 100 GB. Is Stowaway saving
 > you from paying for a bigger internal drive? Any purchase, at a price you choose, makes
-> offloading unlimited. Using it at work? Please choose a business price: business purchases
+> stowing unlimited. Using it at work? Please choose a business price: business purchases
 > keep Stowaway free for everyone using it personally.
 >
 > Made by a small, independent software company.
@@ -80,18 +80,18 @@ browser page the user submits themselves.
 ## In-app purchases
 
 Create each as **Non-Consumable**. Prices are yours to choose (see `pricing.md`); every one
-unlocks the same thing, unlimited offloading. Each needs a review screenshot of the upgrade
+unlocks the same thing, unlimited stowing. Each needs a review screenshot of the upgrade
 sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the app.
 
 | Product ID | Reference name | Display name (30) | Description (45) | Family Sharing |
 |---|---|---|---|---|
-| …`personal.1` | Personal 1 | Thanks | Unlimited offloading. Pay what you want. | On |
-| …`personal.2` | Personal 2 | Big Thanks | Unlimited offloading. Pay what you want. | On |
-| …`personal.3` | Personal 3 | Huge Thanks | Unlimited offloading. Pay what you want. | On |
-| …`business.1` | Business 1 | Business | Unlimited offloading for use at work. | Off |
-| …`business.2` | Business 2 | Business Plus | Unlimited offloading for use at work. | Off |
-| …`business.3` | Business 3 | Business Pro | Unlimited offloading for use at work. | Off |
-| …`business.4` | Business 4 | Business Patron | Unlimited offloading for use at work. | Off |
+| …`personal.1` | Personal 1 | Thanks | Unlimited stowing. Pay what you want. | On |
+| …`personal.2` | Personal 2 | Big Thanks | Unlimited stowing. Pay what you want. | On |
+| …`personal.3` | Personal 3 | Huge Thanks | Unlimited stowing. Pay what you want. | On |
+| …`business.1` | Business 1 | Business | Unlimited stowing for use at work. | Off |
+| …`business.2` | Business 2 | Business Plus | Unlimited stowing for use at work. | Off |
+| …`business.3` | Business 3 | Business Pro | Unlimited stowing for use at work. | Off |
+| …`business.4` | Business 4 | Business Patron | Unlimited stowing for use at work. | Off |
 
 (…= `com.brooklynspaceport.stowaway.`)
 

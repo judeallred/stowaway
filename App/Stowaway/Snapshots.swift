@@ -101,6 +101,9 @@
         SupportView(model: model, store: model.store), "support", width: 520, height: 420,
         in: folder)
       render(SettingsView(model: model), "settings", width: 520, height: 380, in: folder)
+      render(OffloadSettings(model: model), "settings-stow", width: 520, height: 640, in: folder)
+      render(
+        SuggestedFolders(model: model), "suggested-folders", width: 380, height: 300, in: folder)
     }
 
     private static func render(
