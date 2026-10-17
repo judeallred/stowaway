@@ -214,13 +214,9 @@ extension Engine {
     try moveLockfile(local: local, store: store)
     if !todo.isEmpty { deleteSoon(trash) }
     total.seconds = Date().timeIntervalSince(start)
-    if ProcessInfo.processInfo.environment["STOWAWAY_LITE_TRACE"] != nil {
-      note(
-        String(
-          format: "trace: compare %.2fs, copy+swap %.2fs, delete %.2fs",
-          compared.timeIntervalSince(start),
-          swapped.timeIntervalSince(compared), Date().timeIntervalSince(swapped)))
-    }
+    logger.debug(
+      "re-offload timing: compare \(compared.timeIntervalSince(start)) s, copy and swap \(swapped.timeIntervalSince(compared)) s"
+    )
     return total
   }
 

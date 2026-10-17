@@ -26,8 +26,21 @@ jobs:
         with:
           persist-credentials: false
       - run: xcodebuild -version && xcrun swift-format --version
-      - run: xcrun swift-format lint --strict --recursive StowawayCore
+      - run: xcrun swift-format lint --strict --recursive StowawayCore App/Stowaway App/scripts/make-icon.swift
       - run: swift test --package-path StowawayCore -Xswiftc -warnings-as-errors
+
+  app:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # An unsigned Release build of the App Store app, then the checks App Review cares about
+      # that the source can't show (no test hooks in the binary, exact entitlements, privacy
+      # manifest).
+      - run: App/scripts/build.sh
+      - run: App/scripts/check-release.sh
 
   workflows:
     runs-on: ubuntu-24.04
@@ -43,4 +56,4 @@ jobs:
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: actionlint
       - run: zizmor --format=github .github/workflows
-      - run: shellcheck .githooks/*
+      - run: shellcheck App/scripts/*.sh .githooks/*

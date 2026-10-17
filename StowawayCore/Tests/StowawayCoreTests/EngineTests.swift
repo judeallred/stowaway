@@ -122,4 +122,24 @@ final class EngineTests: XCTestCase {
     try engine.release(code.appendingPathComponent("a/.next").path)
     XCTAssertNoThrow(try engine.adopt(code.appendingPathComponent("b/.next").path, kind: .next))
   }
+
+  func testDiscardDeletesBothCopies() throws {
+    let s = try Scratch()
+    let (engine, code, drive) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/x", "x")
+    try s.file("code/app/node_modules/a/package.json", "{}")
+    let next = code.appendingPathComponent("app/.next").path
+    let nm = code.appendingPathComponent("app/node_modules").path
+    try engine.adopt(next, kind: .next)
+    try engine.adopt(nm)
+    try engine.discard(next)
+    try engine.discard(nm)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: next))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: nm))
+    let store = drive.appendingPathComponent(Engine.storeFolderName).appendingPathComponent(
+      engine.installID)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
+    XCTAssertTrue(engine.entries().isEmpty)
+  }
 }

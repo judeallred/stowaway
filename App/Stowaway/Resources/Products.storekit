@@ -1,0 +1,122 @@
+{
+  "identifier": "4F6C2E1A",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "4.99",
+      "familyShareable": true,
+      "internalID": "10001",
+      "localizations": [
+        {
+          "description": "Unlimited offloading. Pay what you want.",
+          "displayName": "Thanks",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.personal.1",
+      "referenceName": "Personal 1",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": true,
+      "internalID": "10002",
+      "localizations": [
+        {
+          "description": "Unlimited offloading. Pay what you want.",
+          "displayName": "Big Thanks",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.personal.2",
+      "referenceName": "Personal 2",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "19.99",
+      "familyShareable": true,
+      "internalID": "10003",
+      "localizations": [
+        {
+          "description": "Unlimited offloading. Pay what you want.",
+          "displayName": "Huge Thanks",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.personal.3",
+      "referenceName": "Personal 3",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "29.99",
+      "familyShareable": false,
+      "internalID": "10101",
+      "localizations": [
+        {
+          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "displayName": "Business",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.business.1",
+      "referenceName": "Business 1",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "59.99",
+      "familyShareable": false,
+      "internalID": "10102",
+      "localizations": [
+        {
+          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "displayName": "Business Plus",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.business.2",
+      "referenceName": "Business 2",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "119.99",
+      "familyShareable": false,
+      "internalID": "10103",
+      "localizations": [
+        {
+          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "displayName": "Business Pro",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.business.3",
+      "referenceName": "Business 3",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "249.99",
+      "familyShareable": false,
+      "internalID": "10104",
+      "localizations": [
+        {
+          "description": "Unlimited offloading, for work. Keeps Stowaway free for personal users.",
+          "displayName": "Business Patron",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.business.4",
+      "referenceName": "Business 4",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

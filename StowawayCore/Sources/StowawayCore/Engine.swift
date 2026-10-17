@@ -80,7 +80,7 @@ public final class Engine: @unchecked Sendable {
   let stateDirectory: URL
   private let lock = NSLock()
   private var scoped: [URL] = []
-  private let logger = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "engine")
+  let logger = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "engine")
 
   /// Receives one line per notable event (the app shows the latest; tests print them).
   public var log: @Sendable (String) -> Void = { _ in }
@@ -376,6 +376,28 @@ public final class Engine: @unchecked Sendable {
       note("brought back \(path): \(stats)")
     }
     save(entries().filter { $0.id != entry.id })
+  }
+
+  /// Deletes an offloaded folder everywhere: the link (or the local folder while the drive is
+  /// away) and its copy on the drive. A machine-wide cache folder is left empty rather than
+  /// removed, so the permission the user granted for it stays valid.
+  public func discard(_ path: String) throws {
+    try exclusively {
+      guard let entry = entries().first(where: { $0.local == path }) else {
+        throw StowawayError("\(path) isn't offloaded")
+      }
+      guard let store = enterGrants() else {
+        throw StowawayError("connect the offload location to delete \(path)")
+      }
+      let remote = try storePath(entry.remote, in: store)
+      try Copier.remove(entry.mode == .packages ? remote : remote.deletingLastPathComponent())
+      try Copier.remove(URL(fileURLWithPath: path))
+      if entry.kind?.isGlobal == true {
+        try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false)
+      }
+      save(entries().filter { $0.id != entry.id })
+      note("deleted \(path) and its copy on the drive")
+    }
   }
 
   /// Resolves a path recorded relative to the store, refusing anything that escapes it (the

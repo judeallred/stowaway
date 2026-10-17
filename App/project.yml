@@ -1,0 +1,65 @@
+# Generates Stowaway.xcodeproj (committed, so XcodeGen is only needed to change the project):
+#   xcodegen generate --spec App/project.yml
+name: Stowaway
+options:
+  bundleIdPrefix: com.brooklynspaceport
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+packages:
+  StowawayCore:
+    path: ../StowawayCore
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Set to your Apple Developer team ID (or pick it in Xcode's Signing & Capabilities).
+    DEVELOPMENT_TEAM: ""
+targets:
+  Stowaway:
+    type: application
+    platform: macOS
+    sources:
+      - path: Stowaway
+    dependencies:
+      - package: StowawayCore
+    info:
+      path: Stowaway/Info.plist
+      properties:
+        CFBundleDisplayName: Stowaway
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        # A menu bar app: no Dock icon. The library window opens from the menu.
+        LSUIElement: true
+        NSHumanReadableCopyright: © 2026 Jude Allred
+        # Only Apple's own encryption (HTTPS through system frameworks): exempt.
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: Stowaway/Stowaway.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        # Folders the user picks: projects, caches and the offload location.
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+        # Files Stowaway copies to and from the drive include executables (build tools, native
+        # modules); without this the sandbox quarantines them and they stop running.
+        com.apple.security.files.user-selected.executable: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brooklynspaceport.stowaway
+        PRODUCT_NAME: Stowaway
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        DEAD_CODE_STRIPPING: YES
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        GCC_TREAT_WARNINGS_AS_ERRORS: YES
+        COMBINE_HIDPI_IMAGES: YES
+    scheme:
+      storeKitConfiguration: Stowaway/Resources/Products.storekit

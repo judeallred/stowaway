@@ -8,6 +8,12 @@ public struct Candidate: Identifiable, Hashable, Sendable {
   /// The project folder for project kinds (where `package.json`, `Cargo.toml`… are).
   public let project: String?
 
+  public init(kind: Kind, path: String, project: String?) {
+    self.kind = kind
+    self.path = path
+    self.project = project
+  }
+
   public var url: URL { URL(fileURLWithPath: path) }
   public var name: String {
     if let project { return URL(fileURLWithPath: project).lastPathComponent }

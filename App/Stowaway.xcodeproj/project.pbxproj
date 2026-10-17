@@ -1,0 +1,446 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		084E7D56BFFB9AF63628900B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE53D75B4C836D23647495CB /* AppModel.swift */; };
+		199C4A8ECA9F6BA87B0E314F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E771D811017E307261D18D3D /* PrivacyInfo.xcprivacy */; };
+		1CAB8B6495BBEF743D66C50B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCACF1BEC5C005F105DDAEE1 /* SettingsView.swift */; };
+		278A2FDF7C354323F292BAC2 /* BugReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 901B7E9737A31AE93B4EAD6C /* BugReport.swift */; };
+		387A36B2B2411E1A09AC6268 /* SupportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4BA2BD9483908A8EB8F670D /* SupportView.swift */; };
+		4E50A3A41B040AB486A93725 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B43FD7B635E6C995001192B /* OnboardingView.swift */; };
+		4F55172FADD12752E7339CF2 /* MenuBarImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CAF463CD835FC0D7BC6525 /* MenuBarImage.swift */; };
+		59C1554D0BB98D211BA1AB1E /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B0A2BE706D7AB3CAB8289F /* Format.swift */; };
+		61AA22F0E6CF2F85D9331792 /* StowawayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 9AB1DB8F2368EC1D9DC113C6 /* StowawayCore */; };
+		937B9364907816C2F861E791 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5FFFD0BBB9EAD6BE348B1AC9 /* Assets.xcassets */; };
+		A9CDFBE15E1E075A03968C49 /* Links.swift in Sources */ = {isa = PBXBuildFile; fileRef = A742B6F999B77AA3279FB057 /* Links.swift */; };
+		B088F092456D9D21DF53AF36 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = B55E149D6E1A327024713710 /* Store.swift */; };
+		B65896A3BAA8A8099E615107 /* StowawayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26022092A5847F8F62977F32 /* StowawayApp.swift */; };
+		D237E92F0D2F226A0B2B6353 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BE30E561F181554DAD7D9D0 /* LibraryView.swift */; };
+		DAD3CAB6FFD564F0E9C0E8FF /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 733FBCEB8E4E38C0DB765291 /* MenuView.swift */; };
+		E8E42283977144435B31579A /* Products.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 83216434CA2022F8DE1FD81B /* Products.storekit */; };
+		F089BD7648CE04AAEBB38345 /* Logo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C4956EE0571AC3F00B7DB3 /* Logo.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0B43FD7B635E6C995001192B /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		11C4956EE0571AC3F00B7DB3 /* Logo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logo.swift; sourceTree = "<group>"; };
+		26022092A5847F8F62977F32 /* StowawayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StowawayApp.swift; sourceTree = "<group>"; };
+		28B0A2BE706D7AB3CAB8289F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
+		4BE30E561F181554DAD7D9D0 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		5FFFD0BBB9EAD6BE348B1AC9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		733FBCEB8E4E38C0DB765291 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
+		83216434CA2022F8DE1FD81B /* Products.storekit */ = {isa = PBXFileReference; path = Products.storekit; sourceTree = "<group>"; };
+		89069E2306AC30B5CEE1C615 /* StowawayCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = StowawayCore; path = ../StowawayCore; sourceTree = SOURCE_ROOT; };
+		901B7E9737A31AE93B4EAD6C /* BugReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugReport.swift; sourceTree = "<group>"; };
+		9069B2BD2372B72ACD4E8687 /* Stowaway.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Stowaway.entitlements; sourceTree = "<group>"; };
+		A50206DA628DA4A1AA4D2CA3 /* Stowaway.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Stowaway.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A742B6F999B77AA3279FB057 /* Links.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Links.swift; sourceTree = "<group>"; };
+		A8CAF463CD835FC0D7BC6525 /* MenuBarImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarImage.swift; sourceTree = "<group>"; };
+		AC38304823DC0655220A64AD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B4BA2BD9483908A8EB8F670D /* SupportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportView.swift; sourceTree = "<group>"; };
+		B55E149D6E1A327024713710 /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
+		BE53D75B4C836D23647495CB /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		DCACF1BEC5C005F105DDAEE1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E771D811017E307261D18D3D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F993D23A0EDC88A1C7D3CFE0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				61AA22F0E6CF2F85D9331792 /* StowawayCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4675BABB0C379C6C7E41A35C = {
+			isa = PBXGroup;
+			children = (
+				6B8BB456C697462A7A9E5A01 /* Packages */,
+				9DE41C39ED448321B422E92B /* Stowaway */,
+				4E792DFE1D6B25B72B29C524 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4E792DFE1D6B25B72B29C524 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A50206DA628DA4A1AA4D2CA3 /* Stowaway.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		52EB02B025AEB9AE5D342EE7 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				4BE30E561F181554DAD7D9D0 /* LibraryView.swift */,
+				733FBCEB8E4E38C0DB765291 /* MenuView.swift */,
+				0B43FD7B635E6C995001192B /* OnboardingView.swift */,
+				DCACF1BEC5C005F105DDAEE1 /* SettingsView.swift */,
+				B4BA2BD9483908A8EB8F670D /* SupportView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		5321FE09110506D2E03C66EE /* Branding */ = {
+			isa = PBXGroup;
+			children = (
+				11C4956EE0571AC3F00B7DB3 /* Logo.swift */,
+				A8CAF463CD835FC0D7BC6525 /* MenuBarImage.swift */,
+			);
+			path = Branding;
+			sourceTree = "<group>";
+		};
+		6B8BB456C697462A7A9E5A01 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				89069E2306AC30B5CEE1C615 /* StowawayCore */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		841CDD7AF8B646843ABBD402 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				5FFFD0BBB9EAD6BE348B1AC9 /* Assets.xcassets */,
+				E771D811017E307261D18D3D /* PrivacyInfo.xcprivacy */,
+				83216434CA2022F8DE1FD81B /* Products.storekit */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		9DE41C39ED448321B422E92B /* Stowaway */ = {
+			isa = PBXGroup;
+			children = (
+				BE53D75B4C836D23647495CB /* AppModel.swift */,
+				901B7E9737A31AE93B4EAD6C /* BugReport.swift */,
+				28B0A2BE706D7AB3CAB8289F /* Format.swift */,
+				AC38304823DC0655220A64AD /* Info.plist */,
+				A742B6F999B77AA3279FB057 /* Links.swift */,
+				B55E149D6E1A327024713710 /* Store.swift */,
+				9069B2BD2372B72ACD4E8687 /* Stowaway.entitlements */,
+				26022092A5847F8F62977F32 /* StowawayApp.swift */,
+				5321FE09110506D2E03C66EE /* Branding */,
+				841CDD7AF8B646843ABBD402 /* Resources */,
+				52EB02B025AEB9AE5D342EE7 /* Views */,
+			);
+			path = Stowaway;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A4DBE7ECD8FD7859183AEA3 /* Stowaway */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6DB799FD3D815C33E3E9A39D /* Build configuration list for PBXNativeTarget "Stowaway" */;
+			buildPhases = (
+				A013CA12D388C18B757A8E35 /* Sources */,
+				375246D49B38989473E5C98D /* Resources */,
+				F993D23A0EDC88A1C7D3CFE0 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Stowaway;
+			packageProductDependencies = (
+				9AB1DB8F2368EC1D9DC113C6 /* StowawayCore */,
+			);
+			productName = Stowaway;
+			productReference = A50206DA628DA4A1AA4D2CA3 /* Stowaway.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		941827C15977355406DA94C1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					1A4DBE7ECD8FD7859183AEA3 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = C9ED811C782CB2AD010FF053 /* Build configuration list for PBXProject "Stowaway" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 4675BABB0C379C6C7E41A35C;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				11CEFCAEF55EE939A717E420 /* XCLocalSwiftPackageReference "../StowawayCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4E792DFE1D6B25B72B29C524 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A4DBE7ECD8FD7859183AEA3 /* Stowaway */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		375246D49B38989473E5C98D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				937B9364907816C2F861E791 /* Assets.xcassets in Resources */,
+				199C4A8ECA9F6BA87B0E314F /* PrivacyInfo.xcprivacy in Resources */,
+				E8E42283977144435B31579A /* Products.storekit in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A013CA12D388C18B757A8E35 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				084E7D56BFFB9AF63628900B /* AppModel.swift in Sources */,
+				278A2FDF7C354323F292BAC2 /* BugReport.swift in Sources */,
+				59C1554D0BB98D211BA1AB1E /* Format.swift in Sources */,
+				D237E92F0D2F226A0B2B6353 /* LibraryView.swift in Sources */,
+				A9CDFBE15E1E075A03968C49 /* Links.swift in Sources */,
+				F089BD7648CE04AAEBB38345 /* Logo.swift in Sources */,
+				4F55172FADD12752E7339CF2 /* MenuBarImage.swift in Sources */,
+				DAD3CAB6FFD564F0E9C0E8FF /* MenuView.swift in Sources */,
+				4E50A3A41B040AB486A93725 /* OnboardingView.swift in Sources */,
+				1CAB8B6495BBEF743D66C50B /* SettingsView.swift in Sources */,
+				B088F092456D9D21DF53AF36 /* Store.swift in Sources */,
+				B65896A3BAA8A8099E615107 /* StowawayApp.swift in Sources */,
+				387A36B2B2411E1A09AC6268 /* SupportView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		00A5FBA4041FAFBF4AC1797A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		415D731C7C466004D5BCBB16 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Stowaway/Stowaway.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				INFOPLIST_FILE = Stowaway/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.brooklynspaceport.stowaway;
+				PRODUCT_NAME = Stowaway;
+				SDKROOT = macosx;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+			};
+			name = Release;
+		};
+		8FA79549F5D9F7A7138F7117 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Stowaway/Stowaway.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				INFOPLIST_FILE = Stowaway/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.brooklynspaceport.stowaway;
+				PRODUCT_NAME = Stowaway;
+				SDKROOT = macosx;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+			};
+			name = Debug;
+		};
+		E10960B514CD2CF66671E605 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		6DB799FD3D815C33E3E9A39D /* Build configuration list for PBXNativeTarget "Stowaway" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8FA79549F5D9F7A7138F7117 /* Debug */,
+				415D731C7C466004D5BCBB16 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C9ED811C782CB2AD010FF053 /* Build configuration list for PBXProject "Stowaway" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E10960B514CD2CF66671E605 /* Debug */,
+				00A5FBA4041FAFBF4AC1797A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		11CEFCAEF55EE939A717E420 /* XCLocalSwiftPackageReference "../StowawayCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../StowawayCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9AB1DB8F2368EC1D9DC113C6 /* StowawayCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = StowawayCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 941827C15977355406DA94C1 /* Project object */;
+}
