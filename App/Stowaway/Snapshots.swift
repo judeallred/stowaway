@@ -18,7 +18,65 @@
         NSApp.appearance = NSAppearance(named: appearance)
         renderAll(into: folder.appendingPathComponent(name))
       }
+      NSApp.appearance = NSAppearance(named: .aqua)
+      renderAppStore(into: folder.appendingPathComponent("appstore"))
       NSApp.terminate(nil)
+    }
+
+    /// App Store screenshots: 1440×900 points rendered at 2× (2880×1800 pixels).
+    private static func renderAppStore(into folder: URL) {
+      try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      let model = AppModel()
+      model.loadDemo()
+      let size = CGSize(width: 1440, height: 900)
+      render(
+        LibraryView(model: model), "1-library", width: size.width, height: size.height, in: folder,
+        scale: 2)
+      let shots: [(String, String, AnyView, CGSize)] = [
+        (
+          "2-menu", "Everything at a glance, from the menu bar", AnyView(MenuView(model: model)),
+          CGSize(width: 290, height: 360)
+        ),
+        (
+          "3-welcome", "Unplug the drive, keep working", AnyView(OnboardingView(model: model)),
+          CGSize(width: 520, height: 420)
+        ),
+        (
+          "4-support", "Free up to 100 GB. Pay what you want.",
+          AnyView(SupportView(model: model, store: model.store)), CGSize(width: 520, height: 420)
+        ),
+      ]
+      for (name, caption, view, panel) in shots {
+        let poster = Poster(caption: caption, panel: view, panelSize: panel)
+        render(poster, name, width: size.width, height: size.height, in: folder, scale: 2)
+      }
+    }
+
+    /// A screenshot backdrop: a caption over one of the app's windows, on the icon's gradient.
+    private struct Poster: View {
+      let caption: String
+      let panel: AnyView
+      let panelSize: CGSize
+
+      var body: some View {
+        ZStack {
+          LinearGradient(
+            colors: [
+              Color(red: 0.05, green: 0.42, blue: 0.52), Color(red: 0.07, green: 0.13, blue: 0.27),
+            ],
+            startPoint: .top, endPoint: .bottom)
+          VStack(spacing: 40) {
+            Text(caption).font(.system(size: 52, weight: .bold)).foregroundStyle(.white)
+            panel
+              .frame(width: panelSize.width, height: panelSize.height)
+              .background(Color(nsColor: .windowBackgroundColor))
+              .clipShape(RoundedRectangle(cornerRadius: 12))
+              .shadow(radius: 30, y: 12)
+              .scaleEffect(1.5)
+              .frame(width: panelSize.width * 1.5, height: panelSize.height * 1.5)
+          }
+        }
+      }
     }
 
     private static func renderAll(into folder: URL) {
@@ -39,7 +97,8 @@
     }
 
     private static func render(
-      _ view: some View, _ name: String, width: CGFloat, height: CGFloat, in folder: URL
+      _ view: some View, _ name: String, width: CGFloat, height: CGFloat, in folder: URL,
+      scale: CGFloat = 1
     ) {
       let hosting = NSHostingView(
         rootView: view.frame(width: width, height: height).background(
@@ -52,7 +111,14 @@
       hosting.layoutSubtreeIfNeeded()
       // Let SwiftUI lay out and AppKit-backed controls draw.
       RunLoop.main.run(until: Date().addingTimeInterval(0.6))
-      guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { return }
+      guard
+        let rep = NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: Int(width * scale), pixelsHigh: Int(height * scale),
+          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+          colorSpaceName: .deviceRGB,
+          bytesPerRow: 0, bitsPerPixel: 0)
+      else { return }
+      rep.size = NSSize(width: width, height: height)
       hosting.cacheDisplay(in: hosting.bounds, to: rep)
       try? rep.representation(using: .png, properties: [:])?.write(
         to: folder.appendingPathComponent("\(name).png"))

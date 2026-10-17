@@ -86,8 +86,14 @@ struct OnboardingView: View {
       )
       .foregroundStyle(.secondary)
       rootList
-      Button("Choose a Folder…") {
-        model.addRoot(startingAt: realHomeDirectory)
+      HStack {
+        Button("Choose a Folder…") {
+          model.addRoot(startingAt: realHomeDirectory)
+        }
+        Button("Create a Sample Project…") { model.createSampleProject() }
+          .help(
+            "Creates a small sample web and Rust project to try Stowaway on, without touching your own."
+          )
       }
     }
   }

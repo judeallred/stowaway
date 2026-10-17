@@ -141,6 +141,25 @@ final class AppModel {
     return true
   }
 
+  /// Creates the sample workspace in a folder the user picks and starts looking in it.
+  func createSampleProject() {
+    guard
+      let parent = choose(
+        "Choose where to put the sample. Stowaway creates a folder named “\(SampleProject.folderName)” there.",
+        at: realHomeDirectory.appendingPathComponent("Documents"))
+    else { return }
+    do {
+      let root = try SampleProject.create(in: parent)
+      try engine.grant(root, as: .root)
+      message =
+        "Created a sample in \(Format.path(root.path)). Try offloading, bringing back or deleting it."
+    } catch {
+      message = "Couldn't create the sample: \(error.localizedDescription)"
+    }
+    refreshSettings()
+    Task { await scan() }
+  }
+
   func removeRoot(_ path: String) {
     engine.revokeRoot(path)
     refreshSettings()

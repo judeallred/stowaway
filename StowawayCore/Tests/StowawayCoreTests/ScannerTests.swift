@@ -123,4 +123,14 @@ final class ScannerTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: web.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: s.path("web/package.json")))
   }
+
+  func testTheSampleProjectIsFoundAndSafeToTry() throws {
+    let s = try Scratch()
+    let root = try SampleProject.create(in: s.root)
+    let found = Scanner().scan(roots: [root.path]).map { ($0.kind, $0.url.lastPathComponent) }
+    XCTAssertEqual(found.map(\.0).sorted { $0.rawValue < $1.rawValue }, [.cargoTarget, .node])
+    XCTAssertGreaterThan(
+      Measure.allocatedSize(root.appendingPathComponent("web-app/node_modules").path), 10_000_000)
+    XCTAssertThrowsError(try SampleProject.create(in: s.root), "won't overwrite")
+  }
 }

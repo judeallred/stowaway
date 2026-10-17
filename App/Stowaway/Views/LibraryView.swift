@@ -46,6 +46,11 @@ struct LibraryView: View {
           "Stowaway finds node_modules, build folders and caches in the folders you choose. It can't see anything else.",
           button: "Choose a Folder…"
         ) { model.addRoot() }
+        .overlay(alignment: .bottom) {
+          Button("Or Create a Sample Project to Try It…") { model.createSampleProject() }
+            .buttonStyle(.link)
+            .padding(.bottom, 40)
+        }
       } else if model.rows.isEmpty && !model.scanning {
         emptyState(
           "Nothing to tidy up", "No re-creatable folders in the folders you've chosen.",
