@@ -25,6 +25,9 @@
           OnboardingView(model: fresh, step: .projects), "onboarding-1-this-mac", width: 560,
           height: 460, in: folder.appendingPathComponent(name))
         render(
+          LibraryView(model: fresh), "library-no-drive", width: 1100, height: 300,
+          in: folder.appendingPathComponent(name))
+        render(
           MenuView(model: fresh), "menu-no-drive", width: 290, height: 360,
           in: folder.appendingPathComponent(name))
       }

@@ -216,33 +216,38 @@ struct LibraryView: View {
   }
 }
 
-/// Totals and the offload location, above the table.
+/// Totals and the drive, above the table. Everything is top-aligned with the drive button,
+/// which stays in the same place whether or not a drive is chosen.
 private struct SummaryHeader: View {
   let model: AppModel
+  /// The drive column's width: the button, and the bar or explanation under it.
+  static let driveWidth: CGFloat = 230
 
   var body: some View {
-    HStack(alignment: .center, spacing: 24) {
+    HStack(alignment: .top, spacing: 24) {
       stat(Format.bytes(model.reclaimableBytes), "re-creatable on this Mac")
       stat(Format.bytes(model.offloadedBytes), "stowed")
       Spacer()
       if let left = model.freeAllowanceLeft {
-        VStack(alignment: .trailing, spacing: 4) {
+        VStack(alignment: .trailing, spacing: 6) {
           ProgressView(
             value: Double(Store.freeOffloadLimit - left), total: Double(Store.freeOffloadLimit)
           )
           .frame(width: 160)
+          .padding(.top, 8)
           HStack(spacing: 6) {
-            Text("\(Format.bytes(left)) of free stowing left").font(.caption).foregroundStyle(
+            Text("\(Format.bytes(left)) of free stowage left").font(.caption).foregroundStyle(
               .secondary)
             Button("Go Unlimited") { model.showingSupport = true }
               .buttonStyle(.link).font(.caption)
           }
         }
       }
-      VStack(alignment: .trailing, spacing: 4) {
+      VStack(alignment: .leading, spacing: 6) {
         DriveButton(model: model)
         DriveStats(model: model)
       }
+      .frame(width: Self.driveWidth)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 12)
@@ -263,41 +268,50 @@ private struct DriveButton: View {
     Button {
       model.chooseDrive()
     } label: {
-      if let name = model.driveName {
-        Label(
-          name,
-          systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
-      } else {
-        Label("Connect External Storage…", systemImage: "externaldrive.badge.plus")
+      Group {
+        if let name = model.driveName {
+          Label(
+            name,
+            systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
+        } else {
+          Label("Connect External Storage…", systemImage: "externaldrive.badge.plus")
+        }
       }
+      .lineLimit(1)
+      .frame(maxWidth: .infinity)
     }
+    .controlSize(.large)
     .help(
       model.driveName.map {
         "Stowing on \(model.drivePath.map(Format.path) ?? $0)\(model.driveConnected ? "" : " (disconnected)")"
-      } ?? "")
+      } ?? "Choose a drive, or a folder on one, to stow folders on")
   }
 }
 
-/// Space on the offload drive, under its button.
+/// Under the drive button: space on the drive, or, before one is chosen, what it's for.
 private struct DriveStats: View {
   let model: AppModel
 
   var body: some View {
-    if model.driveName != nil {
-      if model.driveConnected, let free = model.driveFreeBytes, let total = model.driveTotalBytes,
-        total > 0
-      {
-        VStack(alignment: .trailing, spacing: 3) {
-          ProgressView(value: Double(total - free), total: Double(total))
-            .frame(width: 160)
-            .accessibilityLabel("Drive space used")
-          Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
-            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-        }
-      } else if !model.driveConnected {
-        Text("Disconnected: your tools use local folders meanwhile")
-          .font(.caption).foregroundStyle(.orange)
+    if model.driveName == nil {
+      Text(
+        "Keep folders on a drive instead of deleting them. Your tools still find them."
+      )
+      .font(.caption).foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+    } else if model.driveConnected, let free = model.driveFreeBytes,
+      let total = model.driveTotalBytes, total > 0
+    {
+      VStack(alignment: .trailing, spacing: 3) {
+        ProgressView(value: Double(total - free), total: Double(total))
+          .accessibilityLabel("Drive space used")
+        Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
+          .font(.caption).foregroundStyle(.secondary).monospacedDigit()
       }
+    } else if !model.driveConnected {
+      Text("Disconnected: your tools use local folders meanwhile.")
+        .font(.caption).foregroundStyle(.orange)
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 }
