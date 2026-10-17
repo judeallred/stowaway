@@ -52,8 +52,8 @@ struct MenuView: View {
         Text("\(Format.bytes(model.offloadedBytes)) stowed")
           .foregroundStyle(.secondary)
       } else {
-        Label("No drive chosen yet", systemImage: "externaldrive")
-          .foregroundStyle(.secondary)
+        action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
+          .padding(.horizontal, -6)
       }
       if model.reclaimableBytes > 0 {
         Text("\(Format.bytes(model.reclaimableBytes)) re-creatable on this Mac")

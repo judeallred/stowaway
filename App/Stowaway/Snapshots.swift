@@ -24,6 +24,9 @@
         render(
           OnboardingView(model: fresh, step: .projects), "onboarding-1-this-mac", width: 560,
           height: 460, in: folder.appendingPathComponent(name))
+        render(
+          MenuView(model: fresh), "menu-no-drive", width: 290, height: 360,
+          in: folder.appendingPathComponent(name))
       }
       NSApp.appearance = NSAppearance(named: .aqua)
       renderAppStore(into: folder.appendingPathComponent("appstore"))
