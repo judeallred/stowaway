@@ -19,6 +19,8 @@ public struct StatusReport: Decodable, Sendable, Equatable {
   public var performance: Performance
   public var attachedImages: Int
   public var paused: Bool
+  /// Missing from agents older than detaching.
+  public var detached: Bool?
   /// Missing from agents older than the setting.
   public var transferPriority: TransferPriority?
   public var agentRunning: Bool
@@ -306,6 +308,8 @@ public enum Call: Sendable, Equatable {
   case rootsRemove(path: String, copy: Bool)
   case eject
   case quit
+  case detach
+  case attach
   case pause
   case resume
   case setTransferPriority(TransferPriority)
@@ -365,6 +369,8 @@ struct Request: Encodable {
     case .scan: try container.encode("scan", forKey: .method)
     case .eject: try container.encode("eject", forKey: .method)
     case .quit: try container.encode("quit", forKey: .method)
+    case .detach: try container.encode("detach", forKey: .method)
+    case .attach: try container.encode("attach", forKey: .method)
     case .pause: try container.encode("pause", forKey: .method)
     case .resume: try container.encode("resume", forKey: .method)
     case .setTransferPriority(let priority):

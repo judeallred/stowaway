@@ -16,6 +16,7 @@ use tracing::{info, warn};
 use crate::engine::{AdoptOptions, Engine, EngineEvent, EngineLock, Observer};
 use crate::error::{Error, IoContext, Result};
 use crate::ipc::{Call, Notification, Request, Response};
+use crate::kinds;
 use crate::paths::Layout;
 use crate::registry::{EntryStatus, Transfer};
 use crate::status::{AdoptionPlan, PlanPhase};
@@ -29,20 +30,6 @@ const FS_SCAN_DEBOUNCE: Duration = Duration::from_secs(20);
 const SIZES_EVERY: Duration = Duration::from_mins(30);
 const GC_EVERY: Duration = Duration::from_hours(24);
 const STATUS_EVERY: Duration = Duration::from_secs(15);
-
-/// Names whose creation or deletion under a root may mean there's something to adopt or clean up.
-const INTERESTING: &[&str] = &[
-    "node_modules",
-    "target",
-    "package.json",
-    "Cargo.toml",
-    "Cargo.lock",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "bun.lock",
-    "bun.lockb",
-];
 
 struct Shared {
     layout: Layout,
@@ -260,7 +247,7 @@ fn main_loop(shared: &Arc<Shared>, wake: &Receiver<()>) -> Result<()> {
         .checked_sub(Duration::from_hours(48))
         .unwrap_or_else(Instant::now);
     let mut agent = AgentLoop {
-        watcher: start_watcher(shared, &engine.config.roots),
+        watcher: start_watcher(shared, &engine.scan_roots()),
         shared: Arc::clone(shared),
         engine,
         timers: Timers {
@@ -312,7 +299,7 @@ impl AgentLoop {
         match self.engine.reload_config() {
             Ok(()) => {
                 info!("config reloaded");
-                self.watcher = start_watcher(&self.shared, &self.engine.config.roots);
+                self.watcher = start_watcher(&self.shared, &self.engine.scan_roots());
                 self.shared.status_dirty.store(true, Ordering::Relaxed);
                 self.timers.scan = self.long_ago;
             }
@@ -375,6 +362,7 @@ impl AgentLoop {
         }
         self.shared.fs_dirty.store(false, Ordering::Relaxed);
         self.timers.fs_scan = Instant::now();
+        self.split_whole_entries();
         // Measuring runs without the engine lock, and each adoption takes it separately, so CLI
         // commands and status updates get a turn during a long first pass.
         let shared = Arc::clone(&self.shared);
@@ -456,6 +444,34 @@ impl AgentLoop {
         self.shared.set_plan(None);
         if finished {
             self.timers.scan = Instant::now();
+        }
+    }
+
+    /// Converts entries holding a whole Cargo `target/` or `DerivedData` into one entry per
+    /// build folder, so the programs they built come back to this Mac (spec §4.11). Busy folders
+    /// wait for a later pass.
+    fn split_whole_entries(&mut self) {
+        let Ok(whole) = self.engine.whole_entries() else {
+            return;
+        };
+        for entry in whole {
+            if self.shared.quitting.load(Ordering::Relaxed) || self.engine.drive().is_none() {
+                return;
+            }
+            let engine = &mut self.engine;
+            let _done = with_lock(&self.shared, "split", || {
+                match engine.split_entry(&entry) {
+                    Ok(parts) => {
+                        info!(path = %entry.path.display(), parts = parts.len(), "split into build folders");
+                    }
+                    Err(Error::Busy(why)) => {
+                        info!(path = %entry.path.display(), %why, "split postponed");
+                    }
+                    Err(e) => warn!(path = %entry.path.display(), error = %e, "split failed"),
+                }
+                Ok(())
+            });
+            self.maybe_broadcast_status();
         }
     }
 
@@ -584,7 +600,7 @@ fn start_watcher(shared: &Arc<Shared>, roots: &[PathBuf]) -> Option<notify::Reco
             && event.paths.iter().any(|p| {
                 p.file_name()
                     .and_then(|n| n.to_str())
-                    .is_some_and(|n| INTERESTING.contains(&n))
+                    .is_some_and(kinds::affects_discovery)
             })
         {
             flag.fs_dirty.store(true, Ordering::Relaxed);
@@ -735,6 +751,8 @@ fn dispatch(call: Call, shared: &Arc<Shared>) -> Result<Option<serde_json::Value
         }),
         Call::Eject => locked(&mut |engine| engine.eject().map(|()| None)),
         Call::Quit => quit(shared).map(|()| None),
+        Call::Detach => locked(&mut |engine| engine.detach().map(|()| None)),
+        Call::Attach => locked(&mut |engine| engine.attach().map(|()| None)),
         Call::Pause => locked(&mut |engine| ops::set_paused(engine, true).map(|()| None)),
         Call::Resume => locked(&mut |engine| ops::set_paused(engine, false).map(|()| None)),
         Call::SetTransferPriority { priority } => {

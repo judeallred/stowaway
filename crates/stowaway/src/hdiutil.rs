@@ -135,19 +135,33 @@ pub fn attach(image: &Path, mount_point: &Path) -> Result<AttachedImage> {
     })
 }
 
-/// Detaches an image by its whole-disk device.
+/// How often a plain detach is tried. Right after a large copy, macOS's own services (Spotlight,
+/// `fseventsd`) can hold a freshly written volume for a few seconds.
+const DETACH_ATTEMPTS: u32 = 10;
+
+/// Detaches an image by its whole-disk device, retrying for a few seconds while it's busy. Even
+/// a forced detach can report "Resource busy" while macOS settles nested images.
 ///
 /// # Errors
 ///
-/// Fails if the device is busy (and `force` is false) or doesn't exist.
+/// Fails if the device stays busy or doesn't exist.
 pub fn detach(device: &str, force: bool) -> Result<()> {
     let mut args = vec!["detach", "-quiet"];
     if force {
         args.push("-force");
     }
     args.push(device);
-    cmd::run("hdiutil", args)?;
-    Ok(())
+    let mut attempt = 1;
+    loop {
+        match cmd::run("hdiutil", &args) {
+            Ok(_) => return Ok(()),
+            Err(e) if attempt >= DETACH_ATTEMPTS => return Err(e),
+            Err(_) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+    }
 }
 
 /// Every attached disk image.

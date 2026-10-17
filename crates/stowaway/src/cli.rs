@@ -16,7 +16,7 @@ use crate::config::{Config, TransferPriority, Usage};
 use crate::engine::{self, AdoptOptions, Engine, EngineLock};
 use crate::error::{Error, IoContext, Result};
 use crate::ipc::{self, Call};
-use crate::kinds::KindId;
+use crate::kinds::{self, KindId};
 use crate::paths::Layout;
 use crate::report::{self, format_bytes};
 use crate::status::{self, StatusReport};
@@ -116,6 +116,11 @@ enum Command {
     },
     /// Detach all images and eject the drive.
     Eject,
+    /// Make every managed folder a plain local folder again, without copying anything back.
+    /// The folders are empty until rebuilt; everything stays on the drive until `attach`.
+    Detach,
+    /// Attach the drive's folders again after `detach`.
+    Attach,
     /// Stop adopting new folders (drive handling continues).
     Pause,
     /// Resume adopting new folders.
@@ -336,12 +341,24 @@ fn run(command: Command) -> Result<()> {
             let (_lock, mut engine) = locked_engine(&layout)?;
             let path = layout.expand(&path);
             let kind = kind.map_or_else(|| infer_kind(&engine.config, &path), Ok)?;
-            let entry = engine.adopt(&path, kind, AdoptOptions { force: true })?;
-            println!(
-                "{} is now stored on the drive ({}).",
-                entry.path.display(),
-                format_bytes(entry.used_bytes)
-            );
+            let opts = AdoptOptions { force: true };
+            // A Cargo `target/` or DerivedData is stowed one build folder at a time, so the
+            // programs it builds stay on this Mac.
+            let paths = kinds::managed_folders(kind, &path);
+            if paths.is_empty() {
+                return Err(Error::Invalid(format!(
+                    "{} has no build folders yet; build once, then try again",
+                    path.display()
+                )));
+            }
+            for path in paths {
+                let entry = engine.adopt(&path, kind, opts)?;
+                println!(
+                    "{} is now stored on the drive ({}).",
+                    entry.path.display(),
+                    format_bytes(entry.used_bytes)
+                );
+            }
             tell_agent(&layout);
             Ok(())
         }
@@ -412,6 +429,29 @@ fn run(command: Command) -> Result<()> {
                 engine.eject()?;
             }
             println!("The drive was ejected. You can unplug it.");
+            Ok(())
+        }
+        Command::Detach | Command::Attach => {
+            let detach = matches!(command, Command::Detach);
+            let call = if detach { Call::Detach } else { Call::Attach };
+            if ipc::agent_running(&layout.socket_path()) {
+                ipc::call(&layout.socket_path(), call, Duration::from_secs(120))?;
+            } else {
+                let (_lock, mut engine) = locked_engine(&layout)?;
+                if detach {
+                    engine.detach()?;
+                } else {
+                    engine.attach()?;
+                }
+            }
+            println!(
+                "{}",
+                if detach {
+                    "Detached: your folders are plain local folders. Run `stowaway attach` to use the drive again."
+                } else {
+                    "Attached: your folders are on the drive again."
+                }
+            );
             Ok(())
         }
         Command::Pause | Command::Resume => {
@@ -674,10 +714,12 @@ fn print_license_footer(report: &StatusReport) {
 }
 
 fn infer_kind(config: &Config, path: &Path) -> Result<KindId> {
-    match path.file_name().and_then(|n| n.to_str()) {
-        Some("node_modules") => return Ok(KindId::Node),
-        Some("target") => return Ok(KindId::CargoTarget),
-        _ => {}
+    if let Some(kind) = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(KindId::for_folder_name)
+    {
+        return Ok(kind);
     }
     config
         .globals

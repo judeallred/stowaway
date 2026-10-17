@@ -15,6 +15,12 @@ ordinary folder at its usual path. Unplug the drive and the mount disappears: th
 
 ## Quick start
 
+Download **Stowaway.app** from the [latest release](https://github.com/judeallred/stowaway/releases)
+(Apple silicon and Intel), move it to Applications and open it. Beta builds aren't signed with a
+Developer ID yet: approve the first launch in **System Settings → Privacy & Security**.
+
+Or build the command-line tool from source:
+
 ```sh
 cargo install --path crates/stowaway
 stowaway init --volume /Volumes/FastSSD --root ~/code
@@ -29,9 +35,15 @@ that adopts folders as they go idle.
 | Kind | Folder |
 |---|---|
 | `node` | a project's `node_modules` |
-| `cargo-target` | a Cargo workspace's `target/` |
-| `pnpm-store`, `cargo-home`, `js-caches` | pnpm's store, `~/.cargo/registry` and `git`, npm/yarn/bun caches |
-| `xcode-derived-data`, `gradle-home`, `go`, `huggingface` | DerivedData, Gradle caches, Go caches, downloaded models |
+| `cargo-target` | the build files in a Cargo workspace's `target/` (`deps/`, `incremental/`, `build/`); the programs it builds stay on your Mac, so they run without the drive |
+| `next` | a Next.js project's `.next/` |
+| `venv` | a Python project's `.venv/` (next to `pyproject.toml`) |
+| `pnpm-store`, `cargo-home`, `js-caches`, `npx` | pnpm's store, `~/.cargo/registry` and `git`, npm/yarn/bun caches, `~/.npm/_npx` |
+| `xcode-derived-data`, `gradle-home`, `go`, `huggingface` | Xcode's intermediates and indexes (built apps stay local), Gradle caches, Go caches, downloaded models |
+
+Besides your watched folders, Stowaway also scans the worktrees coding agents create:
+`~/.cursor/worktrees`, `~/.codex/worktrees` and Claude Code's `.claude/worktrees` inside your
+repositories. To skip them, add an `exclude` pattern such as `~/.cursor/worktrees/**`.
 
 Folders tracked by git are never touched, and source code never moves.
 
@@ -39,7 +51,8 @@ Folders tracked by git are never touched, and source code never moves.
 
 - **Deleting a managed folder:** `rm -rf node_modules` and `cargo clean` delete everything inside,
   then report "Resource busy" because the folder is a mount point. Use `stowaway clean` (or
-  `rm -rf node_modules/*`) instead.
+  `rm -rf node_modules/*`) instead. The same goes for tools that delete and recreate `.venv`,
+  such as `uv venv --clear` or changing a project's Python version.
 - **Ejecting:** use `stowaway eject` or the menu bar app, which detach the images first. A plain
   Finder eject reports the drive as in use.
 - **Drive format:** the external drive must be APFS.
@@ -48,7 +61,8 @@ Folders tracked by git are never touched, and source code never moves.
 
 ```
 stowaway status | bench | scan | adopt <path> | release <path> | clean [path]
-stowaway compact | doctor [--fix] | gc | roots list|add|remove | eject | pause | resume
+stowaway compact | doctor [--fix] | gc | roots list|add|remove | eject | detach | attach
+stowaway pause | resume
 stowaway agent install|uninstall | uninstall | license personal|work|purchased
 ```
 

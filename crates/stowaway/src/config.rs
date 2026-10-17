@@ -7,7 +7,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, IoContext, Result};
-use crate::kinds::KindId;
+use crate::kinds::{self, KindId};
 use crate::paths::Layout;
 
 /// How the user said they use Stowaway (spec §13.6). Only used for a gentle reminder.
@@ -49,6 +49,10 @@ pub struct Licensing {
 /// The configuration file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent settings in a file people edit, not a state machine"
+)]
 pub struct Config {
     /// UUID of the external volume.
     pub volume_uuid: Option<String>,
@@ -58,8 +62,12 @@ pub struct Config {
     pub machine_id: String,
     /// Folders scanned for projects.
     pub roots: Vec<PathBuf>,
-    /// Enabled kinds.
-    pub kinds: Vec<KindId>,
+    /// Kinds turned off. Every other kind is on, including kinds added in later versions.
+    pub disabled_kinds: Vec<KindId>,
+    /// The list of enabled kinds that v0.1 wrote instead of `disabled_kinds`. Converted when the
+    /// config is loaded, and never written.
+    #[serde(rename = "kinds", skip_serializing)]
+    pub legacy_kinds: Option<Vec<KindId>>,
     /// Glob patterns of paths never to manage.
     pub exclude: Vec<String>,
     /// Seconds without changes before a folder counts as idle.
@@ -82,10 +90,25 @@ pub struct Config {
     pub licensing: Licensing,
     /// Auto-adoption paused.
     pub paused: bool,
+    /// Every image is kept detached, as if the drive were gone, until the user attaches again.
+    pub detached: bool,
     /// Whether copies yield to other disk activity. Read again during copies, so a change
     /// applies to one already running.
     pub transfer_priority: TransferPriority,
 }
+
+/// The kinds v0.1 knew about. A v0.1 config lists the ones enabled, so the rest were disabled.
+const V0_1_KINDS: &[KindId] = &[
+    KindId::Node,
+    KindId::CargoTarget,
+    KindId::PnpmStore,
+    KindId::CargoHome,
+    KindId::XcodeDerivedData,
+    KindId::GradleHome,
+    KindId::Go,
+    KindId::JsCaches,
+    KindId::Huggingface,
+];
 
 impl Default for Config {
     fn default() -> Self {
@@ -94,7 +117,8 @@ impl Default for Config {
             volume_name: None,
             machine_id: String::new(),
             roots: Vec::new(),
-            kinds: KindId::ALL.to_vec(),
+            disabled_kinds: Vec::new(),
+            legacy_kinds: None,
             exclude: Vec::new(),
             idle_seconds: 120,
             min_adopt_bytes: 50_000_000,
@@ -106,6 +130,7 @@ impl Default for Config {
             internal_case_sensitive: false,
             licensing: Licensing::default(),
             paused: false,
+            detached: false,
             transfer_priority: TransferPriority::Background,
         }
     }
@@ -120,9 +145,18 @@ impl Config {
     pub fn load(layout: &Layout) -> Result<Option<Self>> {
         let path = &layout.config_file;
         match std::fs::read_to_string(path) {
-            Ok(text) => toml::from_str(&text)
-                .map(Some)
-                .map_err(|e| Error::Config(format!("{}: {e}", path.display()))),
+            Ok(text) => {
+                let mut config: Self = toml::from_str(&text)
+                    .map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
+                if let Some(enabled) = config.legacy_kinds.take() {
+                    config.disabled_kinds = V0_1_KINDS
+                        .iter()
+                        .copied()
+                        .filter(|k| !enabled.contains(k))
+                        .collect();
+                }
+                Ok(Some(config))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(Error::io("reading", path, e)),
         }
@@ -157,10 +191,27 @@ impl Config {
         std::fs::rename(&tmp, path).ctx("replacing", path)
     }
 
+    /// Records the locations of global kinds that have none yet: kinds added since `init` ran.
+    /// Returns whether anything was added.
+    pub fn record_missing_globals(&mut self, home: &Path, env: &dyn kinds::Environment) -> bool {
+        let mut added = false;
+        for kind in KindId::ALL {
+            if self.globals.contains_key(&kind) {
+                continue;
+            }
+            let locations = kinds::global_locations(kind, home, env);
+            if !locations.is_empty() {
+                self.globals.insert(kind, locations);
+                added = true;
+            }
+        }
+        added
+    }
+
     /// Whether `kind` is enabled.
     #[must_use]
     pub fn kind_enabled(&self, kind: KindId) -> bool {
-        self.kinds.contains(&kind)
+        !self.disabled_kinds.contains(&kind)
     }
 
     /// Compiles the exclude globs.
@@ -232,5 +283,41 @@ mod tests {
         let set = config.exclude_set(&layout).unwrap();
         assert!(set.is_match("/Users/me/code/scratch/app/node_modules"));
         assert!(!set.is_match("/Users/me/code/app/node_modules"));
+    }
+
+    #[test]
+    fn v0_1_kind_lists_become_disabled_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::rooted(dir.path(), dir.path());
+        std::fs::write(
+            &layout.config_file,
+            "kinds = [\"node\", \"cargo-target\", \"js-caches\"]\n",
+        )
+        .unwrap();
+        let config = Config::load(&layout).unwrap().unwrap();
+        assert!(config.kind_enabled(KindId::Next) && config.kind_enabled(KindId::Npx));
+        assert!(!config.kind_enabled(KindId::PnpmStore));
+        assert_eq!(config.legacy_kinds, None);
+        config.save(&layout).unwrap();
+        let text = std::fs::read_to_string(&layout.config_file).unwrap();
+        assert!(!text.contains("\nkinds"), "{text}");
+        assert_eq!(Config::load(&layout).unwrap(), Some(config));
+    }
+
+    #[test]
+    fn new_global_kinds_are_recorded() {
+        let mut config = Config::default();
+        config
+            .globals
+            .insert(KindId::JsCaches, vec![PathBuf::from("/x")]);
+        let home = Path::new("/Users/me");
+        let env = kinds::ProcessEnvironment;
+        assert!(config.record_missing_globals(home, &env));
+        assert_eq!(config.globals[&KindId::JsCaches], vec![PathBuf::from("/x")]);
+        assert_eq!(
+            config.globals[&KindId::Npx],
+            vec![PathBuf::from("/Users/me/.npm/_npx")]
+        );
+        assert!(!config.record_missing_globals(home, &env));
     }
 }

@@ -23,11 +23,23 @@ fn walk_tree(
     path: &Path,
     min_depth: usize,
 ) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> {
+    walk_tree_except(path, min_depth, &[])
+}
+
+/// [`walk_tree`] without the folders in `skip` and everything inside them.
+fn walk_tree_except<'a>(
+    path: &Path,
+    min_depth: usize,
+    skip: &'a [PathBuf],
+) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> + 'a {
     WalkDir::new(path)
         .min_depth(min_depth)
         .same_file_system(true)
         .into_iter()
-        .filter_entry(|e| e.depth() != 1 || !VOLUME_METADATA.iter().any(|m| e.file_name() == *m))
+        .filter_entry(move |e| {
+            (e.depth() != 1 || !VOLUME_METADATA.iter().any(|m| e.file_name() == *m))
+                && !skip.iter().any(|s| s == e.path())
+        })
 }
 
 /// Files macOS creates on its own that don't make a folder "non-empty".
@@ -202,6 +214,21 @@ pub fn copy_tree(
     overwrite: Overwrite,
     progress: &mut dyn FnMut(CopyProgress) -> Pace,
 ) -> Result<CopyStats> {
+    copy_tree_except(src, dst, overwrite, &[], progress)
+}
+
+/// [`copy_tree`], leaving out the folders in `skip` (paths inside `src`) and their contents.
+///
+/// # Errors
+///
+/// Fails on the first entry that can't be read or written.
+pub fn copy_tree_except(
+    src: &Path,
+    dst: &Path,
+    overwrite: Overwrite,
+    skip: &[PathBuf],
+    progress: &mut dyn FnMut(CopyProgress) -> Pace,
+) -> Result<CopyStats> {
     let started = Instant::now();
     let max = std::thread::available_parallelism().map_or(1, |n| n.get().min(MAX_COPY_THREADS));
     let mut threads = CopyThreads::new(max);
@@ -231,7 +258,7 @@ pub fn copy_tree(
             }
         };
         let walked = walk_into(
-            src, dst, overwrite, &shared, &sender, &mut dirs, &mut links, &mut tick,
+            src, dst, overwrite, skip, &shared, &sender, &mut dirs, &mut links, &mut tick,
         );
         if let Err(e) = walked {
             shared.fail(e);
@@ -282,6 +309,7 @@ fn walk_into(
     src: &Path,
     dst: &Path,
     overwrite: Overwrite,
+    skip: &[PathBuf],
     shared: &Shared,
     sender: &SyncSender<Job>,
     dirs: &mut Vec<(PathBuf, fs::Metadata)>,
@@ -289,7 +317,7 @@ fn walk_into(
     tick: &mut dyn FnMut(&Shared),
 ) -> Result<()> {
     let mut linked: HashMap<(u64, u64), PathBuf> = HashMap::new();
-    for entry in walk_tree(src, 1) {
+    for entry in walk_tree_except(src, 1, skip) {
         if shared.stop.load(Ordering::Relaxed) {
             return Ok(());
         }
@@ -419,8 +447,17 @@ pub struct Fingerprint {
 ///
 /// Fails if the tree can't be read.
 pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
+    fingerprint_except(dir, &[])
+}
+
+/// [`fingerprint`], leaving out the folders in `skip` and their contents.
+///
+/// # Errors
+///
+/// Fails if the tree can't be read.
+pub fn fingerprint_except(dir: &Path, skip: &[PathBuf]) -> Result<Fingerprint> {
     let mut fp = Fingerprint::default();
-    for entry in walk_tree(dir, 1) {
+    for entry in walk_tree_except(dir, 1, skip) {
         let entry = entry.map_err(|e| walk_error(dir, e))?;
         let meta = entry
             .path()
@@ -567,6 +604,24 @@ mod tests {
     fn write(path: &Path, contents: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn copies_and_fingerprints_can_skip_folders() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        let s = src.path();
+        fs::create_dir_all(s.join("debug/deps")).unwrap();
+        fs::write(s.join("debug/deps/lib.rlib"), "intermediate").unwrap();
+        fs::write(s.join("debug/app"), "program").unwrap();
+        let skip = [s.join("debug/deps")];
+        copy_tree_except(s, dst.path(), Overwrite::Replace, &skip, &mut |_| Pace::Go).unwrap();
+        assert!(dst.path().join("debug/app").exists());
+        assert!(!dst.path().join("debug/deps").exists());
+        assert_eq!(
+            fingerprint_except(s, &skip).unwrap(),
+            fingerprint(dst.path()).unwrap()
+        );
     }
 
     #[test]

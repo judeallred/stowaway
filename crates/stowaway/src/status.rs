@@ -135,6 +135,10 @@ pub struct AdoptionPlan {
 
 /// Everything the UI shows.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts reported to the app, not a state machine"
+)]
 pub struct StatusReport {
     /// Stowaway's version.
     pub version: String,
@@ -166,6 +170,8 @@ pub struct StatusReport {
     pub attached_images: usize,
     /// Auto-adoption is paused.
     pub paused: bool,
+    /// Stowaway is detached from the drive: every managed folder is a plain local folder.
+    pub detached: bool,
     /// Offload transfer priority: whether transfers yield to other disk activity.
     #[serde(default)]
     pub transfer_priority: TransferPriority,
@@ -181,7 +187,7 @@ pub struct StatusReport {
 ///
 /// Fails on a database error.
 pub fn build(engine: &mut Engine) -> Result<StatusReport> {
-    let drive = engine.drive();
+    let drive = engine.connected_drive();
     let drive_status = drive_status(engine, drive.as_ref());
 
     let mut entries = Vec::new();
@@ -270,6 +276,7 @@ pub fn build(engine: &mut Engine) -> Result<StatusReport> {
         performance,
         attached_images,
         paused: engine.config.paused,
+        detached: engine.config.detached,
         transfer_priority: engine.config.transfer_priority,
         agent_running: false,
         license_reminder,
@@ -280,7 +287,8 @@ fn globals(engine: &Engine, entries: &[EntryReport]) -> Result<Vec<GlobalReport>
     let mut out = Vec::new();
     for (&kind, locations) in &engine.config.globals {
         let managed: Vec<&EntryReport> = entries.iter().filter(|e| e.kind == kind).collect();
-        let is_managed = |path: &PathBuf| managed.iter().any(|e| &e.path == path);
+        // A split cache (DerivedData) counts as managed when any of its parts is.
+        let is_managed = |path: &PathBuf| managed.iter().any(|e| e.path.starts_with(path));
         let paths: Vec<PathBuf> = locations
             .iter()
             .filter(|p| p.is_dir() || is_managed(p))

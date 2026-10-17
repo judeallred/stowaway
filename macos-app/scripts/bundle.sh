@@ -4,6 +4,8 @@
 #
 # Usage: macos-app/scripts/bundle.sh [output-dir]   (default: macos-app/build)
 # Signing: set CODESIGN_IDENTITY to sign with a Developer ID; otherwise the bundle is ad-hoc signed.
+# Architectures: set UNIVERSAL=1 to build for both Apple silicon and Intel; otherwise this Mac's
+# only.
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -11,15 +13,31 @@ out=${1:-"$root/macos-app/build"}
 app="$out/Stowaway.app"
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
 
-cargo build --release --locked -p stowaway --manifest-path "$root/Cargo.toml"
-swift build -c release --package-path "$root/macos-app" -Xswiftc -warnings-as-errors
-swift_bin=$(swift build -c release --package-path "$root/macos-app" --show-bin-path)
+if [ "${UNIVERSAL:-}" = 1 ]; then
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
+  for triple in aarch64-apple-darwin x86_64-apple-darwin; do
+    cargo build --release --locked -p stowaway --target "$triple" \
+      --manifest-path "$root/Cargo.toml"
+  done
+  rust_bin="$root/target/universal/stowaway"
+  mkdir -p "$(dirname "$rust_bin")"
+  lipo -create -output "$rust_bin" \
+    "$root/target/aarch64-apple-darwin/release/stowaway" \
+    "$root/target/x86_64-apple-darwin/release/stowaway"
+  set -- --arch arm64 --arch x86_64
+else
+  cargo build --release --locked -p stowaway --manifest-path "$root/Cargo.toml"
+  rust_bin="$root/target/release/stowaway"
+  set --
+fi
+swift build -c release --package-path "$root/macos-app" "$@" -Xswiftc -warnings-as-errors
+swift_bin=$(swift build -c release --package-path "$root/macos-app" "$@" --show-bin-path)
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Library/LaunchAgents" \
   "$app/Contents/Resources"
 cp "$swift_bin/Stowaway" "$app/Contents/MacOS/Stowaway"
-cp "$root/target/release/stowaway" "$app/Contents/Helpers/stowaway"
+cp "$rust_bin" "$app/Contents/Helpers/stowaway"
 cp "$root/LICENSE" "$app/Contents/Resources/LICENSE"
 
 cat > "$app/Contents/Info.plist" <<EOF
@@ -63,6 +81,9 @@ cat > "$app/Contents/Library/LaunchAgents/dev.stowaway.agent.plist" <<EOF
 EOF
 
 identity=${CODESIGN_IDENTITY:--}
-codesign --force --options runtime --timestamp=none --sign "$identity" "$app/Contents/Helpers/stowaway"
-codesign --force --options runtime --timestamp=none --sign "$identity" "$app"
+# Notarization needs a secure timestamp; an ad-hoc signature can't have one.
+if [ "$identity" = - ]; then timestamp=--timestamp=none; else timestamp=--timestamp; fi
+codesign --force --options runtime "$timestamp" --sign "$identity" "$app/Contents/Helpers/stowaway"
+codesign --force --options runtime "$timestamp" --sign "$identity" "$app"
+codesign --verify --deep --strict "$app"
 echo "Built $app"

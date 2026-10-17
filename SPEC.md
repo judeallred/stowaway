@@ -27,7 +27,9 @@ The user should never have to think about whether the drive is plugged in.
 | Kind | Detected as | Notes |
 |---|---|---|
 | `node` | a `node_modules/` directory whose parent folder contains `package.json` | npm, yarn (classic and berry `node-modules` linker), pnpm, bun |
-| `cargo-target` | a `target/` directory whose parent folder contains `Cargo.toml`, ideally confirmed by the `CACHEDIR.TAG` file Cargo writes | Only workspace roots normally have one |
+| `cargo-target` | the build folders (`deps/`, `incremental/`, `build/`) inside a `target/` directory whose parent folder contains `Cargo.toml`, confirmed by the `CACHEDIR.TAG` file Cargo writes. The rest of `target/`, including the programs it builds, stays local (§4.11). | Only workspace roots normally have one |
+| `next` | a `.next/` directory whose parent folder contains `package.json`; pre-adopted when a `next.config.*` file is there | Build output plus webpack/Turbopack caches. `next build` empties the folder but keeps it, so the mount survives. On reconnect a local production build (`BUILD_ID`) wins; a dev-server cache is discarded. |
+| `venv` | a `.venv/` directory containing `pyvenv.cfg` whose parent folder contains `pyproject.toml` | Never pre-adopted: uv won't create a venv in a non-empty folder, and a mounted image always holds volume metadata. The venv's absolute paths stay valid because the image is mounted at the same path. uv installs by cloning from its cache, which falls back to copying across filesystems (§4.8). Tools that delete and recreate `.venv` hit the same "Resource busy" as `rm -rf node_modules`. |
 
 There are also two **global** kinds. Each one is a single machine-wide cache rather than one directory per project (§4.8):
 
@@ -40,15 +42,16 @@ There are also two **global** kinds. Each one is a single machine-wide cache rat
 
 | Kind | Location (resolved at `init`, re-checked by `doctor`) | Typical size | Notes |
 |---|---|---|---|
-| `xcode-derived-data` | `~/Library/Developer/Xcode/DerivedData`, or a custom location if `defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation` sets one | 10–100+ GB | Xcode writes to it constantly while a project is open, so moving it waits until Xcode quits. `Archives/`, `CoreSimulator/Devices` and `iOS DeviceSupport` are never moved: archives hold the symbol files for shipped builds, and simulators hold app data. |
+| `xcode-derived-data` | `~/Library/Developer/Xcode/DerivedData`, or a custom location if `defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation` sets one. Only its intermediates and caches are stowed; built apps in `Build/Products` stay local (§4.11). | 10–100+ GB | Xcode writes to it constantly while a project is open, so moving it waits until Xcode quits. `Archives/`, `CoreSimulator/Devices` and `iOS DeviceSupport` are never moved: archives hold the symbol files for shipped builds, and simulators hold app data. |
 | `gradle-home` | `$GRADLE_USER_HOME/caches` and `.../wrapper/dists` (default `~/.gradle`) | 5–50 GB | A running Gradle daemon holds locks, so the idle check looks for open files. `gradle.properties` and init scripts stay local. |
 | `go` | `go env GOMODCACHE` and `go env GOCACHE` | 2–30 GB | The module cache's files are read-only, so moving and deleting them have to make them writable first. |
 | `js-caches` | `~/.npm/_cacache`, the yarn classic and berry global caches, `~/.bun/install/cache` | 1–20 GB | bun installs by copy-on-write cloning from its cache, so it has the same same-volume requirement as pnpm (§4.8). |
+| `npx` | `~/.npm/_npx` | 1–5 GB | Packages `npx` installed to run. `npx` installs them again when they're missing. |
 | `huggingface` | `$HF_HOME/hub` (default `~/.cache/huggingface/hub`) | 10–500 GB | Downloaded models: the biggest single disk hog for ML developers. Files are stored by content hash, and the links inside the cache are relative and stay inside it. |
 
 **Candidates for v1.1.** They're worth doing, but each needs more care:
 
-- **Python:** a project's `.venv` together with the `uv` cache (`~/.cache/uv`). Like pnpm, uv installs by cloning or hard-linking from its cache, so the two have to switch together. Venvs also contain absolute paths, which need testing. ML venvs (torch, CUDA wheels) are often several GB each.
+- **The `uv` cache** (`~/.cache/uv`), to pair with the `venv` kind. ML venvs (torch, CUDA wheels) are often several GB each.
 - **Ollama / LM Studio model folders:** very large and re-downloadable, but the server keeps loaded models memory-mapped, so it needs a "stop the server, then switch" step.
 - **SwiftPM:** each package's `.build/` folder. It's similar to `cargo-target` but much less common outside Xcode.
 
@@ -127,7 +130,7 @@ Each managed folder (an **entry**) has its own sparse-bundle disk image on the e
   | Policy | Used by | What happens |
   |---|---|---|
   | `local-wins-if-complete` | `node` | If the local folder holds a finished install (`.package-lock.json`, `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), the image's contents are replaced with the local ones. Otherwise the local folder is discarded. This prevents a half-finished or tool-cache-only offline folder from wiping a complete install on the drive. |
-  | `external-wins` | `cargo-target`, DerivedData, Go build cache | The local folder is discarded. Rebuilding on top of the older, complete build on the drive is incremental and cheap. |
+  | `merge-local-wins` | `cargo-target`, DerivedData | Local files are copied over the image's, and the image's other files are kept. These build folders' records (Cargo's `.fingerprint/`, Xcode's products) stay local and already describe the offline build, so discarding its outputs would leave records pointing at files that are gone and the build broken until a clean (§4.11). |
   | `merge-no-clobber` | content-addressed global caches | Files that exist locally but not in the image are copied in; nothing in the image is overwritten. |
 - **Release:**
   1. Detach the image.
@@ -146,6 +149,7 @@ Each managed folder (an **entry**) has its own sparse-bundle disk image on the e
 ### 4.4 Discovery and auto-adoption
 
 - **Scanning:** the agent watches the configured roots with FSEvents, and also runs a full scan at startup and on `stowaway scan`. The scan never descends into `node_modules`, `target`, `.git` or mounted entries.
+- **Agent worktrees:** coding agents check out whole repositories as worktrees, each with its own `node_modules` and `target/`. `~/.cursor/worktrees` and `~/.codex/worktrees` are scanned as extra roots whenever they exist, and Claude Code's `<repo>/.claude/worktrees/*` are scanned as separate projects, so the repository's own `node_modules` doesn't count as their ancestor. `exclude` patterns turn this off.
 - **Node candidates:** a `node_modules` next to a `package.json`, adopted only when no ancestor folder up to the root has its own `node_modules`.
   - Workspace members' nested `node_modules` depend on finding packages hoisted to the root, so they stay local; they're usually small. With mounts this would technically work, but each extra image costs a process and an attach.
   - **Pre-adoption** happens when the folder doesn't exist yet and a lockfile is present (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`).
@@ -210,12 +214,12 @@ Mitigations:
 - **how to find the folder:** for project kinds, a folder name plus a manifest or lockfile check; for global kinds, an environment variable plus a default path
 - **when it can be pre-adopted**
 - **how to tell when it's idle:** a lock file to hold, or `lsof` plus modification times
-- **what to do on reconnect:** `local-wins-if-complete`, `external-wins` or `merge-no-clobber` (§4.2)
+- **what to do on reconnect:** `local-wins-if-complete`, `merge-local-wins` or `merge-no-clobber` (§4.2)
 - **file-handling quirks**, such as read-only files (Go)
 
 Global caches use the same mounted images as project folders, so `~/.cargo/registry` is the mount point of its image. Differences:
 
-- **Discovery:** locations come from configuration recorded at `init`, when the CLI runs with the user's own environment. The background agent can't see that environment, which is why the locations are recorded rather than looked up later. For pnpm, `pnpm store path` returns a versioned folder (`.../store/v10`); Stowaway manages its parent (`.../store`), because different projects can use different pnpm versions.
+- **Discovery:** locations come from configuration recorded at `init`, when the CLI runs with the user's own environment. The background agent can't see that environment, which is why the locations are recorded rather than looked up later. A global kind added in a later version has its locations recorded the first time the CLI or agent opens the config afterwards. For pnpm, `pnpm store path` returns a versioned folder (`.../store/v10`); Stowaway manages its parent (`.../store`), because different projects can use different pnpm versions.
 - **Cargo:** the agent holds Cargo's package-cache lock (`$CARGO_HOME/.package-cache`) while adopting or migrating `cargo-home` entries.
 - **Reconnect:** `merge-no-clobber`, because the contents are effectively write-once. pnpm and Cargo `.crate` files are addressed by content hash or by name and version.
 
@@ -242,6 +246,22 @@ Supporting an SMB or NFS share looks like a small change, since it's "just a dif
 
 - **Images don't shrink when files are deleted.** Each one stays at the largest size it has ever reached. The agent compares an image's size on the drive with the space used inside it. When the image is idle and bloated (more than 1.5× the used space and over 1 GB of waste), the agent rebuilds it: a fresh image, a copy of the contents, then a swap. `stowaway compact` does the same on demand.
 - **Memory and attach time:** each attached image runs a `diskimagesiod` process (about 10 MB RSS) and takes about 0.5 s to attach. `status` shows the count. The minimum size for adoption (§4.4) keeps small folders out. A later version can detach images for projects that have been dormant for a long time; that's a config option, off in v1.
+
+### 4.11 Build products stay local
+
+A build folder mixes two kinds of files. **Intermediates** are what the compiler needs to build: compiled dependencies, incremental caches, build-script output and indexes. **Products** are what the build makes: the programs and apps you run. Intermediates are almost all of the space, and are only needed while building. Products are small, and are needed whenever you run them, with or without the drive. Arbvark's `target/`, for example, is 45 GB, of which the programs (`debug/arbvark`, `release/arbvark`) are about 110 MB.
+
+So for Cargo `target/` and Xcode DerivedData, Stowaway stows the intermediates one folder at a time and leaves the rest local:
+
+| Kind | Stowed (one image each, over the adoption threshold) | Stays on the Mac |
+|---|---|---|
+| `cargo-target` | `deps/`, `incremental/` and `build/` in every profile folder: `target/debug`, `target/release`, custom profiles, `target/<triple>/<profile>`, and tool-specific folders such as `target/rust-analyzer/debug` | Everything else: the built programs and libraries at the top of each profile folder, `examples/`, `.fingerprint/`, `doc/`, and files programs write next to themselves |
+| `xcode-derived-data` | `ModuleCache.noindex`, and in each project's folder `Build/Intermediates.noindex`, `Index.noindex` and `SourcePackages` | `Build/Products` (the built apps), logs and everything else |
+
+- **Cargo still works across the split.** On macOS, Cargo copies each finished program out of `deps/` rather than hard-linking it, so the program lands locally even though `deps/` is on the drive. `.fingerprint/` can stay local because Cargo rebuilds anything whose outputs are missing or older than their inputs: with the drive gone, `deps/` is empty and the next build rebuilds. When the drive returns, the offline build's outputs are merged over the drive's (`merge-local-wins`), so every output the local records mention still exists. Discarding them instead broke builds: Cargo then treated crates rebuilt offline as fresh while their outputs were gone.
+- **Discovery** looks for these folders inside each `target/` and DerivedData, and pre-adopts `target/debug/deps` and `target/debug/incremental` for a project with a `Cargo.lock` that hasn't been built yet. A profile built for the first time is picked up by the next pass. Each folder is its own entry with its own image, so a project has a few mounts rather than one.
+- **Converting older entries:** entries adopted before this existed hold a whole `target/` or DerivedData. The agent converts each one when it's idle: it copies each intermediates folder over the threshold to its own new image, copies everything else back to this Mac (skipping those folders), detaches the old image and puts the products in place. Then a single registry transaction replaces the old entry with the new ones, which are mounted afterwards; the old image is deleted last. Nothing is removed from the old image, so a failure or interruption before the transaction leaves the old entry intact: recovery deletes the unregistered new images and reconcile reattaches the old one, merging in the local copy, whose files match the image's. After the transaction, mounts that failed are retried by reconcile and an undeleted old image by `gc`. `stowaway adopt ./target` adopts the build folders inside rather than `target/` itself.
+- **Deleting:** `cargo clean` and Xcode's Clean Build Folder delete the contents of the stowed folders and then report "Resource busy" for the mount points themselves, as with any managed folder (§4.5).
 
 ## 5. Ecosystem compatibility notes
 
@@ -293,6 +313,7 @@ stowaway compact [<path>]  # rebuild bloated images to reclaim space on the driv
 stowaway gc [--dry-run]
 stowaway roots list | add <path> | remove <path> [--copy]   # watched folders (same as the menu bar's Configure Folders)
 stowaway eject             # detach all images (naming processes that hold files), then eject the drive
+stowaway detach | attach   # make managed folders plain local folders (nothing copied back), or undo it
 stowaway pause | resume    # stop or resume auto-adoption (drive switching keeps working)
 stowaway priority [background|normal]  # show or set offload transfer priority
 stowaway bug-report [--print]  # open a GitHub issue prefilled with diagnostics, to review and submit
@@ -307,8 +328,7 @@ stowaway uninstall [--copy]
 ```toml
 volume_uuid = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
 roots = ["~/code"]
-kinds = ["node", "cargo-target", "pnpm-store", "cargo-home",
-         "xcode-derived-data", "gradle-home", "go", "js-caches", "huggingface"]
+disabled_kinds = []                # every other kind is on, including kinds added in later versions
 exclude = ["~/code/scratch/**"]
 idle_seconds = 120
 min_adopt_bytes = 50_000_000         # folders smaller than this aren't worth an image (§4.4)
@@ -340,7 +360,8 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 | Drive disconnected (working locally) | Filled circle with an × |
 | Drive nearly full or full | Filled circle with ! |
 | Agent not running, permissions missing, links dangling, or another error | Filled warning triangle |
-| Paused | Filled pause circle |
+| Paused (`stowaway pause`) | Filled pause circle |
+| Detached | Filled circle with a − |
 
 **Popover** (opens when the icon is clicked)
 
@@ -357,7 +378,7 @@ The CLI can do everything. The menu bar app is an optional, friendlier view onto
 6. **Actions:**
    - Configure Folders…
    - Eject Drive: runs the same flow as `stowaway eject`. If programs are still holding files on the drive, it lists them by name.
-   - Pause / Resume
+   - Detach… / Attach: Detach asks for confirmation, then detaches every image and keeps them detached, as if the drive were gone: each managed folder is an ordinary local folder again, empty until rebuilt or reinstalled. Nothing is copied back and the images stay on the drive. The setting (`detached` in the config) survives restarts and reconnects. While detached the headline reads "Detached — using local folders" and the button becomes Attach, which reattaches everything; folders filled in the meantime are reconciled with the reconnect policies (§4.2). Same as `stowaway detach` / `stowaway attach`.
    - Open Log
    - Report a Bug…: runs `stowaway bug-report`, which opens a new GitHub issue in the browser, prefilled with the Stowaway and macOS versions, the Mac model, whether the agent is running, the status summary and the end of the agent log. The home folder is shown as `~`. Nothing is sent until the user submits the issue. GitHub caps the link's length, so the log is trimmed to fit; the full report is saved to `~/.stowaway/bug-report.md`. The command works without the agent, which is when a report is often needed.
    - Quit Stowaway: runs the same flow as `stowaway agent stop`, then quits the app. Like Eject, it lists the programs holding files on the drive and stays open if there are any. When the app starts again it starts the agent, which reattaches the images (§4.3).

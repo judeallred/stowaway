@@ -23,6 +23,8 @@ use crate::paths::{DriveLayout, Layout};
 use crate::registry::{Entry, EntryStatus, Measurement, Registry, Transfer};
 use crate::scan::{self, Candidate, ScanOptions};
 
+mod split;
+
 /// Something the engine did that observers (the agent's IPC clients) may want to show.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -334,7 +336,13 @@ impl Engine {
     ///
     /// [`Error::NotInitialized`] if `init` hasn't run; database errors otherwise.
     pub fn open(layout: Layout) -> Result<Self> {
-        let config = Config::load_required(&layout)?;
+        let mut config = Config::load_required(&layout)?;
+        // Kinds added since `init` get their locations recorded once.
+        if config.record_missing_globals(&layout.home, &kinds::ProcessEnvironment)
+            && let Err(e) = config.save(&layout)
+        {
+            tracing::warn!(error = %e, "can't save the new cache locations");
+        }
         let registry = Registry::open(&layout.db_path())?;
         Ok(Self {
             layout,
@@ -380,9 +388,19 @@ impl Engine {
         Ok(())
     }
 
-    /// The connected drive, if it's present. Recreates Stowaway's folders on it if they've been
-    /// deleted, so the store heals instead of failing every operation.
+    /// The drive Stowaway may use: the connected drive, unless the user detached Stowaway from
+    /// it. While detached, everything behaves as if the drive were gone.
     pub fn drive(&mut self) -> Option<Drive> {
+        if self.config.detached {
+            return None;
+        }
+        self.connected_drive()
+    }
+
+    /// The connected drive, if it's present, whether or not Stowaway is detached from it.
+    /// Recreates Stowaway's folders on it if they've been deleted, so the store heals instead of
+    /// failing every operation.
+    pub fn connected_drive(&mut self) -> Option<Drive> {
         self.located = self
             .config
             .volume_uuid
@@ -422,6 +440,14 @@ impl Engine {
     /// `hdiutil` step fails. On failure nothing is left half-done.
     pub fn adopt(&mut self, path: &Path, kind: KindId, opts: AdoptOptions) -> Result<Entry> {
         let path = canonical_target(path)?;
+        if kinds::is_container(kind, &path) {
+            return Err(Error::Invalid(format!(
+                "{} is managed one build folder at a time (its {} parts), so the programs it \
+                 builds stay on this Mac; adopt those folders instead",
+                path.display(),
+                kind
+            )));
+        }
         self.check_eligible(&path)?;
         let drive = self.require_drive()?;
         let exists = path.symlink_metadata().is_ok();
@@ -497,27 +523,9 @@ impl Engine {
         image: &Path,
     ) -> Result<Entry> {
         let mut tracker = TransferTracker::new(self.observer.clone(), id, path, "adopt");
-        self.create_image(drive, image, kind, path)?;
         self.registry
             .journal(id, "adopt", "copying", crate::now_unix())?;
-        let before = fsutil::fingerprint(path)?;
-        tracker.total = before;
-        let staging = self.staging_mount(id)?;
-        let stats = {
-            let attached = hdiutil::attach(image, &staging)?;
-            let copied = self.copy_with_progress(&mut tracker, path, &staging, Overwrite::Replace);
-            tracker.step(TransferStep::Flushing);
-            hdiutil::detach(&attached.device, false)?;
-            copied?
-        };
-        let _ignored = fs::remove_dir(&staging);
-        tracker.step(TransferStep::Verifying);
-        if fsutil::fingerprint(path)? != before {
-            return Err(Error::Busy(format!(
-                "{} changed while it was being copied; it will be retried once it's idle",
-                path.display()
-            )));
-        }
+        let stats = self.copy_into_new_image(drive, &mut tracker, kind, path, image)?;
         self.registry
             .journal(id, "adopt", "swapping", crate::now_unix())?;
         let entry = new_entry(id, kind, path, crate::now_unix(), EntryStatus::Local);
@@ -571,11 +579,62 @@ impl Engine {
         Ok(())
     }
 
+    /// Copies the folder at `path` into a new image at `image`, failing with [`Error::Busy`] if
+    /// it changed meanwhile. The folder itself is left as it was.
+    fn copy_into_new_image(
+        &self,
+        drive: &Drive,
+        tracker: &mut TransferTracker,
+        kind: KindId,
+        path: &Path,
+        image: &Path,
+    ) -> Result<CopyStats> {
+        self.create_image(drive, image, kind, path)?;
+        let before = fsutil::fingerprint(path)?;
+        tracker.total = before;
+        let staging = self.staging_mount(&tracker.entry_id)?;
+        let stats = {
+            let attached = hdiutil::attach(image, &staging)?;
+            let copied = self.copy_with_progress(tracker, path, &staging, Overwrite::Replace, &[]);
+            tracker.step(TransferStep::Flushing);
+            hdiutil::detach(&attached.device, false)?;
+            copied?
+        };
+        let _ignored = fs::remove_dir(&staging);
+        tracker.step(TransferStep::Verifying);
+        if fsutil::fingerprint(path)? != before {
+            return Err(Error::Busy(format!(
+                "{} changed while it was being copied; it will be retried once it's idle",
+                path.display()
+            )));
+        }
+        Ok(stats)
+    }
+
+    /// The container that a part of a splitting kind sits in; `None` for any other folder.
+    fn container_of(&self, kind: KindId, path: &Path) -> Option<PathBuf> {
+        if !kinds::is_part(kind, path) {
+            return None;
+        }
+        match kind.spec().scope {
+            Scope::Project { dir_name, .. } => {
+                kinds::project_dir(kind, path).map(|p| p.join(dir_name))
+            }
+            Scope::Global => self
+                .config
+                .globals
+                .get(&kind)?
+                .iter()
+                .find(|g| path.starts_with(g))
+                .cloned(),
+        }
+    }
+
     fn create_image(&self, drive: &Drive, image: &Path, kind: KindId, path: &Path) -> Result<()> {
         let capacity = stowaway_macos::fs_stats(&drive.mount_point)
             .map(|s| s.total_bytes)
             .ctx("inspecting", &drive.mount_point)?;
-        let name = volume_name(kind, path);
+        let name = volume_name(kind, path, self.container_of(kind, path).as_deref());
         hdiutil::create(image, capacity, &name, self.config.internal_case_sensitive)
     }
 
@@ -607,6 +666,7 @@ impl Engine {
         src: &Path,
         dst: &Path,
         overwrite: Overwrite,
+        skip: &[PathBuf],
     ) -> Result<CopyStats> {
         tracker.step(TransferStep::Copying);
         let mut governor = TransferGovernor::new(&self.layout, self.config.transfer_priority);
@@ -634,7 +694,7 @@ impl Engine {
             tracker.report(TransferStep::Copying, wait);
             if wait { Pace::Wait } else { Pace::Go }
         };
-        fsutil::copy_tree(src, dst, overwrite, &mut report)
+        fsutil::copy_tree_except(src, dst, overwrite, skip, &mut report)
     }
 
     /// Records a finished transfer; the copy's own statistics, not the steps around it.
@@ -793,7 +853,7 @@ impl Engine {
         detach_mounted_at(mounted);
         fsutil::remove_tree(&drive.layout.image_path(&entry.id))?;
         self.registry.delete(&entry.id)?;
-        let roots = self.config.roots.clone();
+        let roots = self.scan_roots();
         let mut dir = Some(mounted.to_path_buf());
         while let Some(d) = dir {
             if roots.iter().any(|r| same_file(r, &d)) || !fsutil::is_effectively_empty(&d)? {
@@ -814,7 +874,7 @@ impl Engine {
             let parent_present = path.parent().is_some_and(Path::exists);
             let manifest_present = match entry.kind.spec().scope {
                 Scope::Project { manifest, .. } => {
-                    path.parent().is_some_and(|p| p.join(manifest).exists())
+                    kinds::project_dir(entry.kind, path).is_some_and(|p| p.join(manifest).exists())
                 }
                 Scope::Global => parent_present,
             };
@@ -862,19 +922,17 @@ impl Engine {
 
     fn apply_reconnect_policy(&self, entry: &Entry, image: &Path) -> Result<()> {
         let path = &entry.path;
-        let (overwrite, op) = match entry.kind.spec().policy {
-            ReconnectPolicy::ExternalWins => {
-                fsutil::clear_dir_contents(path)?;
-                return Ok(());
-            }
+        // Whether the image is emptied first, and whether local files replace the image's.
+        let (clear_image, overwrite, op) = match entry.kind.spec().policy {
             ReconnectPolicy::LocalWinsIfComplete(markers) => {
                 if !fsutil::contains_any(path, markers) {
                     fsutil::clear_dir_contents(path)?;
                     return Ok(());
                 }
-                (Overwrite::Replace, "reconnect")
+                (true, Overwrite::Replace, "reconnect")
             }
-            ReconnectPolicy::MergeNoClobber => (Overwrite::Keep, "merge"),
+            ReconnectPolicy::MergeLocalWins => (false, Overwrite::Replace, "merge"),
+            ReconnectPolicy::MergeNoClobber => (false, Overwrite::Keep, "merge"),
         };
         let mut tracker = TransferTracker::new(self.observer.clone(), &entry.id, path, op);
         self.registry
@@ -884,10 +942,10 @@ impl Engine {
         let staging = self.staging_mount(&entry.id)?;
         let attached = hdiutil::attach(image, &staging)?;
         let copied = (|| {
-            if overwrite == Overwrite::Replace {
+            if clear_image {
                 fsutil::clear_dir_contents(&staging)?;
             }
-            self.copy_with_progress(&mut tracker, path, &staging, overwrite)
+            self.copy_with_progress(&mut tracker, path, &staging, overwrite, &[])
         })();
         tracker.step(TransferStep::Flushing);
         hdiutil::detach(&attached.device, false)?;
@@ -994,7 +1052,7 @@ impl Engine {
                 let attached = hdiutil::attach(&image, &staging)?;
                 tracker.total = fsutil::fingerprint(&staging)?;
                 let copied =
-                    self.copy_with_progress(&mut tracker, &staging, &path, Overwrite::Keep);
+                    self.copy_with_progress(&mut tracker, &staging, &path, Overwrite::Keep, &[]);
                 tracker.step(TransferStep::Flushing);
                 hdiutil::detach(&attached.device, false)?;
                 let _ignored = fs::remove_dir(&staging);
@@ -1075,7 +1133,7 @@ impl Engine {
         let staging = self.staging_mount(&entry.id)?;
         let attached = hdiutil::attach(&fresh, &staging)?;
         let copied =
-            self.copy_with_progress(&mut tracker, &entry.path, &staging, Overwrite::Replace);
+            self.copy_with_progress(&mut tracker, &entry.path, &staging, Overwrite::Replace, &[]);
         tracker.step(TransferStep::Flushing);
         hdiutil::detach(&attached.device, false)?;
         let _ignored = fs::remove_dir(&staging);
@@ -1164,7 +1222,7 @@ impl Engine {
     ///
     /// [`Error::Busy`] naming the processes that hold files open.
     pub fn eject(&mut self) -> Result<()> {
-        let drive = self.require_drive()?;
+        let drive = self.connected_drive().ok_or(Error::DriveOffline)?;
         Self::detach_images(&drive, "eject")?;
         crate::cmd::run(
             "diskutil",
@@ -1187,6 +1245,34 @@ impl Engine {
             Self::detach_images(&drive, "quit")?;
         }
         self.handle_drive_absent()
+    }
+
+    /// Detaches every image and keeps them detached until [`Engine::attach`], so each managed
+    /// folder is an ordinary local folder again. Nothing is copied back: the folders are empty
+    /// until rebuilt or reinstalled, and the images stay on the drive.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Busy`] naming the processes that hold files open; nothing is detached then.
+    pub fn detach(&mut self) -> Result<()> {
+        if let Some(drive) = self.connected_drive() {
+            Self::detach_images(&drive, "detach")?;
+        }
+        self.config.detached = true;
+        self.config.save(&self.layout)?;
+        self.handle_drive_absent()
+    }
+
+    /// Undoes [`Engine::detach`]: attaches every image again. Folders filled in the meantime are
+    /// reconciled with their images like after the drive was away (spec §4.2).
+    ///
+    /// # Errors
+    ///
+    /// Fails if the config can't be saved or `hdiutil info` fails.
+    pub fn attach(&mut self) -> Result<()> {
+        self.config.detached = false;
+        self.config.save(&self.layout)?;
+        self.reconcile().map(|_| ())
     }
 
     fn detach_images(drive: &Drive, action: &str) -> Result<()> {
@@ -1219,6 +1305,22 @@ impl Engine {
 
     // ----- discovery ----------------------------------------------------------------------------
 
+    /// The folders scanned for projects: the configured roots, plus the folders where coding
+    /// agents keep their worktrees.
+    #[must_use]
+    pub fn scan_roots(&self) -> Vec<PathBuf> {
+        let mut roots = self.config.roots.clone();
+        for dir in scan::AGENT_WORKTREE_DIRS
+            .iter()
+            .map(|d| self.layout.home.join(d))
+        {
+            if dir.is_dir() && !roots.contains(&dir) {
+                roots.push(dir);
+            }
+        }
+        roots
+    }
+
     /// Finds folders that could be adopted: project folders under the roots and configured global
     /// caches, excluding ones already managed.
     ///
@@ -1227,12 +1329,11 @@ impl Engine {
     /// Fails on an invalid exclude pattern or database error.
     pub fn discover(&self) -> Result<Vec<Candidate>> {
         let exclude = self.config.exclude_set(&self.layout)?;
-        let project_kinds: Vec<KindId> = self
-            .config
-            .kinds
-            .iter()
-            .copied()
-            .filter(|k| matches!(k.spec().scope, Scope::Project { .. }))
+        let project_kinds: Vec<KindId> = KindId::ALL
+            .into_iter()
+            .filter(|&k| {
+                self.config.kind_enabled(k) && matches!(k.spec().scope, Scope::Project { .. })
+            })
             .collect();
         let opts = ScanOptions {
             kinds: &project_kinds,
@@ -1241,25 +1342,21 @@ impl Engine {
             max_depth: 6,
         };
         let mut found = Vec::new();
-        for root in &self.config.roots {
-            found.extend(scan::scan(root, &opts));
+        for root in self.scan_roots() {
+            found.extend(scan::scan(&root, &opts));
         }
         for (&kind, paths) in &self.config.globals {
             if !self.config.kind_enabled(kind) {
                 continue;
             }
-            for path in paths {
-                if exclude.is_match(path) {
+            for path in paths.iter().flat_map(|p| kinds::managed_folders(kind, p)) {
+                if exclude.is_match(&path) {
                     continue;
                 }
                 let exists = path.is_dir();
                 // Only pre-adopt a global cache whose tool is installed (its parent exists).
                 if exists || path.parent().is_some_and(Path::is_dir) {
-                    found.push(Candidate {
-                        kind,
-                        path: path.clone(),
-                        exists,
-                    });
+                    found.push(Candidate { kind, path, exists });
                 }
             }
         }
@@ -1488,9 +1585,9 @@ fn cargo_package_lock(kind: KindId, path: &Path) -> Result<Option<File>> {
 
 fn project_deleted(kind: KindId, path: &Path) -> bool {
     match kind.spec().scope {
-        Scope::Project { manifest, .. } => path
-            .parent()
-            .is_some_and(|project| !project.join(manifest).exists()),
+        Scope::Project { manifest, .. } => {
+            kinds::project_dir(kind, path).is_some_and(|project| !project.join(manifest).exists())
+        }
         Scope::Global => false,
     }
 }
@@ -1570,15 +1667,29 @@ fn same_file(a: &Path, b: &Path) -> bool {
     a == b || matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(x), Ok(y)) if x == y)
 }
 
-/// A volume name for an image: shows in Disk Utility, so make it recognizable.
-fn volume_name(kind: KindId, path: &Path) -> String {
-    let project = match kind.spec().scope {
-        Scope::Project { .. } => path.parent().and_then(Path::file_name),
-        Scope::Global => path.file_name(),
-    }
-    .map(|n| n.to_string_lossy().into_owned())
-    .unwrap_or_default();
-    let raw = format!("stow {} {project}", kind.as_str());
+/// A volume name for an image: shows in Disk Utility, so make it recognizable. A part is named
+/// for its project and its place in `container`, e.g. "stow arbvark debug deps".
+fn volume_name(kind: KindId, path: &Path, container: Option<&Path>) -> String {
+    let file_name = |p: &Path| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let project = kinds::project_dir(kind, path);
+    let place = container
+        .and_then(|c| path.strip_prefix(c).ok())
+        .map(|rel| {
+            rel.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        });
+    let raw = match (place, project) {
+        (Some(place), Some(project)) => format!("stow {} {place}", file_name(project)),
+        (Some(place), None) => format!("stow {place}"),
+        (None, Some(project)) => format!("stow {} {}", kind.as_str(), file_name(project)),
+        (None, None) => format!("stow {} {}", kind.as_str(), file_name(path)),
+    };
     raw.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == ' ' {
@@ -1618,13 +1729,8 @@ pub fn init(layout: &Layout, volume: &Path, roots: &[PathBuf]) -> Result<Config>
         }
     }
     config.cargo_target_dir = std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from);
-    let env = kinds::ProcessEnvironment;
-    for kind in KindId::ALL {
-        let locations = kinds::global_locations(kind, &layout.home, &env);
-        if !locations.is_empty() {
-            config.globals.insert(kind, locations);
-        }
-    }
+    config.globals.clear();
+    config.record_missing_globals(&layout.home, &kinds::ProcessEnvironment);
     let mount_point = PathBuf::from(
         info.mount_point
             .clone()
@@ -1662,18 +1768,43 @@ mod tests {
         assert_eq!(
             volume_name(
                 KindId::Node,
-                Path::new("/Users/me/code/my_app!/node_modules")
+                Path::new("/Users/me/code/my_app!/node_modules"),
+                None
             ),
             "stow node my-app-"
         );
         let long = volume_name(
             KindId::CargoTarget,
             Path::new("/x/a-really-long-project-name-that-goes-on/target"),
+            None,
         );
         assert!(long.len() <= 27, "{long}");
         assert_eq!(
-            volume_name(KindId::CargoHome, Path::new("/Users/me/.cargo/registry")),
+            volume_name(
+                KindId::CargoHome,
+                Path::new("/Users/me/.cargo/registry"),
+                None
+            ),
             "stow cargo-home registry"
+        );
+        let target = Path::new("/code/arbvark/target");
+        assert_eq!(
+            volume_name(
+                KindId::CargoTarget,
+                &target.join("debug/deps"),
+                Some(target)
+            ),
+            "stow arbvark debug deps"
+        );
+        // A custom DerivedData location is named for its place in it all the same.
+        let dd = Path::new("/Volumes/Work/DD");
+        assert_eq!(
+            volume_name(
+                KindId::XcodeDerivedData,
+                &dd.join("App-abc/Index.noindex"),
+                Some(dd)
+            ),
+            "stow App-abc Index-noindex"
         );
     }
 

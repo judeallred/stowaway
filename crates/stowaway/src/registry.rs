@@ -352,6 +352,22 @@ impl Registry {
         Ok(())
     }
 
+    /// Replaces an entry with others in one transaction, ending the new entries' journals.
+    ///
+    /// # Errors
+    ///
+    /// Fails on a database error, changing nothing.
+    pub fn replace(&self, old_id: &str, new: &[Entry]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        self.delete(old_id)?;
+        for entry in new {
+            self.insert(entry)?;
+            self.journal_done(&entry.id)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Records a completed transfer.
     ///
     /// # Errors

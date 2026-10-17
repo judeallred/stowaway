@@ -135,10 +135,10 @@ pub fn set_transfer_priority(layout: &Layout, priority: TransferPriority) -> Res
 /// Fails if the config can't be loaded or saved.
 pub fn set_kind_enabled(layout: &Layout, kind: KindId, enabled: bool) -> Result<()> {
     let mut config = Config::load_required(layout)?;
-    config.kinds.retain(|&k| k != kind);
-    if enabled {
-        config.kinds.push(kind);
-        config.kinds.sort();
+    config.disabled_kinds.retain(|&k| k != kind);
+    if !enabled {
+        config.disabled_kinds.push(kind);
+        config.disabled_kinds.sort();
     }
     config.save(layout)
 }
@@ -243,10 +243,15 @@ mod tests {
         .save(&layout)
         .unwrap();
         set_kind_enabled(&layout, KindId::PnpmStore, false).unwrap();
-        let kinds = Config::load_required(&layout).unwrap().kinds;
-        assert!(!kinds.contains(&KindId::PnpmStore));
+        let config = Config::load_required(&layout).unwrap();
+        assert!(!config.kind_enabled(KindId::PnpmStore));
         set_kind_enabled(&layout, KindId::PnpmStore, true).unwrap();
         set_kind_enabled(&layout, KindId::PnpmStore, true).unwrap();
-        assert_eq!(Config::load_required(&layout).unwrap().kinds, KindId::ALL);
+        assert!(
+            Config::load_required(&layout)
+                .unwrap()
+                .disabled_kinds
+                .is_empty()
+        );
     }
 }
