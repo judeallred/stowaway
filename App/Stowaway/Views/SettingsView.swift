@@ -91,15 +91,16 @@ private struct OffloadSettings: View {
         LabeledContent("Offloaded", value: Format.bytes(model.offloadedBytes))
       }
       Section {
-        Picker("Offload automatically", selection: $model.autoOffloadDays) {
+        Picker("Offload automatically", selection: $model.autoOffloadMinutes) {
+          Text("After 5 minutes unchanged").tag(5)
+          Text("After 1 hour unchanged").tag(60)
+          Text("After 1 day unchanged").tag(1440)
+          Text("After 1 week unchanged").tag(10_080)
           Text("Never (only when I choose)").tag(0)
-          Text("After 1 day unchanged").tag(1)
-          Text("After 1 week unchanged").tag(7)
-          Text("After 1 month unchanged").tag(30)
         }
       } footer: {
         Text(
-          "Project folders that haven't changed for this long move to the drive while it's connected."
+          "Folders that haven't changed for this long move to the drive while it's connected. A running Cargo build, or Xcode or a Gradle IDE that's open, holds off the folders they use."
         )
         .font(.caption).foregroundStyle(.secondary)
       }

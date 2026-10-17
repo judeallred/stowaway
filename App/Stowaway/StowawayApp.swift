@@ -38,6 +38,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Self.model?.open(urls)
     }
   }
+
+  /// Opening Stowaway again (from Finder, Spotlight or Launchpad) brings the window back: it has
+  /// no Dock icon, and its menu bar icon may be hidden.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    MainActor.assumeIsolated {
+      Self.model?.openLibrary?()
+      NSApp.activate()
+    }
+    return true
+  }
 }
 
 /// The menu bar icon. It's the first view to appear, so it starts the model and, on first
@@ -53,6 +63,7 @@ private struct MenuBarLabel: View {
         guard !model.started else { return }
         model.started = true
         AppDelegate.model = model
+        model.openLibrary = { openWindow(id: "library") }
         #if DEBUG
           if let folder = Snapshots.folder {
             Snapshots.run(into: folder)

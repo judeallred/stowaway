@@ -57,15 +57,33 @@ final class AppModel {
 
   private var watchers: [any NSObjectProtocol] = []
   private var timer: Timer?
+  private var scanTimer: Timer?
+  /// Last measurement per folder, so a rescan only re-measures folders that changed.
+  private var measured: [String: (bytes: Int64, activity: Date)] = [:]
   private var reconcileQueued = false
 
-  /// Offload folders automatically once they've been idle this many days (0 = only by hand).
-  var autoOffloadDays: Int {
-    get { UserDefaults.standard.integer(forKey: "autoOffloadDays") }
+  /// Offload folders automatically once they've been unchanged this many minutes (0 = only by
+  /// hand). Five minutes unless the user changes it: folders move to the drive soon after work
+  /// in them stops.
+  var autoOffloadMinutes: Int {
+    get {
+      UserDefaults.standard.object(forKey: "autoOffloadMinutes") == nil
+        ? 5 : UserDefaults.standard.integer(forKey: "autoOffloadMinutes")
+    }
     set {
-      UserDefaults.standard.set(newValue, forKey: "autoOffloadDays")
+      UserDefaults.standard.set(newValue, forKey: "autoOffloadMinutes")
       Task { await autoOffload() }
     }
+  }
+
+  /// Opens the library window (set by the menu bar label, which has SwiftUI's openWindow).
+  var openLibrary: (() -> Void)?
+
+  /// Whether first-run onboarding has been finished or skipped. Never shown again after that;
+  /// everything it covers is reachable from the library and Settings.
+  var didOnboard: Bool {
+    get { UserDefaults.standard.bool(forKey: "didOnboard") }
+    set { UserDefaults.standard.set(newValue, forKey: "didOnboard") }
   }
 
   init() {
@@ -77,10 +95,15 @@ final class AppModel {
     engine.log = { [weak self] line in Task { @MainActor in self?.message = line } }
     store.start()
     refreshSettings()
-    showingOnboarding = roots.isEmpty
+    showingOnboarding = !didOnboard && roots.isEmpty
+    if !roots.isEmpty { didOnboard = true }
     watchVolumes()
     timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
       Task { @MainActor in self?.queueReconcile() }
+    }
+    // Look again every couple of minutes, so automatic offloading keeps up with new folders.
+    scanTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+      Task { @MainActor in await self?.scan() }
     }
     let engine = engine
     Task {
@@ -202,12 +225,17 @@ final class AppModel {
         "Choose where offloaded folders go: an external drive, or a folder on one.",
         at: URL(fileURLWithPath: "/Volumes"))
     else { return }
+    grantDrive(url)
+  }
+
+  private func grantDrive(_ url: URL) {
     do {
       try engine.grant(url, as: .drive)
     } catch {
-      message = "Couldn't remember that location: \(error.localizedDescription)"
+      message = error.localizedDescription
     }
     refreshSettings()
+    Task { await scan() }
   }
 
   private func choose(_ prompt: String, at directory: URL?) -> URL? {
@@ -224,9 +252,10 @@ final class AppModel {
   }
 
   /// Machine-wide caches that exist on this Mac but that Stowaway can't reach yet, with the folder
-  /// to ask for (the one that contains them, so they can be swapped for a link).
+  /// to ask for (the one that contains them, so they can be swapped for a link). A folder inside
+  /// another one on the list is left off: allowing the outer one covers it.
   var ungrantedCaches: [(kind: Kind, folder: URL)] {
-    var result: [(Kind, URL)] = []
+    var result: [(kind: Kind, folder: URL)] = []
     for kind in Kind.allCases where kind.isGlobal {
       for rel in kind.defaultLocations {
         let path = realHomeDirectory.appendingPathComponent(rel)
@@ -235,10 +264,84 @@ final class AppModel {
           continue
         }
         let parent = path.deletingLastPathComponent()
-        if !result.contains(where: { $0.1 == parent }) { result.append((kind, parent)) }
+        if !result.contains(where: { $0.folder == parent }) { result.append((kind, parent)) }
       }
     }
-    return result
+    return result.filter { candidate in
+      !result.contains { other in
+        other.folder != candidate.folder && candidate.folder.path.hasPrefix(other.folder.path + "/")
+      }
+    }
+  }
+
+  /// Folders where developers usually keep projects that exist here and aren't chosen yet.
+  var suggestedProjectFolders: [URL] {
+    ["code", "Developer", "Projects", "src", "dev", "GitHub", "repos", "workspace"]
+      .map { realHomeDirectory.appendingPathComponent($0) }
+      .filter { FileManager.default.fileExists(atPath: $0.path) && !isCovered($0.path) }
+  }
+
+  /// External drives that are mounted now, for choosing the offload location in one click.
+  /// Read-only volumes (installer disk images, for example) are left off.
+  var externalVolumes: [URL] {
+    let keys: [URLResourceKey] = [
+      .volumeIsInternalKey, .volumeIsRootFileSystemKey, .volumeIsBrowsableKey,
+      .volumeIsReadOnlyKey,
+    ]
+    let volumes =
+      FileManager.default.mountedVolumeURLs(
+        includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes])
+      ?? []
+    return volumes.filter {
+      let values = try? $0.resourceValues(forKeys: Set(keys))
+      return values?.volumeIsRootFileSystem != true && values?.volumeIsInternal != true
+        && values?.volumeIsBrowsable != false && values?.volumeIsReadOnly != true
+    }
+  }
+
+  /// Asks for the home folder in one go, which covers projects and every cache. macOS can give
+  /// back something narrower; then the per-folder buttons are the way.
+  func allowHomeFolder() {
+    guard
+      let url = choose(
+        "Click Choose to let Stowaway look through your home folder: your projects and every cache, in one step. It reads folder names and sizes, never your files' contents.",
+        at: realHomeDirectory)
+    else { return }
+    guard url.standardizedFileURL.path == realHomeDirectory.standardizedFileURL.path else {
+      message =
+        "macOS gave Stowaway \(Format.path(url.path)) rather than your home folder. Allow each cache instead."
+      return
+    }
+    do {
+      try engine.grant(url, as: .root)
+      message = "Stowaway can now see your home folder."
+    } catch {
+      message = "Couldn't remember your home folder: \(error.localizedDescription)"
+    }
+    refreshSettings()
+    Task { await scan() }
+  }
+
+  /// Uses a mounted volume as the offload location (the panel opens on it; the user confirms).
+  func chooseDrive(_ volume: URL) {
+    guard
+      let url = choose(
+        "Click Choose to keep offloaded folders on \(volume.lastPathComponent).", at: volume)
+    else { return }
+    grantDrive(url)
+  }
+
+  /// Finishes onboarding. Open at Login is applied only here, from the toggle the user saw.
+  func finishOnboarding(openAtLogin: Bool) {
+    didOnboard = true
+    showingOnboarding = false
+    if openAtLogin && !loginItemEnabled { setLoginItem(true) }
+  }
+
+  /// Skips onboarding for good; the library and Settings cover everything it asks.
+  func skipOnboarding() {
+    didOnboard = true
+    showingOnboarding = false
   }
 
   private func isCovered(_ path: String) -> Bool {
@@ -298,16 +401,22 @@ final class AppModel {
 
   /// Measures sizes and recency in the background, a few folders at a time.
   private func measure() async {
-    let pending = rows.map { ($0.path, $0.candidate) }
+    let pending = rows.map { ($0.path, $0.candidate, measured[$0.path]) }
     await withTaskGroup(of: (String, Int64, Date).self) { group in
       var iterator = pending.makeIterator()
       func next() -> Bool {
-        guard let (path, candidate) = iterator.next() else { return false }
-        group.addTask { (path, Measure.allocatedSize(path), Measure.lastActivity(of: candidate)) }
+        guard let (path, candidate, previous) = iterator.next() else { return false }
+        group.addTask {
+          // Recency is cheap; size is only measured again if something changed.
+          let activity = Measure.lastActivity(of: candidate)
+          if let previous, previous.activity == activity { return (path, previous.bytes, activity) }
+          return (path, Measure.allocatedSize(path), activity)
+        }
         return true
       }
       for _ in 0..<4 where next() {}
       for await (path, bytes, date) in group {
+        measured[path] = (bytes, date)
         if let i = rows.firstIndex(where: { $0.path == path }) {
           rows[i].localBytes = bytes
           rows[i].lastActivity = date
@@ -387,14 +496,24 @@ final class AppModel {
     await scan()
   }
 
-  /// Offloads folders idle longer than `autoOffloadDays`, within the free limit.
+  /// Offloads folders unchanged for `autoOffloadMinutes`, within the free limit. Skips folders
+  /// a tool is using right now: a running Cargo build, DerivedData while Xcode runs, Gradle's
+  /// caches while an IDE that runs Gradle does.
   private func autoOffload() async {
-    let days = autoOffloadDays
-    guard days > 0, driveConnected else { return }
+    let minutes = autoOffloadMinutes
+    guard minutes > 0, driveConnected else { return }
     await store.waitUntilLoaded()
-    let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+    let cutoff = Date().addingTimeInterval(-Double(minutes) * 60)
+    let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+    let xcodeRunning = running.contains { $0.hasPrefix("com.apple.dt.Xcode") }
+    let gradleIDERunning = running.contains {
+      $0.hasPrefix("com.google.android.studio") || $0.hasPrefix("com.jetbrains.intellij")
+    }
     for row in rows
-    where row.place == .mac && (row.lastActivity ?? .now) < cutoff && !row.kind.isGlobal {
+    where row.place == .mac && row.localBytes != nil && (row.lastActivity ?? .now) < cutoff {
+      if row.kind == .xcodeDerivedData && xcodeRunning { continue }
+      if row.kind == .gradleHome && gradleIDERunning { continue }
+      if Measure.isBusy(row.candidate) { continue }
       let engine = engine
       let limit = store.offloadLimit
       let paths = row.kind.parts(of: row.candidate.url)?.map(\.path) ?? [row.path]

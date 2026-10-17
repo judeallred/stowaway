@@ -1,100 +1,96 @@
 import StowawayCore
 import SwiftUI
 
-/// First launch: what Stowaway does, and the permissions it needs, one step at a time. Every
-/// step can be skipped and revisited in Settings.
+/// First launch, in four short steps. Every step can be skipped ("Set Up Later", or Esc), and
+/// onboarding doesn't come back once finished or skipped: the library's empty state and Settings
+/// cover everything it asks for.
 struct OnboardingView: View {
   @Bindable var model: AppModel
-  @Environment(\.dismiss) private var dismiss
   @State private var step: Step
+  /// Checked by default, and applied only when the user clicks Done, so nothing runs at login
+  /// without their say-so.
+  @State private var openAtLogin = true
+
+  enum Step: Int, CaseIterable {
+    case welcome, projects, caches, finish
+  }
 
   init(model: AppModel, step: Step = .welcome) {
     self.model = model
     _step = State(initialValue: step)
   }
 
-  enum Step: Int, CaseIterable {
-    case welcome, folders, caches, drive, login
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       switch step {
       case .welcome: welcome
-      case .folders: folders
+      case .projects: projects
       case .caches: caches
-      case .drive: drive
-      case .login: login
+      case .finish: finish
       }
       Spacer(minLength: 0)
-      HStack {
-        if step != .welcome {
-          Button("Back") { move(-1) }
-        }
-        Spacer()
-        Text("\(step.rawValue + 1) of \(Step.allCases.count)").font(.caption).foregroundStyle(
-          .secondary)
-        Spacer()
-        if step == .login {
-          Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-        } else {
-          Button(step == .welcome ? "Get Started" : "Continue") { move(1) }.keyboardShortcut(
-            .defaultAction)
-        }
-      }
+      footer
     }
     .padding(24)
-    .frame(width: 520, height: 420)
+    .frame(width: 560)
+    .frame(minHeight: 460)
   }
 
-  private func move(_ by: Int) {
-    step = Step(rawValue: step.rawValue + by) ?? step
-  }
+  // MARK: Steps
 
   private var welcome: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: 14) {
       HStack(spacing: 12) {
-        Image(nsImage: Logo.image(size: 44))
-        Text("Welcome to Stowaway").font(.title.weight(.semibold))
+        Image(nsImage: Logo.image(size: 44)).accessibilityHidden(true)
+        Text("Get your disk space back").font(.title.weight(.semibold))
       }
       Text(
-        "Your Mac fills up with folders your tools can re-create: node_modules, Cargo and Xcode build files, package caches, downloaded models."
+        "Stowaway finds the folders your tools can re-create (node_modules, Cargo and Xcode build files, package caches) and deletes them for you, or keeps them on an external drive."
       )
-      Text(
-        "Stowaway finds them and lets you delete them. Or, with an external drive, it keeps them there instead:"
-      )
-      VStack(alignment: .leading, spacing: 6) {
-        Label("Your tools see the folders where they always were.", systemImage: "checkmark.circle")
+      VStack(alignment: .leading, spacing: 8) {
+        Label("Never touches source code, or anything git tracks.", systemImage: "checkmark.shield")
         Label(
-          "Unplug the drive and they rebuild locally, without asking.",
-          systemImage: "checkmark.circle")
+          "Offloaded folders stay where your tools expect them.",
+          systemImage: "folder.badge.gearshape")
         Label(
-          "Plug it back in and everything moves back to the drive.", systemImage: "checkmark.circle"
-        )
+          "Unplug the drive any time: builds keep working.",
+          systemImage: "externaldrive.badge.checkmark")
       }
-      .foregroundStyle(.secondary)
-      Text("Stowaway never touches source code, and never touches folders git tracks.").font(
-        .callout)
     }
   }
 
-  private var folders: some View {
+  private var projects: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Where are your projects?").font(.title2.weight(.semibold))
+      Text("Where do you keep your code?").font(.title2.weight(.semibold))
       Text(
-        "Choose the folder that holds your projects, such as ~/code. Stowaway can only see folders you choose, and you can add more later."
+        "macOS only lets Stowaway see folders you choose. It looks at folder names and sizes, never inside your files."
       )
       .foregroundStyle(.secondary)
-      rootList
-      HStack {
-        Button("Choose a Folder…") {
-          model.addRoot(startingAt: realHomeDirectory)
-        }
-        Button("Create a Sample Project…") { model.createSampleProject() }
-          .help(
-            "Creates a small sample web and Rust project to try Stowaway on, without touching your own."
-          )
+      ForEach(model.roots, id: \.self) { root in
+        Label(Format.path(root), systemImage: "checkmark.circle.fill")
       }
+      let suggestions = Array(
+        model.suggestedProjectFolders.filter { !model.roots.contains($0.path) }.prefix(3))
+      if !suggestions.isEmpty {
+        HStack {
+          ForEach(suggestions, id: \.self) { folder in
+            Button("Use \(Format.path(folder.path))") {
+              model.addRoot(
+                startingAt: folder,
+                message: "Click Choose to let Stowaway look in \(Format.path(folder.path)).")
+            }
+          }
+        }
+      }
+      Button(suggestions.isEmpty ? "Choose a Folder…" : "Choose Another Folder…") {
+        model.addRoot(startingAt: realHomeDirectory)
+      }
+      found
+      Button("No projects handy? Try a sample project") { model.createSampleProject() }
+        .buttonStyle(.link)
+        .help(
+          "Creates a small sample web and Rust project to try Stowaway on, without touching your own."
+        )
     }
   }
 
@@ -102,78 +98,166 @@ struct OnboardingView: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Shared caches").font(.title2.weight(.semibold))
       Text(
-        "These caches are on your Mac but outside your projects. To include one, allow Stowaway access to the folder that holds it: the window opens there, so just click Choose."
+        "These are on your Mac but outside your projects. Allow them all at once, or one at a time: the window opens in the right place, so just click Choose."
       )
       .foregroundStyle(.secondary)
-      let caches = model.ungrantedCaches
-      if caches.isEmpty {
-        Label("Nothing more to allow.", systemImage: "checkmark.circle").foregroundStyle(.secondary)
-      } else {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 8) {
-            ForEach(caches, id: \.folder) { cache in
-              HStack {
-                VStack(alignment: .leading) {
-                  Text(cache.kind.label)
-                  Text(Format.path(cache.folder.path)).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Allow…") {
-                  model.addRoot(
-                    startingAt: cache.folder,
-                    message:
-                      "Click Choose to let Stowaway manage \(cache.kind.label) in \(Format.path(cache.folder.path))."
-                  )
-                }
-              }
+      let pending = model.ungrantedCaches
+      if !pending.isEmpty {
+        Button("Allow All…") { model.allowHomeFolder() }
+          .buttonStyle(.borderedProminent)
+          .help("Lets Stowaway see your home folder, which covers every cache below.")
+      }
+      ScrollView {
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(allowedCaches, id: \.kind) { cache in
+            HStack {
+              Label(cache.kind.label, systemImage: "checkmark.circle.fill")
+              Spacer()
+              Text(cache.bytes.map(Format.bytes) ?? "Measuring…")
+                .monospacedDigit().foregroundStyle(.secondary)
             }
           }
+          ForEach(pending, id: \.folder) { cache in
+            HStack {
+              VStack(alignment: .leading, spacing: 2) {
+                Text(cache.kind.label)
+                Text(Format.path(cache.folder.path)).font(.caption).foregroundStyle(.secondary)
+              }
+              Spacer()
+              Text(cache.kind.typicalSize).font(.callout).foregroundStyle(.secondary)
+              Button("Allow…") {
+                model.addRoot(
+                  startingAt: cache.folder,
+                  message:
+                    "Click Choose to let Stowaway manage \(cache.kind.label) in \(Format.path(cache.folder.path))."
+                )
+              }
+              .accessibilityLabel("Allow \(cache.kind.label)")
+            }
+          }
+          if pending.isEmpty && allowedCaches.isEmpty {
+            Text("No shared caches on this Mac.").foregroundStyle(.secondary)
+          }
         }
-        .frame(maxHeight: 200)
+      }
+      .frame(maxHeight: 220)
+      if !pending.isEmpty {
+        Text("Typical sizes until allowed; Stowaway measures the real size after.")
+          .font(.caption).foregroundStyle(.secondary)
       }
     }
   }
 
-  private var drive: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Have an external drive?").font(.title2.weight(.semibold))
-      Text(
-        "Choose it, or a folder on it, to keep folders there instead of deleting them. Offloading up to \(Format.bytes(Store.freeOffloadLimit)) is free."
-      )
-      .foregroundStyle(.secondary)
-      if let drive = model.drivePath {
-        Label(Format.path(drive), systemImage: "externaldrive.fill")
+  private var finish: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("Almost done").font(.title2.weight(.semibold))
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Offload to an external drive (optional)").font(.headline)
+        if let name = model.driveName {
+          Label(name, systemImage: "externaldrive.fill")
+          Text(
+            "Folders left unchanged for 5 minutes move there automatically, up to \(Format.bytes(Store.freeOffloadLimit)) free. You can change this in Settings."
+          )
+          .font(.callout).foregroundStyle(.secondary)
+        } else {
+          HStack {
+            ForEach(Array(model.externalVolumes.prefix(3)), id: \.self) { volume in
+              Button("Use \(volume.lastPathComponent)") { model.chooseDrive(volume) }
+            }
+            Button(model.externalVolumes.isEmpty ? "Choose a Location…" : "Somewhere Else…") {
+              model.chooseDrive()
+            }
+          }
+          Text(
+            "No drive? Skip this: you can still find and delete folders, and choose a drive later."
+          )
+          .font(.callout).foregroundStyle(.secondary)
+        }
       }
-      Button(model.drivePath == nil ? "Choose Offload Location…" : "Choose a Different Location…") {
-        model.chooseDrive()
+      Divider()
+      Toggle(isOn: $openAtLogin) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Open Stowaway at login")
+          Text("So it can switch to local folders whenever the drive is unplugged.")
+            .font(.caption).foregroundStyle(.secondary)
+        }
       }
-      Text("No drive? Skip this; you can still find and delete folders.").font(.callout)
-        .foregroundStyle(.secondary)
+      HStack(alignment: .top, spacing: 10) {
+        Image(nsImage: MenuBarImage.image(badge: nil)).accessibilityHidden(true)
+        Text(
+          "Stowaway lives in the menu bar. Click its icon any time, or open Stowaway again to bring back its window."
+        )
+        .font(.callout).foregroundStyle(.secondary)
+      }
     }
   }
 
-  private var login: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Keep Stowaway running").font(.title2.weight(.semibold))
-      Text(
-        "When the drive is unplugged, Stowaway switches offloaded folders to local ones so your builds keep working. It can only do that while it's running."
+  // MARK: Parts
+
+  /// What the scan has found so far, under the project step.
+  @ViewBuilder private var found: some View {
+    if model.scanning {
+      Label("Looking…", systemImage: "magnifyingglass").foregroundStyle(.secondary)
+    } else if !model.roots.isEmpty {
+      let count = model.rows.filter { !$0.kind.isGlobal }.count
+      Label(
+        count == 0
+          ? "Nothing to tidy up there yet."
+          : "Found \(count) folder\(count == 1 ? "" : "s") you can reclaim, \(Format.bytes(model.reclaimableBytes)) in all.",
+        systemImage: "sparkles"
       )
-      .foregroundStyle(.secondary)
-      Toggle(
-        "Open Stowaway at login",
-        isOn: Binding(get: { model.loginItemEnabled }, set: { model.setLoginItem($0) }))
-      Text(
-        "Stowaway lives in the menu bar and uses almost no resources while idle. You can change this in Settings."
-      )
-      .font(.callout).foregroundStyle(.secondary)
+      .font(.headline)
     }
   }
 
-  private var rootList: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      ForEach(model.roots, id: \.self) { root in
-        Label(Format.path(root), systemImage: "folder.fill")
+  /// Caches Stowaway can already see, with their measured size (nil while measuring).
+  private var allowedCaches: [(kind: Kind, bytes: Int64?)] {
+    Dictionary(grouping: model.rows.filter(\.kind.isGlobal), by: \.kind)
+      .map { kind, rows in
+        let sizes = rows.map { $0.place == .drive ? $0.driveBytes : $0.localBytes }
+        return (kind, sizes.contains(nil) ? nil : sizes.compactMap { $0 }.reduce(0, +))
       }
+      .sorted { $0.kind.label < $1.kind.label }
+  }
+
+  private var footer: some View {
+    HStack {
+      Button("Set Up Later") { model.skipOnboarding() }
+        .keyboardShortcut(.cancelAction)
+      Spacer()
+      Text("Step \(step.rawValue + 1) of \(Step.allCases.count)")
+        .font(.caption).foregroundStyle(.secondary)
+      Spacer()
+      if step != .welcome {
+        Button("Back") { move(-1) }.keyboardShortcut("[", modifiers: .command)
+      }
+      if step == .finish {
+        Button("Done") { model.finishOnboarding(openAtLogin: openAtLogin) }
+          .keyboardShortcut(.defaultAction)
+      } else {
+        Button(step == .welcome ? "Get Started" : "Continue") { move(1) }
+          .keyboardShortcut(.defaultAction)
+      }
+    }
+  }
+
+  private func move(_ by: Int) {
+    step = Step(rawValue: step.rawValue + by) ?? step
+  }
+}
+
+extension Kind {
+  /// A typical size, shown before Stowaway can measure a cache.
+  fileprivate var typicalSize: String {
+    switch self {
+    case .xcodeDerivedData: "often 10–100 GB"
+    case .huggingface: "often 10–500 GB"
+    case .gradleHome: "often 5–50 GB"
+    case .go, .pnpmStore: "often 2–30 GB"
+    case .cargoHome: "often 1–10 GB"
+    case .jsCaches: "often 1–20 GB"
+    case .npx: "often 1–5 GB"
+    default: ""
     }
   }
 }

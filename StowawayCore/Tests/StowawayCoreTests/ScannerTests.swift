@@ -133,4 +133,34 @@ final class ScannerTests: XCTestCase {
       Measure.allocatedSize(root.appendingPathComponent("web-app/node_modules").path), 10_000_000)
     XCTAssertThrowsError(try SampleProject.create(in: s.root), "won't overwrite")
   }
+
+  func testARunningCargoBuildIsBusy() throws {
+    let s = try Scratch()
+    try s.file("rs/Cargo.toml")
+    try s.file("rs/target/CACHEDIR.TAG")
+    let lock = try s.file("rs/target/debug/.cargo-lock")
+    let candidate = Candidate(kind: .cargoTarget, path: s.path("rs/target"), project: s.path("rs"))
+    XCTAssertFalse(Measure.isBusy(candidate))
+    let fd = open(lock.path, O_RDWR)
+    defer { close(fd) }
+    XCTAssertEqual(flock(fd, LOCK_EX), 0)
+    XCTAssertTrue(Measure.isBusy(candidate), "cargo holds this lock while building")
+  }
+
+  func testActivityTwoLevelsDownCounts() throws {
+    let s = try Scratch()
+    try s.file("rs/Cargo.toml")
+    try s.file("rs/target/debug/deps/old.rlib")
+    let candidate = Candidate(kind: .cargoTarget, path: s.path("rs/target"), project: s.path("rs"))
+    let old = Date(timeIntervalSinceNow: -3600)
+    for path in [
+      "rs/Cargo.toml", "rs/target", "rs/target/debug", "rs/target/debug/deps",
+      "rs/target/debug/deps/old.rlib",
+    ] {
+      try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: s.path(path))
+    }
+    XCTAssertLessThan(Measure.lastActivity(of: candidate), Date(timeIntervalSinceNow: -3000))
+    try s.file("rs/target/debug/deps/new.rlib")
+    XCTAssertGreaterThan(Measure.lastActivity(of: candidate), Date(timeIntervalSinceNow: -60))
+  }
 }

@@ -114,6 +114,18 @@ every 30 seconds:
 The app has to be running for the first two to happen automatically, which is why onboarding
 offers Open at Login.
 
+## Offloading automatically
+
+Once an offload location is chosen, the app rescans every 2 minutes and offloads every folder,
+caches included, that hasn't changed for the window set in Settings (5 minutes by default; it can
+be turned off). "Changed" looks two levels into the folder, so a build writing into
+`target/debug/deps` counts. It skips folders a tool is using right now:
+- a Cargo `target/` whose `.cargo-lock` is held (`Measure.isBusy`);
+- DerivedData while Xcode is running;
+- Gradle's caches while Android Studio or IntelliJ is running.
+
+It stops at the free limit. Nothing is ever deleted automatically.
+
 ## Deleting
 
 `Cleaner` applies the same guard rails as offloading. It refuses folders outside the roots,
@@ -136,5 +148,5 @@ valid. Deleting an offloaded folder (`Engine.discard`) removes the link and its 
 ## Purchases
 
 `Store` uses StoreKit 2. Seven non-consumable products (three personal, four business) all unlock
-the same thing: no offload limit. The engine applies `Engine.offloadLimit` (100 GB unless
+the same thing: no offload limit. The app passes a limit to `Engine.adopt` (100 GB unless
 something's been bought) when adopting. Only verified, unrevoked transactions count.

@@ -155,8 +155,9 @@ public enum Measure {
     return total
   }
 
-  /// When a project last changed: the newest of the folder itself, its top level and the
-  /// project's manifest and lockfiles. Cheap, and good enough to rank folders by staleness.
+  /// When a folder last changed: the newest modification time of the folder, everything up to
+  /// two levels inside it, and its project's manifest and lockfiles. Two levels catch a build
+  /// writing into `target/debug/deps` or `.next/cache`; deeper would be slow on big trees.
   public static func lastActivity(of candidate: Candidate) -> Date {
     var newest = Date.distantPast
     func consider(_ path: String) {
@@ -166,17 +167,39 @@ public enum Measure {
       }
     }
     consider(candidate.path)
-    for name in (try? FileManager.default.contentsOfDirectory(atPath: candidate.path)) ?? [] {
-      consider(candidate.path + "/" + name)
+    let fm = FileManager.default
+    for name in (try? fm.contentsOfDirectory(atPath: candidate.path)) ?? [] {
+      let child = candidate.path + "/" + name
+      consider(child)
+      if isRealDirectory(child) {
+        for inner in ((try? fm.contentsOfDirectory(atPath: child)) ?? []).prefix(500) {
+          consider(child + "/" + inner)
+        }
+      }
     }
     if let project = candidate.project {
       for name in [
-        "package.json", "package-lock.json", "yarn.lock", "Cargo.toml", "Cargo.lock",
+        "package.json", "package-lock.json", "yarn.lock", "bun.lock", "Cargo.toml", "Cargo.lock",
         "pyproject.toml", "uv.lock",
       ] {
         consider(project + "/" + name)
       }
     }
     return newest
+  }
+
+  /// Whether a tool is working in the folder right now, where that can be told: Cargo holds a
+  /// lock on `target/<profile>/.cargo-lock` for the whole build.
+  public static func isBusy(_ candidate: Candidate) -> Bool {
+    guard candidate.kind == .cargoTarget else { return false }
+    for profile in subdirectories(of: candidate.url) {
+      let lock = profile.appendingPathComponent(".cargo-lock").path
+      let fd = open(lock, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      guard fd >= 0 else { continue }
+      defer { close(fd) }
+      if flock(fd, LOCK_SH | LOCK_NB) != 0 { return true }
+      flock(fd, LOCK_UN)
+    }
+    return false
   }
 }

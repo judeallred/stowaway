@@ -87,8 +87,8 @@
       render(MenuView(model: model), "menu", width: 290, height: 360, in: folder)
       for step in OnboardingView.Step.allCases {
         render(
-          OnboardingView(model: model, step: step), "onboarding-\(step.rawValue)", width: 520,
-          height: 420, in: folder)
+          OnboardingView(model: model, step: step), "onboarding-\(step.rawValue)", width: 560,
+          height: 460, in: folder)
       }
       render(
         SupportView(model: model, store: model.store), "support", width: 520, height: 420,

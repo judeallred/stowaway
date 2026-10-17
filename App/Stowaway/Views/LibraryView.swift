@@ -76,7 +76,8 @@ struct LibraryView: View {
         Button {
           Task { await model.scan() }
         } label: {
-          Label("Scan", systemImage: "arrow.clockwise")
+          Label("Scan Again", systemImage: "arrow.clockwise")
+            .labelStyle(.titleAndIcon)
         }
         .disabled(model.scanning)
         .help("Look for re-creatable folders again")

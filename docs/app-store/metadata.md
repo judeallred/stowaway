@@ -38,6 +38,8 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 > • Unplug the drive and your tools rebuild locally, without asking.
 > • Plug it back in and everything moves back to the drive, including anything built while it
 >   was away.
+> • Folders you haven't changed in 5 minutes move to the drive on their own, so your Mac stays
+>   tidy without you thinking about it. (Or offload by hand: it's a setting.)
 > • npm projects stay fast: `npm install` with nothing to change takes as long as it always did.
 >
 > FINDS WHAT YOU CAN SAFELY REMOVE
@@ -99,7 +101,7 @@ macOS screenshots must be 16:10: 1280×800, 1440×900, 2560×1600 or 2880×1800.
 Suggested set:
 1. The library, with a mix of folders on the Mac and on the drive.
 2. The menu bar window.
-3. Onboarding's welcome screen ("Unplug the drive and they rebuild locally…").
+3. Onboarding's welcome screen ("Get your disk space back").
 4. The upgrade sheet ("For Me / For Work").
 
 `App/scripts/screenshots.sh` renders these from demo data at 2880×1800.
