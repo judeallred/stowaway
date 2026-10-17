@@ -1,3 +1,10 @@
+> **Update (October 2026):** this design shipped. Stowaway is now the App Store app described
+> here as "Lite"; the original ("core") is preserved at the `rust-core-final` tag. The prototype
+> code referred to below lives in [`research/sandbox-probe`](../research/sandbox-probe), and the
+> production engine in [`StowawayCore`](../StowawayCore). Since this paper, npm projects moved to
+> "deep links" (see §6.1 and [architecture.md](architecture.md)), the free tier gained 100 GB of
+> offloading, and the store moved to `Stowaway.noindex/<install-id>/`.
+
 # Stowaway and Stowaway Lite: the original design and the Mac App Store variant
 
 **Status:** findings from prototyping, October 2026. Tested on macOS 26.6, Apple M4 Pro, with an
@@ -356,7 +363,7 @@ Rules to keep the App Store build approvable:
 
 ## Appendix: evidence
 
-Everything is in `sandbox-probe/` on the `sandbox-prototype` branch.
+Everything is in [`research/sandbox-probe/`](../research/sandbox-probe).
 
 | What | Where |
 |---|---|

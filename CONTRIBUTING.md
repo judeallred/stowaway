@@ -4,39 +4,78 @@ Thanks for helping out. A few things to know before you open a pull request.
 
 ## Contributor License Agreement
 
-Stowaway is source-available (Prosperity Public License 3.0.0) and is also sold under commercial
-licenses, which fund its development. To make that possible, every external contributor signs the
+Stowaway is source-available (Prosperity Public License 3.0.0) and is sold on the Mac App Store,
+which funds its development. To make that possible, every external contributor signs the
 [Contributor License Agreement](CLA.md) once. You keep your copyright.
 
 When you open your first pull request, a bot comments with a link to the CLA. Reply with the
 sentence it asks for and the check turns green. Pull requests can't be merged until it passes.
 
-## Development setup
+## Setup
+
+You need Xcode 26 or later (macOS 14 is the minimum the app supports).
 
 ```sh
-cargo xtask install-hooks   # format check on commit, clippy + unit tests on push
-cargo xtask ci              # runs exactly what CI runs
+git config core.hooksPath .githooks   # swift-format check on commit, core tests on push
+open App/Stowaway.xcodeproj
 ```
 
-The toolchain is pinned in `rust-toolchain.toml`; `rustup` picks it up automatically.
+The Xcode project is generated from [`App/project.yml`](App/project.yml) and committed, so you
+only need [XcodeGen](https://github.com/yonaskolb/XcodeGen) to change the project itself (adding
+a file counts):
+
+```sh
+xcodegen generate --spec App/project.yml
+```
+
+Running the app from Xcode uses `App/Stowaway/Resources/Products.storekit`, so purchases work
+locally without App Store Connect.
+
+## Checks
+
+These are what CI runs:
+
+```sh
+xcrun swift-format lint --strict --recursive StowawayCore App/Stowaway App/scripts/make-icon.swift
+swift test --package-path StowawayCore -Xswiftc -warnings-as-errors
+App/scripts/build.sh && App/scripts/check-release.sh
+```
+
+`swift test` needs to attach a small disk image (`hdiutil`) for the unplug test.
+`check-release.sh` inspects the Release build for what App Review cares about: no test hooks in
+the binary, exactly the expected entitlements, a privacy manifest.
 
 ## Standards
 
-- Clippy runs with `all`, `pedantic`, `nursery`, `cargo` and a set of `restriction` lints, and CI
-  fails on any warning.
-- Never use `#[allow(...)]`. If a lint has to be silenced, use
-  `#[expect(lint, reason = "...")]` on the smallest possible scope.
-- `unsafe` code lives only in `crates/stowaway-macos`, and every block has a `// SAFETY:` comment.
-- Dependencies must be permissively licensed; `cargo deny check` enforces the list in `deny.toml`.
+- Swift 6 language mode with strict concurrency; warnings are errors.
+- `swift-format` with the repository's `.swift-format`, strict.
+- Anything that deletes or moves user data goes through `StowawayCore` and has a test. Paths read
+  from the drive are untrusted (see `Engine.storePath` and `Engine.validated`).
+- Debug-only tooling lives behind `#if DEBUG` and must not reach Release; `check-release.sh`
+  enforces it.
+- No new entitlements without updating `check-release.sh` and the
+  [review notes](docs/app-store/review-notes.md).
+
+## Screenshots and layout checks
+
+```sh
+App/scripts/screenshots.sh
+```
+
+This renders every screen with demo data, in light and dark, plus the App Store screenshots at
+2880×1800, into `App/build/screenshots`. It uses a Debug build's snapshot mode, so it doesn't need
+screen recording permission.
+
+## App icon
+
+```sh
+swiftc -swift-version 5 -parse-as-library -o /tmp/make-icon App/scripts/make-icon.swift \
+  App/Stowaway/Branding/Logo.swift
+/tmp/make-icon App/Stowaway/Resources/Assets.xcassets/AppIcon.appiconset
+```
 
 ## Releasing
 
-Bump `version` in the root `Cargo.toml`, commit, then push a matching tag:
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The Release workflow builds a universal `Stowaway.app` and CLI, and publishes them as a GitHub
-pre-release. It signs and notarizes them once the Developer ID secrets listed in
-`.github/workflows/release.yml` are set; until then the builds are ad-hoc signed.
+See [docs/app-store/checklist.md](docs/app-store/checklist.md). In short: bump
+`MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `App/project.yml`, regenerate the project,
+then in Xcode use Product → Archive and Distribute App → App Store Connect.

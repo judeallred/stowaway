@@ -1,12 +1,14 @@
-# Commercial use of Stowaway
+# Licensing
 
-Stowaway is free for personal and noncommercial use under the
-[Prosperity Public License 3.0.0](LICENSE).
+> **Draft — pending legal review.**
 
-**Using it for work?** The license gives your company a 30-day trial. After that, your company
-needs a commercial license: one seat per person who uses Stowaway.
+**The App Store app.** Stowaway from the Mac App Store is licensed to you under Apple's
+[Licensed Application End User License Agreement](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/),
+including for use at work. It's free, with offloading up to 100 GB; any in-app purchase makes
+offloading unlimited. If you use Stowaway at work and can expense it, please choose a business
+price. Business purchases keep Stowaway free for people using it personally.
 
-- Mac App Store purchases include a commercial license for one user.
-- Multi-seat purchases, invoices and purchase orders: _purchase flow coming soon._
-
-Questions: open an issue or contact the maintainer listed in [LICENSE](LICENSE).
+**The source code** in this repository is available under the
+[Prosperity Public License 3.0.0](LICENSE): free for personal and noncommercial use, with a
+30-day trial for commercial use. To use the source commercially beyond that (to build and run
+your own copy at a company, for example), contact the maintainer listed in [LICENSE](LICENSE).

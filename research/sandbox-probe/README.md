@@ -1,3 +1,7 @@
+> **Research, kept for reference.** These are the experiments that led to the App Store design.
+> The production engine is [`StowawayCore`](../../StowawayCore) and the app is in [`App`](../../App).
+> Paths below that say `sandbox-probe/` now mean `research/sandbox-probe/`.
+
 # Can Stowaway ship on the Mac App Store?
 
 **Short answer:** Stowaway as designed, with disk images mounted in place over `node_modules`,

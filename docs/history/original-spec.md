@@ -1,3 +1,9 @@
+> **Historical.** This is the specification of the original Stowaway: a Rust engine that mounted
+> disk images in place, distributed outside the App Store. It was retired in October 2026 for the
+> sandboxed App Store design ([../WHITEPAPER.md](../WHITEPAPER.md),
+> [../architecture.md](../architecture.md)); its code is at the `rust-core-final` tag. Its
+> research findings (§4.0 in particular) still explain much of today's design.
+
 # Stowaway — Specification (v0.1)
 
 **Status:** Draft
