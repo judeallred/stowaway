@@ -413,3 +413,21 @@ final class AppModel {
     store.offloadLimit.map { max(0, $0 - offloadedBytes) }
   }
 }
+
+#if DEBUG
+  extension AppModel {
+    /// Snapshots (Snapshots.swift) only.
+    var demoRows: [Row] {
+      get { rows }
+      set { rows = newValue }
+    }
+
+    func applyDemo(drive: String, roots: [String]) {
+      self.roots = roots
+      drivePath = drive
+      driveConnected = true
+      driveFreeBytes = 812_000_000_000
+      offloadedBytes = rows.map(\.driveBytes).reduce(0, +)
+    }
+  }
+#endif

@@ -71,7 +71,21 @@ struct SupportView: View {
 
   @ViewBuilder private var prices: some View {
     let products = store.products[audience] ?? []
-    if products.isEmpty {
+    if products.isEmpty, let demo = snapshotPrices {
+      HStack(spacing: 10) {
+        ForEach(demo, id: \.price) { item in
+          Button {
+          } label: {
+            VStack(spacing: 2) {
+              Text(item.price).font(.title3.weight(.semibold))
+              Text(item.name).font(.caption)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+          }
+          .controlSize(.large)
+        }
+      }
+    } else if products.isEmpty {
       HStack {
         ProgressView().controlSize(.small)
         Text("Loading prices…").foregroundStyle(.secondary)
@@ -111,5 +125,14 @@ struct SupportView: View {
           : "Your purchase means everything to a small, independent company. Offloading is unlimited."
       )
     }
+  }
+
+  /// Debug snapshots only: sample prices, since StoreKit has no products outside Xcode's test setup.
+  private var snapshotPrices: [(price: String, name: String)]? {
+    #if DEBUG
+      Snapshots.folder == nil ? nil : store.demoPrices[audience]
+    #else
+      nil
+    #endif
   }
 }

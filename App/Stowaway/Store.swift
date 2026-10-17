@@ -26,6 +26,15 @@ final class Store {
   private(set) var loadError: String?
   private(set) var purchasing: String?
   private var updates: Task<Void, Never>?
+  #if DEBUG
+    /// Snapshots only: price labels to show when the App Store isn't reachable.
+    var demoPrices: [Audience: [(price: String, name: String)]] = [
+      .personal: [("$4.99", "Thanks"), ("$9.99", "Big Thanks"), ("$19.99", "Huge Thanks")],
+      .business: [
+        ("$29.99", "Business"), ("$59.99", "Plus"), ("$119.99", "Pro"), ("$249.99", "Patron"),
+      ],
+    ]
+  #endif
 
   var hasPurchased: Bool { !owned.isEmpty }
   var ownedAudience: Audience? {

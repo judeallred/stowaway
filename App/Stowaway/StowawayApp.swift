@@ -39,6 +39,12 @@ private struct MenuBarLabel: View {
       .task {
         guard !model.started else { return }
         model.started = true
+        #if DEBUG
+          if let folder = Snapshots.folder {
+            Snapshots.run(into: folder)
+            return
+          }
+        #endif
         model.start()
         if model.showingOnboarding {
           openWindow(id: "library")

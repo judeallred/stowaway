@@ -13,7 +13,12 @@ enum Format {
       amount /= 1000
       index += 1
     }
-    return String(format: "%.1f %@", amount, units[index])
+    // "100 GB", not "100.0 GB".
+    let rounded = (amount * 10).rounded() / 10
+    let number =
+      rounded == rounded.rounded()
+      ? String(format: "%.0f", rounded) : String(format: "%.1f", rounded)
+    return "\(number) \(units[index])"
   }
 
   /// "~/code" instead of "/Users/me/code".

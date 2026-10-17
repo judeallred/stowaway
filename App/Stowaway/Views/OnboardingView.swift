@@ -6,7 +6,12 @@ import SwiftUI
 struct OnboardingView: View {
   @Bindable var model: AppModel
   @Environment(\.dismiss) private var dismiss
-  @State private var step = Step.welcome
+  @State private var step: Step
+
+  init(model: AppModel, step: Step = .welcome) {
+    self.model = model
+    _step = State(initialValue: step)
+  }
 
   enum Step: Int, CaseIterable {
     case welcome, folders, caches, drive, login
