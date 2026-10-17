@@ -67,5 +67,11 @@ targets:
         SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         GCC_TREAT_WARNINGS_AS_ERRORS: YES
         COMBINE_HIDPI_IMAGES: YES
+      configs:
+        # Debug builds run without a developer team ("Sign to Run Locally"), so ⌘R works on any
+        # Mac, with the StoreKit test configuration. Release keeps automatic signing.
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
     scheme:
       storeKitConfiguration: Stowaway/Resources/Products.storekit
