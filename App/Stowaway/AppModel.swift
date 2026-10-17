@@ -42,6 +42,11 @@ final class AppModel {
   private(set) var rows: [Row] = []
   private(set) var scanning = false
   private(set) var busy: Set<String> = []
+  /// Folders waiting their turn in a Stow batch that's running.
+  private(set) var queued: Set<String> = []
+  /// Folders Stowaway couldn't stow (a pnpm project, say), with their last-changed date then.
+  /// Automatic stowing leaves them alone until they change.
+  private var refused: [String: Date?] = [:]
   private(set) var roots: [String] = []
   private(set) var drivePath: String?
   /// The offload location's name, known even while it's unplugged.
@@ -611,8 +616,12 @@ final class AppModel {
     await store.waitUntilLoaded()
     let engine = engine
     var failures: [(Row, any Error)] = []
+    let stowing = doing == "Stowing"
+    if stowing { queued = Set(rows.map(\.path)) }
+    defer { queued = [] }
     for (i, row) in rows.enumerated() {
       activity = Self.describe(doing, row, index: i, of: rows.count)
+      queued.remove(row.path)
       busy.insert(row.path)
       let limit = store.offloadLimit
       let failure: (any Error)? = await Task.detached {
@@ -628,7 +637,10 @@ final class AppModel {
         showingSupport = true
         break
       }
-      if let failure { failures.append((row, failure)) }
+      if let failure {
+        failures.append((row, failure))
+        if stowing { refused[row.path] = row.lastActivity }
+      }
     }
     activity = nil
     // One folder: say why it couldn't be done. Several: skip what can't be, quietly.
@@ -641,6 +653,28 @@ final class AppModel {
   /// Offloads folders unchanged for `autoOffloadMinutes`, within the free limit. Skips folders
   /// a tool is using right now: a running Cargo build, DerivedData while Xcode runs, Gradle's
   /// caches while an IDE that runs Gradle does.
+  private enum AutoOutcome: Sendable { case stowed, refused, limit }
+
+  /// Bytes on this Mac that are about to be stowed: queued in a running batch, or, with
+  /// automatic stowing on and the drive connected, what it will move once quiet. Leaves out
+  /// folders it couldn't stow, and stops at the free allowance.
+  var pendingBytes: Int64 {
+    let automatic = autoOffloadMinutes != 0 && driveConnected
+    let bytes =
+      rows
+      .filter { row in
+        guard row.place == .mac, !busy.contains(row.path) || queued.contains(row.path) else {
+          return false
+        }
+        if queued.contains(row.path) { return true }
+        guard automatic else { return false }
+        if let at = refused[row.path], at == row.lastActivity { return false }
+        return true
+      }
+      .compactMap(\.localBytes).reduce(0, +)
+    return freeAllowanceLeft.map { min(bytes, $0) } ?? bytes
+  }
+
   private func autoOffload() async {
     let minutes = autoOffloadMinutes
     guard minutes != 0, driveConnected else { return }
@@ -657,25 +691,29 @@ final class AppModel {
       if row.kind == .xcodeDerivedData && xcodeRunning { continue }
       if row.kind == .gradleHome && gradleIDERunning { continue }
       if Measure.isBusy(row.candidate) { continue }
+      if let at = refused[row.path], at == row.lastActivity { continue }
       let engine = engine
       let limit = store.offloadLimit
       let paths = row.kind.parts(of: row.candidate.url)?.map(\.path) ?? [row.path]
       let container = row.path
       activity = Self.describe("Stowing", row, index: 0, of: 1)
       defer { activity = nil }
-      let stop = await Task.detached { () -> Bool in
+      let outcome = await Task.detached { () -> AutoOutcome in
+        var outcome = AutoOutcome.stowed
         for path in paths {
           do {
             try engine.adopt(path, kind: row.kind, container: container, limit: limit)
           } catch is OffloadLimitReached {
-            return true
+            return .limit
           } catch {
-            // Skipped (in use by git, overlapping…); the library shows it as still on the Mac.
+            // Can't be stowed (a pnpm project, tracked by git…): it stays on the Mac.
+            outcome = .refused
           }
         }
-        return false
+        return outcome
       }.value
-      if stop { break }
+      if outcome == .limit { break }
+      if outcome == .refused { refused[row.path] = row.lastActivity }
     }
   }
 

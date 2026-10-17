@@ -238,6 +238,10 @@ private struct SummaryHeader: View {
     HStack(alignment: .top, spacing: 24) {
       stat(Format.bytes(model.reclaimableBytes), "re-creatable on this Mac")
       stat(Format.bytes(model.offloadedBytes), "stowed")
+      stat(Format.bytes(model.pendingBytes), "pending stowage")
+        .help(
+          "On this Mac, about to be stowed: queued now, or waiting to be left unchanged long enough to stow automatically."
+        )
       Spacer()
       if let left = model.freeAllowanceLeft {
         VStack(alignment: .trailing, spacing: 6) {
