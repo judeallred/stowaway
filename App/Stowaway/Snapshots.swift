@@ -107,6 +107,18 @@
         SupportView(model: model, store: model.store), "support", width: 520, height: 420,
         in: folder)
       render(SettingsView(model: model), "settings", width: 520, height: 380, in: folder)
+      render(BossLetterView(model: model), "expense-letter", width: 560, height: 520, in: folder)
+      render(
+        InvoiceView(model: model), "expense-invoice-preview", width: 560, height: 760, in: folder)
+      render(
+        InvoicePage(
+          invoice: Invoice(
+            status: .paid,
+            item: "Stowaway for Mac: Business Plus. One-time purchase, unlimited stowing.",
+            amount: "$59.99", date: .now, number: "SW-2000000812345678",
+            billTo: "Sam Rivera\nNorthwind Labs",
+            payment: "Paid through the Mac App Store (transaction 2000000812345678).")),
+        "expense-invoice-paid", width: 612, height: 792, in: folder)
       render(FoldersSettings(model: model), "settings-folders", width: 520, height: 380, in: folder)
       render(OffloadSettings(model: model), "settings-stow", width: 520, height: 640, in: folder)
       render(

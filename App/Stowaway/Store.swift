@@ -27,6 +27,8 @@ final class Store {
   private(set) var purchasing: String?
   /// Set once entitlements have been read, so a paying user's actions never see the free limit.
   private(set) var loaded = false
+  /// The most recent purchase, for the paid invoice.
+  private(set) var latestPurchase: PurchaseRecord?
   private var updates: Task<Void, Never>?
   #if DEBUG
     /// Snapshots only: price labels to show when the App Store isn't reachable.
@@ -38,7 +40,21 @@ final class Store {
     ]
   #endif
 
+  /// What an invoice needs to know about a purchase.
+  struct PurchaseRecord: Sendable {
+    let productID: String
+    let price: Decimal
+    let currencyCode: String
+    let date: Date
+    let transactionID: UInt64
+  }
+
   var hasPurchased: Bool { !owned.isEmpty }
+
+  /// The App Store's name for a product, such as "Business Plus".
+  func displayName(of productID: String) -> String? {
+    products.values.joined().first { $0.id == productID }?.displayName
+  }
   var ownedAudience: Audience? {
     if owned.contains(where: { $0.contains(".business.") }) { return .business }
     return owned.isEmpty ? nil : .personal
@@ -79,12 +95,21 @@ final class Store {
 
   func refreshEntitlements() async {
     var ids: Set<String> = []
+    var latest: PurchaseRecord?
     for await entitlement in Transaction.currentEntitlements {
       if case .verified(let transaction) = entitlement, transaction.revocationDate == nil {
         ids.insert(transaction.productID)
+        if let price = transaction.price, latest.map({ $0.date < transaction.purchaseDate }) ?? true
+        {
+          latest = PurchaseRecord(
+            productID: transaction.productID, price: price,
+            currencyCode: transaction.currency?.identifier ?? "USD",
+            date: transaction.purchaseDate, transactionID: transaction.id)
+        }
       }
     }
     owned = ids
+    latestPurchase = latest
     loaded = true
   }
 

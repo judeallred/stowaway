@@ -32,6 +32,15 @@ automatically.
 Stowing is free up to 100 GB. The in-app purchases lift that limit; every purchase unlocks
 the same thing (unlimited stowing), at the price the user chooses.
 
+EXPENSING A BUSINESS PURCHASE
+
+Under "For Work", "Letter to Your Boss…" drafts an email-ready request, and "Preview Invoice…"
+shows a sample invoice (watermarked PREVIEW) with the App Store's price, for the user's expense
+software. After a purchase it becomes "Paid Invoice…", showing the price paid and the App Store
+transaction ID. It states that the purchase was made through the Mac App Store and that Apple's
+receipt is the official record of payment. Neither takes payment or links outside the app.
+"Redeem Code…" (macOS 15 and later) opens Apple's offer code sheet.
+
 ENTITLEMENTS
 
 - com.apple.security.files.user-selected.read-write and bookmarks.app-scope: Stowaway only works

@@ -9,6 +9,9 @@ struct SupportView: View {
   let store: Store
   @Environment(\.dismiss) private var dismiss
   @State private var audience: Store.Audience = .personal
+  @State private var showingLetter = false
+  @State private var showingInvoice = false
+  @State private var redeeming = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -25,6 +28,16 @@ struct SupportView: View {
         Text(audienceNote).font(.callout).foregroundStyle(.secondary).fixedSize(
           horizontal: false, vertical: true)
         prices
+        if audience == .business {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Your expense account is the easiest way to support independent software.")
+              .font(.callout)
+            HStack {
+              Button("Letter to Your Boss…") { showingLetter = true }
+              Button("Preview Invoice…") { showingInvoice = true }
+            }
+          }
+        }
       }
       if let error = store.loadError {
         HStack {
@@ -36,6 +49,12 @@ struct SupportView: View {
       Divider()
       HStack {
         Button("Restore Purchases") { Task { await store.restore() } }
+        if #available(macOS 15.0, *) {
+          Button("Redeem Code…") { redeeming = true }
+            .offerCodeRedemption(isPresented: $redeeming) { _ in
+              Task { await store.refreshEntitlements() }
+            }
+        }
         Spacer()
         Link("Terms of Use", destination: Links.termsOfUse)
         Link("Privacy Policy", destination: Links.privacyPolicy)
@@ -47,6 +66,8 @@ struct SupportView: View {
     .padding(24)
     .frame(width: 520)
     .task { if store.products.isEmpty { await store.loadProducts() } }
+    .sheet(isPresented: $showingLetter) { BossLetterView(model: model) }
+    .sheet(isPresented: $showingInvoice) { InvoiceView(model: model) }
   }
 
   private var pitch: some View {
@@ -126,6 +147,9 @@ struct SupportView: View {
           ? "Your business purchase keeps Stowaway free for people using it personally. Stowing is unlimited."
           : "Your purchase means everything to our 3-person team. Stowing is unlimited."
       )
+      if store.latestPurchase != nil {
+        Button("Paid Invoice…") { showingInvoice = true }
+      }
     }
   }
 
