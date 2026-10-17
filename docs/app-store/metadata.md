@@ -90,23 +90,20 @@ sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the 
 |---|---|---|---|---|---|
 | …`personal.1` | Personal 1 | A Sandwich | Unlimited stowing. Pay what you want. | $8 | On |
 | …`personal.2` | Personal 2 | A Really Nice Sandwich | Unlimited stowing. Pay what you want. | $16 | On |
-| …`personal.3` | Personal 3 | Team Sandwiches | Unlimited stowing. Pay what you want. | $32 | On |
-| …`personal.4` | Personal 4 | Dinner for One | Unlimited stowing. Pay what you want. | $64 | On |
-| …`personal.5` | Personal 5 | Team Dinner | Unlimited stowing. Pay what you want. | $128 | On |
-| …`personal.6` | Personal 6 | Cheaper Than Storage | Unlimited stowing. Pay what you want. | $256 | On |
-| …`personal.7` | Personal 7 | Thank-You Card | Unlimited stowing. Pay what you want. | $512 | On |
-| …`personal.8` | Personal 8 | Birthday Cards | Unlimited stowing. Pay what you want. | $1,024 | On |
-| …`business.1` | Business 1 | Business License | Unlimited stowing, for use at work. | $50 | Off |
-| …`business.2` | Business 2 | Business License | Unlimited stowing, for use at work. | $100 | Off |
-| …`business.3` | Business 3 | Business License | Unlimited stowing, for use at work. | $150 | Off |
-| …`business.4` | Business 4 | Business License | Unlimited stowing, for use at work. | $200 | Off |
-| …`business.5` | Business 5 | Business License | Unlimited stowing, for use at work. | $250 | Off |
-| …`business.6` | Business 6 | Business License | Unlimited stowing, for use at work. | $300 | Off |
-| …`business.7` | Business 7 | Business License | Unlimited stowing, for use at work. | $350 | Off |
-| …`business.8` | Business 8 | Business License | Unlimited stowing, for use at work. | $400 | Off |
-| …`business.9` | Business 9 | Business License | Unlimited stowing, for use at work. | $450 | Off |
-| …`business.10` | Business 10 | Business License | Unlimited stowing, for use at work. | $500 | Off |
-| …`business.11` | Business 11 | Enterprise | Unlimited stowing, for use at work. | $5,000 | Off |
+| …`personal.3` | Personal 3 | Sandwiches for Our Whole Team | Unlimited stowing. Pay what you want. | $32 | On |
+| …`personal.4` | Personal 4 | Movie Night | Unlimited stowing. Pay what you want. | $64 | On |
+| …`personal.5` | Personal 5 | Cheaper Than Storage | Unlimited stowing. Pay what you want. | $128 | On |
+| …`personal.6` | Personal 6 | Thank-You Card | Unlimited stowing. Pay what you want. | $256 | On |
+| …`personal.7` | Personal 7 | Birthday Cards | Unlimited stowing. Pay what you want. | $512 | On |
+| …`business.1` | Business 1 | Independent | Unlimited stowing, for use at work. | $24.99 | Off |
+| …`business.2` | Business 2 | Small Business | Unlimited stowing, for use at work. | $49.99 | Off |
+| …`business.3` | Business 3 | Startup | Unlimited stowing, for use at work. | $99.99 | Off |
+| …`business.4` | Business 4 | Growing Company | Unlimited stowing, for use at work. | $249.99 | Off |
+| …`business.5` | Business 5 | Mid-Size Company | Unlimited stowing, for use at work. | $499.99 | Off |
+| …`business.6` | Business 6 | Large Company | Unlimited stowing, for use at work. | $999.99 | Off |
+| …`business.7` | Business 7 | Department | Unlimited stowing, for use at work. | $2,499.99 | Off |
+| …`business.8` | Business 8 | Enterprise | Unlimited stowing, for use at work. | $4,999.99 | Off |
+| …`business.9` | Business 9 | Global Company | Unlimited stowing, for use at work. | $9,999.99 | Off |
 
 (…= `com.brooklynspaceport.stowaway.`)
 

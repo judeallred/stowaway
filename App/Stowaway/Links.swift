@@ -7,6 +7,10 @@ enum Links {
   static let privacyPolicy = page("privacy")
   /// Apple's standard license agreement, which App Store apps use unless they provide their own.
   static let termsOfUse = url("https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
+  /// Where purchasers can tell us what they think. (Make sure this mailbox exists.)
+  static let feedbackEmail = "stowaway@brooklynspaceport.com"
+  static let feedback = url(
+    "mailto:\(feedbackEmail)?subject=What%20sold%20me%20on%20Stowaway")
   static let issues = url("https://github.com/judeallred/stowaway/issues/new")
 
   private static func page(_ path: String) -> URL {

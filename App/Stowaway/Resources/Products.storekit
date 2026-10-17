@@ -39,7 +39,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing. Pay what you want.",
-          "displayName": "Team Sandwiches",
+          "displayName": "Sandwiches for Our Whole Team",
           "locale": "en_US"
         }
       ],
@@ -54,7 +54,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing. Pay what you want.",
-          "displayName": "Dinner for One",
+          "displayName": "Movie Night",
           "locale": "en_US"
         }
       ],
@@ -69,7 +69,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing. Pay what you want.",
-          "displayName": "Team Dinner",
+          "displayName": "Cheaper Than Storage",
           "locale": "en_US"
         }
       ],
@@ -84,7 +84,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing. Pay what you want.",
-          "displayName": "Cheaper Than Storage",
+          "displayName": "Thank-You Card",
           "locale": "en_US"
         }
       ],
@@ -99,7 +99,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing. Pay what you want.",
-          "displayName": "Thank-You Card",
+          "displayName": "Birthday Cards",
           "locale": "en_US"
         }
       ],
@@ -108,28 +108,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "1024.0",
-      "familyShareable": true,
-      "internalID": "10008",
-      "localizations": [
-        {
-          "description": "Unlimited stowing. Pay what you want.",
-          "displayName": "Birthday Cards",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.personal.8",
-      "referenceName": "Personal 8",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "50.0",
+      "displayPrice": "24.99",
       "familyShareable": false,
       "internalID": "20001",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Independent",
           "locale": "en_US"
         }
       ],
@@ -138,13 +123,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "100.0",
+      "displayPrice": "49.99",
       "familyShareable": false,
       "internalID": "20002",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Small Business",
           "locale": "en_US"
         }
       ],
@@ -153,13 +138,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "150.0",
+      "displayPrice": "99.99",
       "familyShareable": false,
       "internalID": "20003",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Startup",
           "locale": "en_US"
         }
       ],
@@ -168,13 +153,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "200.0",
+      "displayPrice": "249.99",
       "familyShareable": false,
       "internalID": "20004",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Growing Company",
           "locale": "en_US"
         }
       ],
@@ -183,13 +168,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "250.0",
+      "displayPrice": "499.99",
       "familyShareable": false,
       "internalID": "20005",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Mid-Size Company",
           "locale": "en_US"
         }
       ],
@@ -198,13 +183,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "300.0",
+      "displayPrice": "999.99",
       "familyShareable": false,
       "internalID": "20006",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Large Company",
           "locale": "en_US"
         }
       ],
@@ -213,13 +198,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "350.0",
+      "displayPrice": "2499.99",
       "familyShareable": false,
       "internalID": "20007",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Department",
           "locale": "en_US"
         }
       ],
@@ -228,13 +213,13 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "400.0",
+      "displayPrice": "4999.99",
       "familyShareable": false,
       "internalID": "20008",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Enterprise",
           "locale": "en_US"
         }
       ],
@@ -243,48 +228,18 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "450.0",
+      "displayPrice": "9999.99",
       "familyShareable": false,
       "internalID": "20009",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
+          "displayName": "Global Company",
           "locale": "en_US"
         }
       ],
       "productID": "com.brooklynspaceport.stowaway.business.9",
       "referenceName": "Business 9",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "500.0",
-      "familyShareable": false,
-      "internalID": "20010",
-      "localizations": [
-        {
-          "description": "Unlimited stowing, for use at work.",
-          "displayName": "Business License",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.business.10",
-      "referenceName": "Business 10",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "5000.0",
-      "familyShareable": false,
-      "internalID": "20011",
-      "localizations": [
-        {
-          "description": "Unlimited stowing, for use at work.",
-          "displayName": "Enterprise",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.business.11",
-      "referenceName": "Business 11",
       "type": "NonConsumable"
     }
   ],

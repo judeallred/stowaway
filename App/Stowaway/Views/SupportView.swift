@@ -128,7 +128,7 @@ struct SupportView: View {
     }
     return products.filter { !store.owned.contains($0.id) }.map {
       Price(
-        id: $0.id, price: $0.displayPrice, tagline: Store.taglines[$0.id] ?? "",
+        id: $0.id, price: Store.price(of: $0), tagline: Store.taglines[$0.id] ?? "",
         product: $0)
     }
   }
@@ -144,22 +144,27 @@ struct SupportView: View {
       if audience == .business {
         Text("I can expense:").font(.callout.weight(.medium))
       }
-      // Personal prices have a line each; business prices are just amounts, five to a row.
+      // Personal prices two to a row, business prices three.
       LazyVGrid(
         columns: Array(
-          repeating: GridItem(.flexible(), spacing: 10), count: audience == .business ? 5 : 2),
+          repeating: GridItem(.flexible(), spacing: 10), count: audience == .business ? 3 : 2),
         spacing: 10
       ) {
-        ForEach(audience == .business ? list.filter { $0.tagline.isEmpty } : list) { item in
+        ForEach(gridded(list)) { item in
           priceButton(item)
         }
       }
-      if audience == .business {
-        ForEach(list.filter { !$0.tagline.isEmpty }) { item in
-          priceButton(item)
-        }
+      // Below the grid, full width: a last price that doesn't fill a row.
+      ForEach(list.filter { item in !gridded(list).contains { $0.id == item.id } }) { item in
+        priceButton(item)
       }
     }
+  }
+
+  /// The prices that fill whole rows of the grid; any left over go full width below it.
+  private func gridded(_ list: [Price]) -> [Price] {
+    let columns = audience == .business ? 3 : 2
+    return Array(list.prefix(list.count - list.count % columns))
   }
 
   private func priceButton(_ item: Price) -> some View {
@@ -173,7 +178,7 @@ struct SupportView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
       }
-      .frame(maxWidth: .infinity, minHeight: audience == .business ? 36 : 50)
+      .frame(maxWidth: .infinity, minHeight: 50)
     }
     .controlSize(.large)
     .disabled(store.purchasing != nil)
@@ -194,6 +199,12 @@ struct SupportView: View {
       )
       .fixedSize(horizontal: false, vertical: true)
       Text("Your stowage is now unlimited, forever.").font(.headline)
+      VStack(alignment: .leading, spacing: 4) {
+        Text("We'd love to hear from you: what sold you, and what would make Stowaway better?")
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        Link(Links.feedbackEmail, destination: Links.feedback)
+      }
       HStack {
         if store.latestPurchase != nil {
           Button("Paid Invoice…") { showingInvoice = true }

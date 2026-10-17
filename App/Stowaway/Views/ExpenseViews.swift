@@ -48,7 +48,7 @@ struct BossLetterView: View {
 
   /// The starting text, with this Mac's numbers and the lowest business price.
   static func letter(model: AppModel) -> String {
-    let price = model.store.products[.business]?.first?.displayPrice
+    let price = model.store.products[.business]?.first.map(Store.price(of:))
     var numbers: [String] = []
     if model.reclaimableBytes > 0 {
       numbers.append(
@@ -164,7 +164,7 @@ struct InvoiceView: View {
   /// Business tiers to preview, from the App Store (or sample prices in snapshots).
   private var businessPrices: [(name: String, price: String)] {
     let products = model.store.products[.business] ?? []
-    if !products.isEmpty { return products.map { ($0.displayName, $0.displayPrice) } }
+    if !products.isEmpty { return products.map { ($0.displayName, Store.price(of: $0)) } }
     #if DEBUG
       return (model.store.demoPrices[.business] ?? []).map { (name: $0.name, price: $0.price) }
     #else

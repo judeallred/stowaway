@@ -17,23 +17,30 @@ final class Store {
   static let freeOffloadLimit: Int64 = 100_000_000_000
 
   static let productIDs: [Audience: [String]] = [
-    .personal: (1...8).map { "com.brooklynspaceport.stowaway.personal.\($0)" },
-    .business: (1...11).map { "com.brooklynspaceport.stowaway.business.\($0)" },
+    .personal: (1...7).map { "com.brooklynspaceport.stowaway.personal.\($0)" },
+    .business: (1...9).map { "com.brooklynspaceport.stowaway.business.\($0)" },
   ]
 
-  /// What each personal price says in the app. Business prices show just the amount, except
-  /// the top one. App Store Connect's display names are capped at 30
+  /// What each price says in the app. Business prices sit just under common expense
+  /// auto-approval limits ($25, $50, $100 … $10,000), named for who they suit. App Store Connect's display names are capped at 30
   /// characters, so these live here; the store's short names appear on receipts and invoices.
   static let taglines: [String: String] = [
     "com.brooklynspaceport.stowaway.personal.1": "A sandwich",
     "com.brooklynspaceport.stowaway.personal.2": "A really nice sandwich",
-    "com.brooklynspaceport.stowaway.personal.3": "Sandwiches for the whole team",
-    "com.brooklynspaceport.stowaway.personal.4": "Dinner for one",
-    "com.brooklynspaceport.stowaway.personal.5": "Dinner for the whole team",
-    "com.brooklynspaceport.stowaway.personal.6": "Still cheaper than upgrading your storage",
-    "com.brooklynspaceport.stowaway.personal.7": "We will send you a hand-written thank you card",
-    "com.brooklynspaceport.stowaway.personal.8": "We'll send you a birthday card every year",
-    "com.brooklynspaceport.stowaway.business.11": "Enterprise",
+    "com.brooklynspaceport.stowaway.personal.3": "Sandwiches for our whole team",
+    "com.brooklynspaceport.stowaway.personal.4": "Movie night!",
+    "com.brooklynspaceport.stowaway.personal.5": "Still cheaper than upgrading your storage",
+    "com.brooklynspaceport.stowaway.personal.6": "We will send you a hand-written thank you card",
+    "com.brooklynspaceport.stowaway.personal.7": "We'll send you a birthday card every year",
+    "com.brooklynspaceport.stowaway.business.1": "Independent",
+    "com.brooklynspaceport.stowaway.business.2": "Small business",
+    "com.brooklynspaceport.stowaway.business.3": "Startup",
+    "com.brooklynspaceport.stowaway.business.4": "Growing company",
+    "com.brooklynspaceport.stowaway.business.5": "Mid-size company",
+    "com.brooklynspaceport.stowaway.business.6": "Large company",
+    "com.brooklynspaceport.stowaway.business.7": "Department",
+    "com.brooklynspaceport.stowaway.business.8": "Enterprise",
+    "com.brooklynspaceport.stowaway.business.9": "Global company",
   ]
 
   private(set) var products: [Audience: [Product]] = [:]
@@ -54,13 +61,17 @@ final class Store {
     var demoPrices: [Audience: [(price: String, name: String)]] = [
       .personal: [
         ("$8", "A sandwich"), ("$16", "A really nice sandwich"),
-        ("$32", "Sandwiches for the whole team"), ("$64", "Dinner for one"),
-        ("$128", "Dinner for the whole team"),
-        ("$256", "Still cheaper than upgrading your storage"),
-        ("$512", "We will send you a hand-written thank you card"),
-        ("$1,024", "We'll send you a birthday card every year"),
+        ("$32", "Sandwiches for our whole team"), ("$64", "Movie night!"),
+        ("$128", "Still cheaper than upgrading your storage"),
+        ("$256", "We will send you a hand-written thank you card"),
+        ("$512", "We'll send you a birthday card every year"),
       ],
-      .business: (1...10).map { ("$\($0 * 50)", "") } + [("$5,000", "Enterprise")],
+      .business: [
+        ("$24.99", "Independent"), ("$49.99", "Small business"), ("$99.99", "Startup"),
+        ("$249.99", "Growing company"), ("$499.99", "Mid-size company"),
+        ("$999.99", "Large company"), ("$2,499.99", "Department"), ("$4,999.99", "Enterprise"),
+        ("$9,999.99", "Global company"),
+      ],
     ]
   #endif
 
@@ -80,6 +91,17 @@ final class Store {
     guard hasPurchased else { return nil }
     let ownedProducts = products.values.joined().filter { owned.contains($0.id) }
     return ownedProducts.max { $0.price < $1.price }?.displayName ?? "Supporter"
+  }
+
+  /// A product's price, without cents when it's a whole amount ("$8", not "$8.00").
+  static func price(of product: Product) -> String {
+    var price = product.price
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &price, 0, .down)
+    let whole = rounded == product.price
+    return whole
+      ? product.price.formatted(product.priceFormatStyle.precision(.fractionLength(0)))
+      : product.displayPrice
   }
 
   /// The App Store's name for a product, such as "Business Plus".
