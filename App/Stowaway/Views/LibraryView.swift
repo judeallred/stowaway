@@ -250,12 +250,7 @@ private struct SummaryHeader: View {
 
   var body: some View {
     HStack(alignment: .top, spacing: 24) {
-      stat(Format.bytes(model.reclaimableBytes), "re-creatable on this Mac")
-      stat(Format.bytes(model.offloadedBytes), "stowed")
-      stat(Format.bytes(model.pendingBytes), "pending stowage")
-        .help(
-          "On this Mac, about to be stowed: queued now, or waiting to be left unchanged long enough to stow automatically."
-        )
+      totals
       Spacer()
       if let plan = model.store.planName {
         PlanBadge(plan: plan) { model.showingSupport = true }
@@ -303,12 +298,34 @@ private struct SummaryHeader: View {
     .padding(.vertical, 12)
   }
 
-  private func stat(_ value: String, _ label: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(value).font(.title2.weight(.semibold)).monospacedDigit()
-      Text(label).font(.caption).foregroundStyle(.secondary)
+  /// Everything Stowaway found it could stow (on this Mac or already stowed), then how much is
+  /// stowed and how much is about to be.
+  private var totals: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      HStack(alignment: .firstTextBaseline, spacing: 6) {
+        Text(Format.bytes(model.reclaimableBytes + model.offloadedBytes))
+          .font(.title2.weight(.semibold)).monospacedDigit()
+        Text("eligible").font(.callout).foregroundStyle(.secondary)
+      }
+      .help(
+        "Re-creatable folders Stowaway found: \(Format.bytes(model.reclaimableBytes)) on this Mac and \(Format.bytes(model.offloadedBytes)) stowed."
+      )
+      detail(Format.bytes(model.offloadedBytes), "stowed")
+      detail(Format.bytes(model.pendingBytes), "pending")
+        .help(
+          "On this Mac, about to be stowed: queued now, or waiting to be left unchanged long enough to stow automatically."
+        )
     }
   }
+
+  private func detail(_ value: String, _ label: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+      Text(value).monospacedDigit()
+      Text(label).foregroundStyle(.secondary)
+    }
+    .font(.callout)
+  }
+
 }
 
 /// After a purchase: the logo with a heart, and the plan. Opens the thank-you sheet.
