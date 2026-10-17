@@ -98,17 +98,11 @@ struct SupportView: View {
     }
   }
 
-  private var audienceNote: AttributedString {
+  private var audienceNote: String {
     switch audience {
-    case .personal:
-      AttributedString("Pay what you want. Shared with your family through Family Sharing.")
+    case .personal: "Pay what you want. Shared with your family through Family Sharing."
     case .business:
-      (try? AttributedString(
-        markdown:
-          "Every price point here is honestly cheaper than the cost of upgrading your storage. Please support small businesses by picking what fits within your auto-approve expense budget, or [contact us](\(Links.support.absoluteString)) if you think your business can purchase a site license."
-      ))
-        ?? AttributedString(
-          "Every price point here is honestly cheaper than the cost of upgrading your storage.")
+      "Every price point here is honestly cheaper than the cost of upgrading your storage. Please support small businesses by picking what fits within your auto-approve expense budget."
     }
   }
 
@@ -150,25 +144,34 @@ struct SupportView: View {
           repeating: GridItem(.flexible(), spacing: 10), count: audience == .business ? 5 : 2),
         spacing: 10
       ) {
-        ForEach(list) { item in
-          Button {
-            if let product = item.product { Task { _ = await store.purchase(product) } }
-          } label: {
-            VStack(spacing: 2) {
-              Text(item.price).font(.title3.weight(.semibold))
-              if !item.tagline.isEmpty {
-                Text(item.tagline).font(.caption).multilineTextAlignment(.center)
-                  .fixedSize(horizontal: false, vertical: true)
-              }
-            }
-            .frame(maxWidth: .infinity, minHeight: audience == .business ? 36 : 50)
-          }
-          .controlSize(.large)
-          .disabled(store.purchasing != nil)
-          .accessibilityLabel(item.tagline.isEmpty ? item.price : "\(item.price): \(item.tagline)")
+        ForEach(audience == .business ? list.filter { $0.tagline.isEmpty } : list) { item in
+          priceButton(item)
+        }
+      }
+      if audience == .business {
+        ForEach(list.filter { !$0.tagline.isEmpty }) { item in
+          priceButton(item)
         }
       }
     }
+  }
+
+  private func priceButton(_ item: Price) -> some View {
+    Button {
+      if let product = item.product { Task { _ = await store.purchase(product) } }
+    } label: {
+      VStack(spacing: 2) {
+        Text(item.price).font(.title3.weight(.semibold))
+        if !item.tagline.isEmpty {
+          Text(item.tagline).font(.caption).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .frame(maxWidth: .infinity, minHeight: audience == .business ? 36 : 50)
+    }
+    .controlSize(.large)
+    .disabled(store.purchasing != nil)
+    .accessibilityLabel(item.tagline.isEmpty ? item.price : "\(item.price): \(item.tagline)")
   }
 
   private var thanks: some View {

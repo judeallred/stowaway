@@ -271,6 +271,21 @@
       "productID": "com.brooklynspaceport.stowaway.business.10",
       "referenceName": "Business 10",
       "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "5000.0",
+      "familyShareable": false,
+      "internalID": "20011",
+      "localizations": [
+        {
+          "description": "Unlimited stowing, for use at work.",
+          "displayName": "Diamond Hands",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.business.11",
+      "referenceName": "Business 11",
+      "type": "NonConsumable"
     }
   ],
   "settings": {

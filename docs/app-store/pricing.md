@@ -12,7 +12,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 | Group | Product IDs | Family Sharing | Message |
 |---|---|---|---|
 | Personal, pay what you want | `com.brooklynspaceport.stowaway.personal.1` … `.8` | **On** | "Share the love… your purchase means everything to us." |
-| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.10` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
+| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.11` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
 
 - **Prices aren't in the code.** Product IDs name a slot, not a price, and the app shows whatever
   you set in App Store Connect, sorted low to high. You can reprice without an app update.
@@ -58,12 +58,10 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
   sandwich", "A really nice sandwich", "Sandwiches for the whole team", "Dinner for one", "Dinner
   for the whole team", "Still cheaper than upgrading your storage", "We will send you a
   hand-written thank you card", "We'll send you a birthday card every year".
-- **Business:** ten prices from $50 to $500 in $50 steps, under "I can expense:". The sheet asks
-  people to pick what fits their auto-approve expense budget, and to contact you about a site
-  license (linked to the support page; outside the US, App Review may object to steering buyers
-  to a purchase outside the App Store, so be ready to drop that sentence).
+- **Business:** ten prices from $50 to $500 in $50 steps, under "I can expense:", asking people to
+  pick what fits their auto-approve expense budget; then a full-width $5,000 "Diamond hands".
 - Apple's price points include round prices such as $8.00 and $50.00, but *verify* each in App
-  Store Connect, especially $1,024 (prices above the default range must be requested).
+  Store Connect, especially $1,024 and $5,000 (prices above the default range must be requested).
 - **Sanity check:** a 1 TB external SSD costs about $80–120, and Apple typically charges around $200
   to go from 512 GB to 1 TB at purchase. A personal price well below the drive and a business price below
   the internal upgrade is an easy story.

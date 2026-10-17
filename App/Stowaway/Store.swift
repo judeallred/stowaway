@@ -18,10 +18,11 @@ final class Store {
 
   static let productIDs: [Audience: [String]] = [
     .personal: (1...8).map { "com.brooklynspaceport.stowaway.personal.\($0)" },
-    .business: (1...10).map { "com.brooklynspaceport.stowaway.business.\($0)" },
+    .business: (1...11).map { "com.brooklynspaceport.stowaway.business.\($0)" },
   ]
 
-  /// What each personal price says in the app (business prices show just the amount). App Store Connect's display names are capped at 30
+  /// What each personal price says in the app. Business prices show just the amount, except
+  /// the top one. App Store Connect's display names are capped at 30
   /// characters, so these live here; the store's short names appear on receipts and invoices.
   static let taglines: [String: String] = [
     "com.brooklynspaceport.stowaway.personal.1": "A sandwich",
@@ -32,6 +33,7 @@ final class Store {
     "com.brooklynspaceport.stowaway.personal.6": "Still cheaper than upgrading your storage",
     "com.brooklynspaceport.stowaway.personal.7": "We will send you a hand-written thank you card",
     "com.brooklynspaceport.stowaway.personal.8": "We'll send you a birthday card every year",
+    "com.brooklynspaceport.stowaway.business.11": "Diamond hands",
   ]
 
   private(set) var products: [Audience: [Product]] = [:]
@@ -55,7 +57,7 @@ final class Store {
         ("$512", "We will send you a hand-written thank you card"),
         ("$1,024", "We'll send you a birthday card every year"),
       ],
-      .business: (1...10).map { ("$\($0 * 50)", "") },
+      .business: (1...10).map { ("$\($0 * 50)", "") } + [("$5,000", "Diamond hands")],
     ]
   #endif
 
