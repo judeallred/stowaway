@@ -244,7 +244,7 @@ private struct SummaryHeader: View {
         )
       Spacer()
       if let left = model.freeAllowanceLeft {
-        VStack(alignment: .trailing, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
           StorageBar(
             segments: [(Store.freeOffloadLimit - left, .accentColor)],
             total: Store.freeOffloadLimit
@@ -252,13 +252,12 @@ private struct SummaryHeader: View {
           .frame(width: 160)
           .padding(.top, 8)
           .accessibilityLabel("Free stowage used")
-          HStack(spacing: 6) {
-            Text("\(Format.bytes(left)) of free stowage left").font(.caption).foregroundStyle(
-              .secondary)
-            Button("Go Unlimited") { model.showingSupport = true }
-              .buttonStyle(.link).font(.caption)
-          }
+          Text("\(Format.bytes(left)) of free stowage left").font(.caption).foregroundStyle(
+            .secondary
+          )
           .fixedSize()
+          Button("Go Unlimited") { model.showingSupport = true }
+            .buttonStyle(.link).font(.caption)
         }
       }
       VStack(alignment: .leading, spacing: 6) {
