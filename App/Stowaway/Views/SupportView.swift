@@ -56,15 +56,18 @@ struct SupportView: View {
             }
         }
         Spacer()
-        Link("Terms of Use", destination: Links.termsOfUse)
-        Link("Privacy Policy", destination: Links.privacyPolicy)
         Button(store.hasPurchased ? "Done" : "Not Now") { dismiss() }.keyboardShortcut(
           .cancelAction)
       }
       .font(.callout)
+      HStack(spacing: 14) {
+        Link("Terms of Use", destination: Links.termsOfUse)
+        Link("Privacy Policy", destination: Links.privacyPolicy)
+      }
+      .font(.caption)
     }
     .padding(24)
-    .frame(width: 520)
+    .frame(width: 560)
     .task { if store.products.isEmpty { await store.loadProducts() } }
     .sheet(isPresented: $showingLetter) { BossLetterView(model: model) }
     .sheet(isPresented: $showingInvoice) { InvoiceView(model: model) }
@@ -79,10 +82,12 @@ struct SupportView: View {
       Text(
         "Are we helping you avoid an expensive storage upgrade? Please share the love. We're Brooklyn Spaceport, a 3-person team making creative products, and your purchase would mean everything to us."
       )
+      .fixedSize(horizontal: false, vertical: true)
       Text(
-        "Stowing up to \(Format.bytes(Store.freeOffloadLimit)) is free. Any purchase, at any price, makes it unlimited, for good."
+        "Stowing up to \(Format.bytes(Store.freeOffloadLimit)) is free. Any purchase, at a price you choose, makes it unlimited, for good."
       )
       .foregroundStyle(.secondary)
+      TrialOffer(store: store)
     }
   }
 
@@ -90,7 +95,7 @@ struct SupportView: View {
     switch audience {
     case .personal: "Pay what you want. Shared with your family through Family Sharing."
     case .business:
-      "At work and able to expense it? Please choose a business price. Your purchase is what keeps Stowaway free for everyone using it personally."
+      "At work and able to expense it? Please choose a business price. Business purchases keep prices low for everyone using it personally."
     }
   }
 
@@ -144,8 +149,8 @@ struct SupportView: View {
       }
       Text(
         store.ownedAudience == .business
-          ? "Your business purchase keeps Stowaway free for people using it personally. Stowing is unlimited."
-          : "Your purchase means everything to our 3-person team. Stowing is unlimited."
+          ? "Your business purchase keeps prices low for people using it personally. Stowing is unlimited, for good."
+          : "Your purchase means everything to our 3-person team. Stowing is unlimited, for good."
       )
       if store.latestPurchase != nil {
         Button("Paid Invoice…") { showingInvoice = true }
@@ -160,5 +165,33 @@ struct SupportView: View {
     #else
       nil
     #endif
+  }
+}
+
+/// The free trial: an offer to start it, with what happens afterwards (App Review 3.1.1 asks for
+/// the length, what stops, and what it costs to continue, before it starts), or the days left.
+struct TrialOffer: View {
+  let store: Store
+
+  var body: some View {
+    if store.canStartTrial {
+      VStack(alignment: .leading, spacing: 6) {
+        Button("Start 30-Day Free Trial") { Task { await store.startTrial() } }
+          .buttonStyle(.borderedProminent)
+          .disabled(store.purchasing != nil)
+        Text(
+          "Stow without a limit, free for \(Store.trialDays) days. When it ends, stowing is free up to \(Format.bytes(Store.freeOffloadLimit)); buy Stowaway at a price you choose to keep it unlimited. Folders already stowed keep working, bringing them back is always free, and nothing is charged automatically."
+        )
+        .font(.caption).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+    } else if let days = store.trialDaysLeft {
+      Label(
+        "Free trial: \(days) day\(days == 1 ? "" : "s") left",
+        systemImage: "clock")
+    } else if store.trialStarted != nil && !store.hasPurchased {
+      Label("Your free trial has ended.", systemImage: "clock")
+        .foregroundStyle(.secondary)
+    }
   }
 }

@@ -22,7 +22,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 ## Promotional text (170)
 
 > Your Mac fills up with node_modules, build files and caches. Stowaway finds them, deletes them
-> on request, or keeps them on an external drive. Free up to 100 GB.
+> on request, or keeps them on an external drive. Try it free for 30 days.
 
 ## Description (4,000)
 
@@ -56,7 +56,9 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 > • No accounts, no tracking, no data collected.
 >
 > FREE, WITH UNLIMITED STOWING WHEN YOU'RE READY
-> Finding and deleting folders is free, and so is stowing up to 100 GB. Are we helping you
+> Finding and deleting folders is free, and so is stowing up to 25 GB. Try unlimited stowing
+> free for 30 days; after that, any purchase, at a price you choose, keeps it unlimited. Are we
+> helping you
 > avoid an expensive storage upgrade? Any purchase, at a price you choose, makes stowing
 > unlimited. Using it at work? Please choose a business price: business purchases
 > keep Stowaway free for everyone using it personally.
@@ -79,12 +81,14 @@ browser page the user submits themselves.
 
 ## In-app purchases
 
-Create each as **Non-Consumable**. Prices are yours to choose (see `pricing.md`); every one
+Create each as **Non-Consumable**. The trial is free (price $0) and must keep the
+"30-day Trial" name. Prices for the rest are yours to choose (see `pricing.md`); every one
 unlocks the same thing, unlimited stowing. Each needs a review screenshot of the upgrade
 sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the app.
 
 | Product ID | Reference name | Display name (30) | Description (45) | Family Sharing |
 |---|---|---|---|---|
+| …`trial30` | 30-day Trial | 30-day Trial | Unlimited stowing for 30 days, free. | Off |
 | …`personal.1` | Personal 1 | Thanks | Unlimited stowing. Pay what you want. | On |
 | …`personal.2` | Personal 2 | Big Thanks | Unlimited stowing. Pay what you want. | On |
 | …`personal.3` | Personal 3 | Huge Thanks | Unlimited stowing. Pay what you want. | On |

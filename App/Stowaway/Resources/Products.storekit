@@ -3,12 +3,27 @@
   "nonRenewingSubscriptions": [],
   "products": [
     {
-      "displayPrice": "4.99",
+      "displayPrice": "0.0",
+      "familyShareable": false,
+      "internalID": "10000",
+      "localizations": [
+        {
+          "description": "Unlimited stowing for 30 days, free. Afterwards, stowing is free up to 25 GB.",
+          "displayName": "30-day Trial",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.trial30",
+      "referenceName": "30-day Trial",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "5.0",
       "familyShareable": true,
       "internalID": "10001",
       "localizations": [
         {
-          "description": "Unlimited stowing. Pay what you want.",
+          "description": "Unlimited stowing, for you and your family. Pay what you want.",
           "displayName": "Thanks",
           "locale": "en_US"
         }
@@ -18,12 +33,12 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "9.99",
+      "displayPrice": "10.0",
       "familyShareable": true,
       "internalID": "10002",
       "localizations": [
         {
-          "description": "Unlimited stowing. Pay what you want.",
+          "description": "Unlimited stowing, for you and your family. Pay what you want.",
           "displayName": "Big Thanks",
           "locale": "en_US"
         }
@@ -33,12 +48,12 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "19.99",
+      "displayPrice": "20.0",
       "familyShareable": true,
       "internalID": "10003",
       "localizations": [
         {
-          "description": "Unlimited stowing. Pay what you want.",
+          "description": "Unlimited stowing, for you and your family. Pay what you want.",
           "displayName": "Huge Thanks",
           "locale": "en_US"
         }
@@ -48,12 +63,12 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "29.99",
+      "displayPrice": "50.0",
       "familyShareable": false,
       "internalID": "10101",
       "localizations": [
         {
-          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for use at work. Pay what you want.",
           "displayName": "Business",
           "locale": "en_US"
         }
@@ -63,12 +78,12 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "59.99",
+      "displayPrice": "100.0",
       "familyShareable": false,
       "internalID": "10102",
       "localizations": [
         {
-          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for use at work. Pay what you want.",
           "displayName": "Business Plus",
           "locale": "en_US"
         }
@@ -78,12 +93,12 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "119.99",
+      "displayPrice": "200.0",
       "familyShareable": false,
       "internalID": "10103",
       "localizations": [
         {
-          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for use at work. Pay what you want.",
           "displayName": "Business Pro",
           "locale": "en_US"
         }
@@ -93,12 +108,12 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "249.99",
+      "displayPrice": "500.0",
       "familyShareable": false,
       "internalID": "10104",
       "localizations": [
         {
-          "description": "Unlimited stowing, for work. Keeps Stowaway free for personal users.",
+          "description": "Unlimited stowing, for use at work. Pay what you want.",
           "displayName": "Business Patron",
           "locale": "en_US"
         }

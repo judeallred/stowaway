@@ -77,7 +77,7 @@ struct BossLetterView: View {
       with no subscription, bought through the Mac App Store.
 
       Stowaway is made by Brooklyn Spaceport, a small independent team. Business purchases \
-      also keep it free for people using it personally. More at \(Links.website.absoluteString)
+      also keep prices low for people using it personally. More at \(Links.website.absoluteString)
 
       Thanks,
       """
@@ -256,7 +256,7 @@ struct InvoicePage: View {
       }
       Spacer()
       Text(
-        "Sold through the Mac App Store, which collects payment and any applicable tax. Apple's receipt, in your Apple Account's purchase history, is the official record of payment. Business purchases keep Stowaway free for people using it personally. Thank you."
+        "Sold through the Mac App Store, which collects payment and any applicable tax. Apple's receipt, in your Apple Account's purchase history, is the official record of payment. Business purchases keep prices low for people using it personally. Thank you."
       )
       .font(.system(size: 9)).foregroundStyle(.gray)
     }

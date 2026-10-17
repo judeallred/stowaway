@@ -152,6 +152,6 @@ valid. Deleting an offloaded folder (`Engine.discard`) removes the link and its 
 
 ## Purchases
 
-`Store` uses StoreKit 2. Seven non-consumable products (three personal, four business) all unlock
-the same thing: no offload limit. The app passes a limit to `Engine.adopt` (100 GB unless
-something's been bought) when adopting. Only verified, unrevoked transactions count.
+`Store` uses StoreKit 2. A free 30-day trial and seven paid non-consumables (three personal,
+four business). The app passes a limit to `Engine.adopt`: none during the trial or after any
+purchase, 25 GB otherwise. Only verified, unrevoked transactions count.

@@ -55,8 +55,8 @@
           CGSize(width: 560, height: 460)
         ),
         (
-          "4-support", "Free up to 100 GB. Pay what you want.",
-          AnyView(SupportView(model: model, store: model.store)), CGSize(width: 520, height: 420)
+          "4-support", "Try it free. Then pay what you want.",
+          AnyView(SupportView(model: model, store: model.store)), CGSize(width: 560, height: 520)
         ),
       ]
       for (name, caption, view, panel) in shots {
@@ -104,7 +104,7 @@
           height: 460, in: folder)
       }
       render(
-        SupportView(model: model, store: model.store), "support", width: 520, height: 420,
+        SupportView(model: model, store: model.store), "support", width: 560, height: 540,
         in: folder)
       render(SettingsView(model: model), "settings", width: 520, height: 380, in: folder)
       render(BossLetterView(model: model), "expense-letter", width: 560, height: 520, in: folder)

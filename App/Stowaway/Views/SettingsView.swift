@@ -92,9 +92,8 @@ struct OffloadSettings: View {
             if let total = model.driveTotalBytes, total > 0 {
               VStack(alignment: .trailing, spacing: 3) {
                 Text("\(Format.bytes(free)) of \(Format.bytes(total))")
-                ProgressView(value: Double(total - free), total: Double(total))
+                DriveSpaceBar(model: model, free: free, total: total)
                   .frame(width: 140)
-                  .accessibilityLabel("Drive space used")
               }
             } else {
               Text(Format.bytes(free))
@@ -156,11 +155,14 @@ struct OffloadSettings: View {
         .font(.caption).foregroundStyle(.secondary)
       }
       Section("Plan") {
-        if let left = model.freeAllowanceLeft {
-          LabeledContent("Free stowage left", value: Format.bytes(left))
-          Button("Make It Unlimited…") { model.showingSupport = true }
-        } else {
+        if model.store.hasPurchased {
           Label("Unlimited stowing. Thank you!", systemImage: "heart.fill")
+        } else {
+          if let left = model.freeAllowanceLeft {
+            LabeledContent("Free stowage left", value: Format.bytes(left))
+          }
+          TrialOffer(store: model.store)
+          Button("Make It Unlimited…") { model.showingSupport = true }
         }
       }
     }

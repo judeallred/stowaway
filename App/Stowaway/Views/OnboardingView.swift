@@ -150,6 +150,7 @@ struct OnboardingView: View {
             "Folders left unchanged for 5 minutes move there automatically, up to \(Format.bytes(Store.freeOffloadLimit)) free. You can change this in Settings."
           )
           .font(.callout).foregroundStyle(.secondary)
+          TrialOffer(store: model.store)
         } else {
           HStack {
             ForEach(Array(model.externalVolumes.prefix(3)), id: \.self) { volume in

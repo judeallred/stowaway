@@ -633,12 +633,13 @@ public final class Engine: @unchecked Sendable {
   }
 }
 
-/// A new offload would take the drive past the free tier's allowance.
+/// A new offload would go past the limit the app set (0 when stowing isn't allowed).
 public struct OffloadLimitReached: LocalizedError, Equatable {
   public let limit: Int64
   public let used: Int64
   public let needed: Int64
   public var errorDescription: String? {
+    if limit == 0 { return "Start the free trial or buy Stowaway to stow folders." }
     let format = ByteCountFormatter()
     return "Stowing this would take you past the free \(format.string(fromByteCount: limit))."
   }

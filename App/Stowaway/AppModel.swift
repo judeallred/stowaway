@@ -97,13 +97,13 @@ final class AppModel {
   /// Offload folders automatically once they've been unchanged this many minutes (0 = only by
   /// hand, `immediately` = as soon as a scan finds them). Five minutes unless the user changes
   /// it: folders move to the drive soon after work in them stops.
-  var autoOffloadMinutes: Int {
-    get {
-      UserDefaults.standard.object(forKey: "autoOffloadMinutes") == nil
-        ? 5 : UserDefaults.standard.integer(forKey: "autoOffloadMinutes")
-    }
-    set {
-      UserDefaults.standard.set(newValue, forKey: "autoOffloadMinutes")
+  /// Stored (not read through from UserDefaults) so SwiftUI sees changes.
+  var autoOffloadMinutes: Int =
+    UserDefaults.standard.object(forKey: "autoOffloadMinutes") == nil
+    ? 5 : UserDefaults.standard.integer(forKey: "autoOffloadMinutes")
+  {
+    didSet {
+      UserDefaults.standard.set(autoOffloadMinutes, forKey: "autoOffloadMinutes")
       Task { await autoOffload() }
     }
   }
@@ -157,11 +157,13 @@ final class AppModel {
 
   func refreshSettings() {
     roots = engine.rootPaths
-    drivePath = engine.drivePath
     driveName = engine.driveName
     loginItemEnabled = SMAppService.mainApp.status == .enabled
     let engine = engine
+    // Everything that touches the drive runs off the main thread: a drive busy with a big copy
+    // can take seconds to answer.
     Task.detached {
+      let drivePath = engine.drivePath
       let store = engine.enterGrants()
       let values = store.flatMap {
         try? $0.resourceValues(forKeys: [
@@ -174,6 +176,7 @@ final class AppModel {
       let format = values?.volumeLocalizedFormatDescription
       let bytes = engine.offloadedBytes
       await MainActor.run {
+        self.drivePath = drivePath
         self.driveConnected = store != nil
         self.driveFreeBytes = free
         self.driveTotalBytes = total
@@ -234,15 +237,28 @@ final class AppModel {
         prompt ?? "Choose a folder that holds your projects, such as your code folder.",
         at: directory)
     else { return false }
-    do {
-      try engine.grant(url, as: .root)
-    } catch {
-      message = "Couldn't remember that folder: \(error.localizedDescription)"
-      return false
-    }
-    refreshSettings()
-    Task { await scan() }
+    grant(url, as: .root, failure: "Couldn't remember that folder")
     return true
+  }
+
+  /// Saves a grant off the main thread (making a bookmark can stall while a drive is busy), then
+  /// refreshes and rescans. `then` runs once the grant is saved.
+  private func grant(
+    _ url: URL, as role: Engine.GrantRole, failure: String? = nil,
+    then: (@MainActor () -> Void)? = nil
+  ) {
+    let engine = engine
+    Task {
+      do {
+        try await Task.detached { try engine.grant(url, as: role) }.value
+        then?()
+      } catch {
+        message =
+          failure.map { "\($0): \(error.localizedDescription)" } ?? error.localizedDescription
+      }
+      refreshSettings()
+      await scan()
+    }
   }
 
   /// Folders dropped on the app's icon: a drive becomes the offload location if none is set yet;
@@ -250,18 +266,9 @@ final class AppModel {
   func open(_ urls: [URL]) {
     for url in urls {
       let isVolume = (try? url.resourceValues(forKeys: [.isVolumeKey]).isVolume) ?? false
-      do {
-        if isVolume, url.path != "/", drivePath == nil {
-          try engine.grant(url, as: .drive)
-        } else {
-          try engine.grant(url, as: .root)
-        }
-      } catch {
-        message = "Couldn't add \(url.lastPathComponent): \(error.localizedDescription)"
-      }
+      let role: Engine.GrantRole = isVolume && url.path != "/" && driveName == nil ? .drive : .root
+      grant(url, as: role, failure: "Couldn't add \(url.lastPathComponent)")
     }
-    refreshSettings()
-    Task { await scan() }
   }
 
   /// Creates the sample workspace in a folder the user picks and starts looking in it.
@@ -312,17 +319,12 @@ final class AppModel {
   }
 
   private func grantDrive(_ url: URL) {
-    do {
-      try engine.grant(url, as: .drive)
+    grant(url, as: .drive) { [weak self] in
       // A new location: test its speed, so Settings can say what it's good for.
-      driveSpeed = nil
+      self?.driveSpeed = nil
       UserDefaults.standard.removeObject(forKey: "driveSpeed")
-      Task { await testDriveSpeed() }
-    } catch {
-      message = error.localizedDescription
+      Task { await self?.testDriveSpeed() }
     }
-    refreshSettings()
-    Task { await scan() }
   }
 
   private func choose(_ prompt: String, at directory: URL?) -> URL? {
@@ -413,13 +415,7 @@ final class AppModel {
         "macOS gave Stowaway \(Format.path(url.path)) rather than your home folder. Allow each cache instead."
       return
     }
-    do {
-      try engine.grant(url, as: .root)
-    } catch {
-      message = "Couldn't remember your home folder: \(error.localizedDescription)"
-    }
-    refreshSettings()
-    Task { await scan() }
+    grant(url, as: .root, failure: "Couldn't remember your home folder")
   }
 
   /// Uses a mounted volume as the offload location (the panel opens on it; the user confirms).
@@ -776,6 +772,7 @@ final class AppModel {
   var reclaimableBytes: Int64 {
     rows.filter { $0.place == .mac }.compactMap(\.localBytes).reduce(0, +)
   }
+  /// Free stowage left, or nil when stowing is unlimited.
   var freeAllowanceLeft: Int64? {
     store.offloadLimit.map { max(0, $0 - offloadedBytes) }
   }

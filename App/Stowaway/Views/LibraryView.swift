@@ -243,7 +243,15 @@ private struct SummaryHeader: View {
           "On this Mac, about to be stowed: queued now, or waiting to be left unchanged long enough to stow automatically."
         )
       Spacer()
-      if let left = model.freeAllowanceLeft {
+      if let days = model.store.trialDaysLeft {
+        VStack(alignment: .leading, spacing: 6) {
+          Label("Free trial: \(days) day\(days == 1 ? "" : "s") left", systemImage: "clock")
+            .font(.callout)
+            .padding(.top, 6)
+          Button("Go Unlimited") { model.showingSupport = true }
+            .buttonStyle(.link).font(.caption)
+        }
+      } else if let left = model.freeAllowanceLeft {
         VStack(alignment: .leading, spacing: 6) {
           StorageBar(
             segments: [(Store.freeOffloadLimit - left, .accentColor)],
@@ -256,8 +264,10 @@ private struct SummaryHeader: View {
             .secondary
           )
           .fixedSize()
-          Button("Go Unlimited") { model.showingSupport = true }
-            .buttonStyle(.link).font(.caption)
+          Button(model.store.canStartTrial ? "Try Unlimited Free…" : "Go Unlimited") {
+            model.showingSupport = true
+          }
+          .buttonStyle(.link).font(.caption)
         }
       }
       VStack(alignment: .leading, spacing: 6) {
@@ -320,19 +330,7 @@ private struct DriveStats: View {
       let total = model.driveTotalBytes, total > 0
     {
       VStack(alignment: .trailing, spacing: 3) {
-        let stowed = min(model.offloadedBytes, total - free)
-        StorageBar(
-          segments: [(stowed, .accentColor), (total - free - stowed, Color.gray.opacity(0.55))],
-          total: total
-        )
-        .help(
-          "\(Format.bytes(stowed)) stowed by Stowaway, \(Format.bytes(total - free - stowed)) other files, \(Format.bytes(free)) free"
-        )
-        .accessibilityElement()
-        .accessibilityLabel("Drive space")
-        .accessibilityValue(
-          "\(Format.bytes(stowed)) stowed, \(Format.bytes(total - free - stowed)) other, \(Format.bytes(free)) free"
-        )
+        DriveSpaceBar(model: model, free: free, total: total)
         Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
           .font(.caption).foregroundStyle(.secondary).monospacedDigit()
       }
@@ -344,9 +342,32 @@ private struct DriveStats: View {
   }
 }
 
+/// The drive's space: stowed by Stowaway (accent), other files (gray), free (the track).
+struct DriveSpaceBar: View {
+  let model: AppModel
+  let free: Int64
+  let total: Int64
+
+  var body: some View {
+    let used = max(0, total - free)
+    let stowed = min(model.offloadedBytes, used)
+    StorageBar(
+      segments: [(stowed, .accentColor), (used - stowed, Color.gray.opacity(0.55))], total: total
+    )
+    .help(
+      "\(Format.bytes(stowed)) stowed by Stowaway, \(Format.bytes(used - stowed)) other files, \(Format.bytes(free)) free"
+    )
+    .accessibilityElement()
+    .accessibilityLabel("Drive space")
+    .accessibilityValue(
+      "\(Format.bytes(stowed)) stowed, \(Format.bytes(used - stowed)) other, \(Format.bytes(free)) free"
+    )
+  }
+}
+
 /// A capacity bar with several colored parts, like the one in Disk Utility. (ProgressView
 /// shows only one value.)
-private struct StorageBar: View {
+struct StorageBar: View {
   let segments: [(bytes: Int64, color: Color)]
   let total: Int64
 
