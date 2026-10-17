@@ -147,11 +147,17 @@ struct LibraryView: View {
       }
       .disabled(!model.driveConnected)
     }
-    Button("Show in Finder") {
-      NSWorkspace.shared.activateFileViewerSelecting(rows.map { URL(fileURLWithPath: $0.path) })
+    if !rows.isEmpty {
+      Button("Show in Finder") {
+        NSWorkspace.shared.activateFileViewerSelecting(rows.map { URL(fileURLWithPath: $0.path) })
+      }
+      Divider()
+      Button("Delete…", role: .destructive) { confirmingDelete = rows }
+      Divider()
     }
-    Divider()
-    Button("Delete…", role: .destructive) { confirmingDelete = rows }
+    Button("Select All") { selection = Set(visible.map(\.id)) }
+    Button("Select None") { selection = [] }
+      .disabled(selection.isEmpty)
   }
 
   /// Acts on the selection, or on every folder shown when nothing is selected.
@@ -176,6 +182,11 @@ struct LibraryView: View {
       let rows = all ? visible : selected
       let onMac = rows.filter { $0.place == .mac }
       let offloaded = rows.filter { $0.place != .mac }
+      Button("Select All") { selection = Set(visible.map(\.id)) }
+        .disabled(visible.isEmpty || visible.allSatisfy { selection.contains($0.id) })
+      Button("Select None") { selection = [] }
+        .disabled(selection.isEmpty)
+      Divider().frame(height: 16)
       Button(all ? "Delete All…" : "Delete…", role: .destructive) { confirmingDelete = rows }
         .disabled(rows.isEmpty)
         .help(all ? "Delete every folder shown" : "Delete the selected folders")
@@ -230,17 +241,20 @@ private struct SummaryHeader: View {
       Spacer()
       if let left = model.freeAllowanceLeft {
         VStack(alignment: .trailing, spacing: 6) {
-          ProgressView(
-            value: Double(Store.freeOffloadLimit - left), total: Double(Store.freeOffloadLimit)
+          StorageBar(
+            segments: [(Store.freeOffloadLimit - left, .accentColor)],
+            total: Store.freeOffloadLimit
           )
           .frame(width: 160)
           .padding(.top, 8)
+          .accessibilityLabel("Free stowage used")
           HStack(spacing: 6) {
             Text("\(Format.bytes(left)) of free stowage left").font(.caption).foregroundStyle(
               .secondary)
             Button("Go Unlimited") { model.showingSupport = true }
               .buttonStyle(.link).font(.caption)
           }
+          .fixedSize()
         }
       }
       VStack(alignment: .leading, spacing: 6) {
@@ -303,8 +317,19 @@ private struct DriveStats: View {
       let total = model.driveTotalBytes, total > 0
     {
       VStack(alignment: .trailing, spacing: 3) {
-        ProgressView(value: Double(total - free), total: Double(total))
-          .accessibilityLabel("Drive space used")
+        let stowed = min(model.offloadedBytes, total - free)
+        StorageBar(
+          segments: [(stowed, .accentColor), (total - free - stowed, Color.gray.opacity(0.55))],
+          total: total
+        )
+        .help(
+          "\(Format.bytes(stowed)) stowed by Stowaway, \(Format.bytes(total - free - stowed)) other files, \(Format.bytes(free)) free"
+        )
+        .accessibilityElement()
+        .accessibilityLabel("Drive space")
+        .accessibilityValue(
+          "\(Format.bytes(stowed)) stowed, \(Format.bytes(total - free - stowed)) other, \(Format.bytes(free)) free"
+        )
         Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
           .font(.caption).foregroundStyle(.secondary).monospacedDigit()
       }
@@ -313,6 +338,30 @@ private struct DriveStats: View {
         .font(.caption).foregroundStyle(.orange)
         .fixedSize(horizontal: false, vertical: true)
     }
+  }
+}
+
+/// A capacity bar with several colored parts, like the one in Disk Utility. (ProgressView
+/// shows only one value.)
+private struct StorageBar: View {
+  let segments: [(bytes: Int64, color: Color)]
+  let total: Int64
+
+  var body: some View {
+    GeometryReader { geometry in
+      HStack(spacing: 0) {
+        ForEach(segments.indices, id: \.self) { i in
+          let fraction = total > 0 ? Double(max(0, segments[i].bytes)) / Double(total) : 0
+          // Anything there gets at least a sliver, so 8 GB on a 2 TB drive still shows.
+          segments[i].color.frame(
+            width: segments[i].bytes > 0 ? max(3, geometry.size.width * min(1, fraction)) : 0)
+        }
+        Spacer(minLength: 0)
+      }
+      .background(Color.primary.opacity(0.1))
+      .clipShape(Capsule())
+    }
+    .frame(height: 6)
   }
 }
 
