@@ -257,6 +257,10 @@ private struct SummaryHeader: View {
           "On this Mac, about to be stowed: queued now, or waiting to be left unchanged long enough to stow automatically."
         )
       Spacer()
+      if let plan = model.store.planName {
+        PlanBadge(plan: plan) { model.showingSupport = true }
+          .padding(.top, 4)
+      }
       if let left = model.freeAllowanceLeft {
         VStack(alignment: .leading, spacing: 6) {
           StorageBar(
@@ -304,6 +308,35 @@ private struct SummaryHeader: View {
       Text(value).font(.title2.weight(.semibold)).monospacedDigit()
       Text(label).font(.caption).foregroundStyle(.secondary)
     }
+  }
+}
+
+/// After a purchase: the logo with a heart, and the plan. Opens the thank-you sheet.
+private struct PlanBadge: View {
+  let plan: String
+  let open: () -> Void
+
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: 10) {
+        Image(nsImage: Logo.image(size: 30))
+          .overlay(alignment: .bottomTrailing) {
+            Image(systemName: "heart.fill")
+              .font(.system(size: 11))
+              .foregroundStyle(.red)
+              .shadow(color: .black.opacity(0.3), radius: 1)
+              .offset(x: 4, y: 3)
+          }
+        VStack(alignment: .leading, spacing: 1) {
+          Text(plan).font(.callout.weight(.semibold))
+          Text("Unlimited stowage").font(.caption).foregroundStyle(.secondary)
+        }
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Thank you! Click to see your purchase, or support us again.")
+    .accessibilityLabel("Plan: \(plan). Unlimited stowage.")
   }
 }
 

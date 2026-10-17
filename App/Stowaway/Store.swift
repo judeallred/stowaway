@@ -47,6 +47,9 @@ final class Store {
   private(set) var latestPurchase: PurchaseRecord?
   private var updates: Task<Void, Never>?
   #if DEBUG
+    /// Snapshots only: pretend these were bought.
+    func setDemoOwned(_ ids: Set<String>) { owned = ids }
+
     /// Snapshots only: price labels to show when the App Store isn't reachable.
     var demoPrices: [Audience: [(price: String, name: String)]] = [
       .personal: [
@@ -71,6 +74,13 @@ final class Store {
   }
 
   var hasPurchased: Bool { !owned.isEmpty }
+
+  /// The name of the highest tier the user owns, such as "A Really Nice Sandwich".
+  var planName: String? {
+    guard hasPurchased else { return nil }
+    let ownedProducts = products.values.joined().filter { owned.contains($0.id) }
+    return ownedProducts.max { $0.price < $1.price }?.displayName ?? "Supporter"
+  }
 
   /// The App Store's name for a product, such as "Business Plus".
   func displayName(of productID: String) -> String? {

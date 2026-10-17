@@ -112,6 +112,13 @@
       render(
         SupportView(model: model, store: model.store, audience: .business), "support-business",
         width: 560, height: 720, in: folder)
+      let paid = AppModel()
+      paid.loadDemo()
+      paid.store.setDemoOwned(["com.brooklynspaceport.stowaway.personal.2"])
+      render(LibraryView(model: paid), "library-purchased", width: 1100, height: 300, in: folder)
+      render(
+        SupportView(model: paid, store: paid.store), "support-thanks", width: 560, height: 420,
+        in: folder)
       render(BossLetterView(model: model), "expense-letter", width: 560, height: 520, in: folder)
       render(
         InvoiceView(model: model), "expense-invoice-preview", width: 560, height: 760, in: folder)

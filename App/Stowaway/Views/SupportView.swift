@@ -18,13 +18,19 @@ struct SupportView: View {
   @State private var showingLetter = false
   @State private var showingInvoice = false
   @State private var redeeming = false
+  /// After a purchase, whether the prices show again (to buy another tier).
+  @State private var supportingAgain = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      if store.hasPurchased {
+      if store.hasPurchased && !supportingAgain {
         thanks
       } else {
-        pitch
+        if store.hasPurchased {
+          Text("Support us again").font(.title2.weight(.semibold))
+        } else {
+          pitch
+        }
         Picker("", selection: $audience) {
           Text("For Me").tag(Store.Audience.personal)
           Text("For Work").tag(Store.Audience.business)
@@ -120,7 +126,7 @@ struct SupportView: View {
     if products.isEmpty, let demo = snapshotPrices {
       return demo.map { Price(id: $0.price, price: $0.price, tagline: $0.name, product: nil) }
     }
-    return products.map {
+    return products.filter { !store.owned.contains($0.id) }.map {
       Price(
         id: $0.id, price: $0.displayPrice, tagline: Store.taglines[$0.id] ?? "",
         product: $0)
@@ -188,8 +194,11 @@ struct SupportView: View {
       )
       .fixedSize(horizontal: false, vertical: true)
       Text("Your stowage is now unlimited, forever.").font(.headline)
-      if store.latestPurchase != nil {
-        Button("Paid Invoice…") { showingInvoice = true }
+      HStack {
+        if store.latestPurchase != nil {
+          Button("Paid Invoice…") { showingInvoice = true }
+        }
+        Button("Support Us Again…") { supportingAgain = true }
       }
     }
   }
