@@ -1,6 +1,8 @@
-/target
 .DS_Store
-/macos-app/build
-/macos-app/*.xcodeproj/xcuserdata
-/macos-app/*.xcodeproj/project.xcworkspace/xcuserdata
-/macos-app/.build
+.build/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+# Left over from the retired Rust engine.
+/target

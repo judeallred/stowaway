@@ -2,12 +2,7 @@
 # Rejects unformatted commits instead of reformatting them, so what's committed is what was reviewed.
 set -eu
 
-if ! cargo fmt --all --check >/dev/null 2>&1; then
-    echo "pre-commit: Rust code is not formatted. Run 'cargo fmt --all' and re-stage." >&2
-    exit 1
-fi
-
-staged_swift=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+staged_swift=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift' | grep -v '^research/' || true)
 if [ -n "$staged_swift" ]; then
     # shellcheck disable=SC2086
     if ! xcrun swift-format lint --strict $staged_swift; then

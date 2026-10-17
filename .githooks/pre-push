@@ -1,5 +1,4 @@
 #!/bin/sh
 set -eu
 
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --locked --lib --bins
+swift test --package-path StowawayCore

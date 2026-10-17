@@ -1,0 +1,118 @@
+import Foundation
+import XCTest
+
+@testable import StowawayCore
+
+final class DeepLinkTests: XCTestCase {
+  /// A small npm-style tree: a scoped package, a package with a nested node_modules, a hidden
+  /// lockfile and a .bin link.
+  private func project(_ s: Scratch) throws -> URL {
+    try s.file("code/app/package.json", #"{ "name": "app", "dependencies": { "a": "1" } }"#)
+    try s.file("code/app/node_modules/a/package.json", #"{ "name": "a", "version": "1.0.0" }"#)
+    try s.file("code/app/node_modules/a/index.js", "module.exports = require('b')")
+    try s.file(
+      "code/app/node_modules/a/node_modules/b/package.json", #"{ "name": "b", "version": "1.0.0" }"#
+    )
+    try s.file("code/app/node_modules/b/package.json", #"{ "name": "b", "version": "2.0.0" }"#)
+    try s.file("code/app/node_modules/@scope/c/package.json", #"{ "name": "@scope/c" }"#)
+    try s.file("code/app/node_modules/@scope/c/dist/c.js", "c")
+    try s.file("code/app/node_modules/.package-lock.json", "{}")
+    try s.dir("code/app/node_modules/.bin")
+    try FileManager.default.createSymbolicLink(
+      atPath: s.path("code/app/node_modules/.bin/c"), withDestinationPath: "../@scope/c/dist/c.js")
+    return s.root.appendingPathComponent("code/app/node_modules")
+  }
+
+  func testLayoutResolvesThroughTheLocalTree() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    var dirTimes = stat()
+    lstat(nm.appendingPathComponent("a").path, &dirTimes)
+
+    try engine.adopt(nm.path)
+
+    let fm = FileManager.default
+    // Package folders stay real; their contents are links.
+    for pkg in ["a", "b", "@scope/c", "a/node_modules/b"] {
+      let dir = nm.appendingPathComponent(pkg)
+      XCTAssertTrue(isRealDirectory(dir.path), pkg)
+      XCTAssertTrue(isSymlink(dir.appendingPathComponent("package.json").path), pkg)
+    }
+    XCTAssertTrue(
+      isRealDirectory(nm.appendingPathComponent("a/node_modules").path),
+      "nested node_modules stays real")
+    XCTAssertTrue(isRealDirectory(nm.appendingPathComponent(".bin").path))
+    XCTAssertTrue(
+      isSymlink(nm.appendingPathComponent(".package-lock.json").path), "lockfile moved to the drive"
+    )
+    XCTAssertEqual(
+      try String(contentsOf: nm.appendingPathComponent(".bin/c"), encoding: .utf8), "c")
+
+    // a's real path is in the store under …/node_modules/a, and walking up from it reaches a's
+    // own nested node_modules first (b@1), then the project's (b@2).
+    let real = nm.appendingPathComponent("a/index.js").resolvingSymlinksInPath()
+    XCTAssertTrue(real.path.contains("/node_modules/a/index.js"), real.path)
+    let own = real.deletingLastPathComponent().appendingPathComponent("node_modules/b/package.json")
+    XCTAssertTrue(try String(contentsOf: own, encoding: .utf8).contains("1.0.0"))
+    // The private node_modules holding a, then the level above it, whose node_modules links back.
+    let holder = real.deletingLastPathComponent().deletingLastPathComponent()
+    let level = holder.deletingLastPathComponent().deletingLastPathComponent()
+    let chain = try fm.destinationOfSymbolicLink(
+      atPath: level.appendingPathComponent("node_modules").path)
+    XCTAssertEqual(chain, nm.path)
+
+    // npm's hidden-lockfile check needs package folders no newer than before.
+    var after = stat()
+    lstat(nm.appendingPathComponent("a").path, &after)
+    XCTAssertEqual(after.st_mtimespec.tv_sec, dirTimes.st_mtimespec.tv_sec)
+
+    try engine.release(nm.path)
+    XCTAssertFalse(isSymlink(nm.appendingPathComponent("a/package.json").path))
+    XCTAssertFalse(isSymlink(nm.appendingPathComponent(".package-lock.json").path))
+    XCTAssertTrue(
+      try String(
+        contentsOf: nm.appendingPathComponent("a/node_modules/b/package.json"), encoding: .utf8
+      ).contains("1.0.0"))
+  }
+
+  func testReinstalledPackagesAreReoffloadedAndUnchangedOnesRelinked() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    // npm replaces b with an identical copy and adds d.
+    let b = nm.appendingPathComponent("b")
+    try Copier.remove(b)
+    try s.file("code/app/node_modules/b/package.json", #"{ "name": "b", "version": "2.0.0" }"#)
+    try s.file("code/app/node_modules/d/package.json", #"{ "name": "d" }"#)
+    let stats = try engine.exclusively { () -> CopyStats in
+      let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(
+        try XCTUnwrap(engine.entries().first).remote)
+      return try engine.offloadPackages(local: nm, store: store)
+    }
+    XCTAssertEqual(stats.reused, 1, "b was identical")
+    XCTAssertTrue(isSymlink(b.appendingPathComponent("package.json").path))
+    XCTAssertTrue(isSymlink(nm.appendingPathComponent("d/package.json").path))
+  }
+
+  func testAManifestOnTheDriveCantPointOutside() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    engine.quietPeriod = -1
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(
+      try XCTUnwrap(engine.entries().first).remote)
+    // A tampered manifest names a folder outside the store for a package that no longer exists.
+    let victim = try s.dir("victim")
+    try s.file("victim/keep.txt", "precious")
+    var manifest = Engine.readManifest(store)
+    manifest["gone"] = victim.path
+    manifest["also-gone"] = store.path + "/../../.."
+    try Engine.writeManifest(manifest, to: store)
+    engine.reconcile()
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: victim.appendingPathComponent("keep.txt").path))
+  }
+}
