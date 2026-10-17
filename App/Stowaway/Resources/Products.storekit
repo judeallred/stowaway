@@ -174,72 +174,12 @@
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Mid-Size Company",
+          "displayName": "Enterprise",
           "locale": "en_US"
         }
       ],
       "productID": "com.brooklynspaceport.stowaway.business.5",
       "referenceName": "Business 5",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "999.99",
-      "familyShareable": false,
-      "internalID": "20006",
-      "localizations": [
-        {
-          "description": "Unlimited stowing, for use at work.",
-          "displayName": "Large Company",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.business.6",
-      "referenceName": "Business 6",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "2499.99",
-      "familyShareable": false,
-      "internalID": "20007",
-      "localizations": [
-        {
-          "description": "Unlimited stowing, for use at work.",
-          "displayName": "Department",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.business.7",
-      "referenceName": "Business 7",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "4999.99",
-      "familyShareable": false,
-      "internalID": "20008",
-      "localizations": [
-        {
-          "description": "Unlimited stowing, for use at work.",
-          "displayName": "Enterprise",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.business.8",
-      "referenceName": "Business 8",
-      "type": "NonConsumable"
-    },
-    {
-      "displayPrice": "9999.99",
-      "familyShareable": false,
-      "internalID": "20009",
-      "localizations": [
-        {
-          "description": "Unlimited stowing, for use at work.",
-          "displayName": "Global Company",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "com.brooklynspaceport.stowaway.business.9",
-      "referenceName": "Business 9",
       "type": "NonConsumable"
     }
   ],

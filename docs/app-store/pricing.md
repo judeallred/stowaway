@@ -12,7 +12,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 | Group | Product IDs | Family Sharing | Message |
 |---|---|---|---|
 | Personal, pay what you want | `com.brooklynspaceport.stowaway.personal.1` … `.7` | **On** | "Share the love… your purchase means everything to us." |
-| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.9` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
+| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.5` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
 
 - **Prices aren't in the code.** Product IDs name a slot, not a price, and the app shows whatever
   you set in App Store Connect, sorted low to high. You can reprice without an app update.
@@ -55,11 +55,10 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 ## Suggested prices (yours to set in App Store Connect)
 
 - **Personal:** seven prices doubling from $8 to $512, each with a line in the app: "A sandwich", "A really nice sandwich", "Sandwiches for our whole team", "Movie night!", "Still cheaper than upgrading your storage", "We will send you a hand-written thank you card", "We'll send you a birthday card every year".
-- **Business:** nine prices, each just under a common expense auto-approval limit, under "I can
-  expense:": $24.99 "Independent", $49.99 "Small business", $99.99 "Startup", $249.99 "Growing company", $499.99 "Mid-size company", $999.99 "Large company", $2,499.99 "Department", $4,999.99 "Enterprise", $9,999.99 "Global company". There's no standard limit
+- **Business:** five prices, each just under a common expense auto-approval limit, under "I can
+  expense:": $24.99 "Independent", $49.99 "Small business", $99.99 "Startup", $249.99 "Growing company", $499.99 "Enterprise". There's no standard limit
   (SAP Concur and Oracle set limits per approver, Learnerbly one for the whole organization:
-  [Concur][concur-limits], [Learnerbly][learnerbly]), but these steps cover the usual ones.
-  $9,999.99 is Apple's maximum.
+  [Concur][concur-limits], [Learnerbly][learnerbly]), but these are common ones.
 - Apple's price points include round prices such as $8.00 and $50.00, but *verify* each in App
   Store Connect, especially the top ones (prices above the default range must be requested).
 - **Sanity check:** a 1 TB external SSD costs about $80–120, and Apple typically charges around $200

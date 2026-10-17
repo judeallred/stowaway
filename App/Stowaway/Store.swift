@@ -18,11 +18,11 @@ final class Store {
 
   static let productIDs: [Audience: [String]] = [
     .personal: (1...7).map { "com.brooklynspaceport.stowaway.personal.\($0)" },
-    .business: (1...9).map { "com.brooklynspaceport.stowaway.business.\($0)" },
+    .business: (1...5).map { "com.brooklynspaceport.stowaway.business.\($0)" },
   ]
 
   /// What each price says in the app. Business prices sit just under common expense
-  /// auto-approval limits ($25, $50, $100 … $10,000), named for who they suit. App Store Connect's display names are capped at 30
+  /// auto-approval limits ($25, $50, $100, $250, $500), named for who they suit. App Store Connect's display names are capped at 30
   /// characters, so these live here; the store's short names appear on receipts and invoices.
   static let taglines: [String: String] = [
     "com.brooklynspaceport.stowaway.personal.1": "A sandwich",
@@ -36,11 +36,7 @@ final class Store {
     "com.brooklynspaceport.stowaway.business.2": "Small business",
     "com.brooklynspaceport.stowaway.business.3": "Startup",
     "com.brooklynspaceport.stowaway.business.4": "Growing company",
-    "com.brooklynspaceport.stowaway.business.5": "Mid-size company",
-    "com.brooklynspaceport.stowaway.business.6": "Large company",
-    "com.brooklynspaceport.stowaway.business.7": "Department",
-    "com.brooklynspaceport.stowaway.business.8": "Enterprise",
-    "com.brooklynspaceport.stowaway.business.9": "Global company",
+    "com.brooklynspaceport.stowaway.business.5": "Enterprise",
   ]
 
   private(set) var products: [Audience: [Product]] = [:]
@@ -68,9 +64,7 @@ final class Store {
       ],
       .business: [
         ("$24.99", "Independent"), ("$49.99", "Small business"), ("$99.99", "Startup"),
-        ("$249.99", "Growing company"), ("$499.99", "Mid-size company"),
-        ("$999.99", "Large company"), ("$2,499.99", "Department"), ("$4,999.99", "Enterprise"),
-        ("$9,999.99", "Global company"),
+        ("$249.99", "Growing company"), ("$499.99", "Enterprise"),
       ],
     ]
   #endif

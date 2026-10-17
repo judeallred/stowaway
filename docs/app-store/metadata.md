@@ -99,11 +99,7 @@ sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the 
 | …`business.2` | Business 2 | Small Business | Unlimited stowing, for use at work. | $49.99 | Off |
 | …`business.3` | Business 3 | Startup | Unlimited stowing, for use at work. | $99.99 | Off |
 | …`business.4` | Business 4 | Growing Company | Unlimited stowing, for use at work. | $249.99 | Off |
-| …`business.5` | Business 5 | Mid-Size Company | Unlimited stowing, for use at work. | $499.99 | Off |
-| …`business.6` | Business 6 | Large Company | Unlimited stowing, for use at work. | $999.99 | Off |
-| …`business.7` | Business 7 | Department | Unlimited stowing, for use at work. | $2,499.99 | Off |
-| …`business.8` | Business 8 | Enterprise | Unlimited stowing, for use at work. | $4,999.99 | Off |
-| …`business.9` | Business 9 | Global Company | Unlimited stowing, for use at work. | $9,999.99 | Off |
+| …`business.5` | Business 5 | Enterprise | Unlimited stowing, for use at work. | $499.99 | Off |
 
 (…= `com.brooklynspaceport.stowaway.`)
 

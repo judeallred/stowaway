@@ -108,7 +108,7 @@ struct SupportView: View {
     switch audience {
     case .personal: "Pay what you want. Shared with your family through Family Sharing."
     case .business:
-      "Every price point here is honestly cheaper than the cost of upgrading your storage. Please support small businesses by picking what fits within your auto-approve expense budget."
+      "Thank you for using Stowaway. I hope we gave you some storage breathing room, and I hope we saved you time by taking a chore off of your plate. Please consider supporting us commensurate with the value we provided you. We're a 3-person independent software team, and your purchase means the world to us."
     }
   }
 
@@ -144,10 +144,10 @@ struct SupportView: View {
       if audience == .business {
         Text("I can expense:").font(.callout.weight(.medium))
       }
-      // Personal prices two to a row, business prices three.
+      // Two to a row; an odd last one (the top tier) goes full width below.
       LazyVGrid(
         columns: Array(
-          repeating: GridItem(.flexible(), spacing: 10), count: audience == .business ? 3 : 2),
+          repeating: GridItem(.flexible(), spacing: 10), count: 2),
         spacing: 10
       ) {
         ForEach(gridded(list)) { item in
@@ -163,8 +163,7 @@ struct SupportView: View {
 
   /// The prices that fill whole rows of the grid; any left over go full width below it.
   private func gridded(_ list: [Price]) -> [Price] {
-    let columns = audience == .business ? 3 : 2
-    return Array(list.prefix(list.count - list.count % columns))
+    Array(list.prefix(list.count - list.count % 2))
   }
 
   private func priceButton(_ item: Price) -> some View {
