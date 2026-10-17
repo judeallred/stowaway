@@ -129,7 +129,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Small Business",
+          "displayName": "Startup",
           "locale": "en_US"
         }
       ],
@@ -144,7 +144,7 @@
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
-          "displayName": "Startup",
+          "displayName": "Small Business",
           "locale": "en_US"
         }
       ],

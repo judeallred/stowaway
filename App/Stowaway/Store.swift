@@ -33,8 +33,8 @@ final class Store {
     "com.brooklynspaceport.stowaway.personal.6": "We will send you a hand-written thank you card",
     "com.brooklynspaceport.stowaway.personal.7": "We'll send you a birthday card every year",
     "com.brooklynspaceport.stowaway.business.1": "Independent",
-    "com.brooklynspaceport.stowaway.business.2": "Small business",
-    "com.brooklynspaceport.stowaway.business.3": "Startup",
+    "com.brooklynspaceport.stowaway.business.2": "Startup",
+    "com.brooklynspaceport.stowaway.business.3": "Small business",
     "com.brooklynspaceport.stowaway.business.4": "Growing company",
     "com.brooklynspaceport.stowaway.business.5": "Enterprise",
   ]
@@ -63,7 +63,7 @@ final class Store {
         ("$512", "We'll send you a birthday card every year"),
       ],
       .business: [
-        ("$24.99", "Independent"), ("$49.99", "Small business"), ("$99.99", "Startup"),
+        ("$24.99", "Independent"), ("$49.99", "Startup"), ("$99.99", "Small business"),
         ("$249.99", "Growing company"), ("$499.99", "Enterprise"),
       ],
     ]

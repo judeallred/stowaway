@@ -56,7 +56,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 
 - **Personal:** seven prices doubling from $8 to $512, each with a line in the app: "A sandwich", "A really nice sandwich", "Sandwiches for our whole team", "Movie night!", "Still cheaper than upgrading your storage", "We will send you a hand-written thank you card", "We'll send you a birthday card every year".
 - **Business:** five prices, each just under a common expense auto-approval limit, under "I can
-  expense:": $24.99 "Independent", $49.99 "Small business", $99.99 "Startup", $249.99 "Growing company", $499.99 "Enterprise". There's no standard limit
+  expense:": $24.99 "Independent", $49.99 "Startup", $99.99 "Small business", $249.99 "Growing company", $499.99 "Enterprise". There's no standard limit
   (SAP Concur and Oracle set limits per approver, Learnerbly one for the whole organization:
   [Concur][concur-limits], [Learnerbly][learnerbly]), but these are common ones.
 - Apple's price points include round prices such as $8.00 and $50.00, but *verify* each in App

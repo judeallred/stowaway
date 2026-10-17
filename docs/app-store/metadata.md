@@ -96,8 +96,8 @@ sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the 
 | …`personal.6` | Personal 6 | Thank-You Card | Unlimited stowing. Pay what you want. | $256 | On |
 | …`personal.7` | Personal 7 | Birthday Cards | Unlimited stowing. Pay what you want. | $512 | On |
 | …`business.1` | Business 1 | Independent | Unlimited stowing, for use at work. | $24.99 | Off |
-| …`business.2` | Business 2 | Small Business | Unlimited stowing, for use at work. | $49.99 | Off |
-| …`business.3` | Business 3 | Startup | Unlimited stowing, for use at work. | $99.99 | Off |
+| …`business.2` | Business 2 | Startup | Unlimited stowing, for use at work. | $49.99 | Off |
+| …`business.3` | Business 3 | Small Business | Unlimited stowing, for use at work. | $99.99 | Off |
 | …`business.4` | Business 4 | Growing Company | Unlimited stowing, for use at work. | $249.99 | Off |
 | …`business.5` | Business 5 | Enterprise | Unlimited stowing, for use at work. | $499.99 | Off |
 
