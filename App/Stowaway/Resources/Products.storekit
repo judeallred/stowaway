@@ -153,7 +153,7 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "249.99",
+      "displayPrice": "149.99",
       "familyShareable": false,
       "internalID": "20004",
       "localizations": [
@@ -168,9 +168,24 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "499.99",
+      "displayPrice": "249.99",
       "familyShareable": false,
       "internalID": "20005",
+      "localizations": [
+        {
+          "description": "Unlimited stowing, for use at work.",
+          "displayName": "Fintech",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.brooklynspaceport.stowaway.business.5",
+      "referenceName": "Business 5",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "499.99",
+      "familyShareable": false,
+      "internalID": "20006",
       "localizations": [
         {
           "description": "Unlimited stowing, for use at work.",
@@ -178,8 +193,8 @@
           "locale": "en_US"
         }
       ],
-      "productID": "com.brooklynspaceport.stowaway.business.5",
-      "referenceName": "Business 5",
+      "productID": "com.brooklynspaceport.stowaway.business.6",
+      "referenceName": "Business 6",
       "type": "NonConsumable"
     }
   ],

@@ -18,11 +18,11 @@ final class Store {
 
   static let productIDs: [Audience: [String]] = [
     .personal: (1...7).map { "com.brooklynspaceport.stowaway.personal.\($0)" },
-    .business: (1...5).map { "com.brooklynspaceport.stowaway.business.\($0)" },
+    .business: (1...6).map { "com.brooklynspaceport.stowaway.business.\($0)" },
   ]
 
   /// What each price says in the app. Business prices sit just under common expense
-  /// auto-approval limits ($25, $50, $100, $250, $500), named for who they suit. App Store Connect's display names are capped at 30
+  /// auto-approval limits ($25 to $500), named for who they suit. App Store Connect's display names are capped at 30
   /// characters, so these live here; the store's short names appear on receipts and invoices.
   static let taglines: [String: String] = [
     "com.brooklynspaceport.stowaway.personal.1": "A sandwich",
@@ -36,7 +36,8 @@ final class Store {
     "com.brooklynspaceport.stowaway.business.2": "Startup",
     "com.brooklynspaceport.stowaway.business.3": "Small business",
     "com.brooklynspaceport.stowaway.business.4": "Growing company",
-    "com.brooklynspaceport.stowaway.business.5": "Enterprise",
+    "com.brooklynspaceport.stowaway.business.5": "Fintech",
+    "com.brooklynspaceport.stowaway.business.6": "Enterprise",
   ]
 
   private(set) var products: [Audience: [Product]] = [:]
@@ -64,7 +65,7 @@ final class Store {
       ],
       .business: [
         ("$24.99", "Independent"), ("$49.99", "Startup"), ("$99.99", "Small business"),
-        ("$249.99", "Growing company"), ("$499.99", "Enterprise"),
+        ("$149.99", "Growing company"), ("$249.99", "Fintech"), ("$499.99", "Enterprise"),
       ],
     ]
   #endif

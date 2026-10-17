@@ -98,8 +98,9 @@ sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the 
 | …`business.1` | Business 1 | Independent | Unlimited stowing, for use at work. | $24.99 | Off |
 | …`business.2` | Business 2 | Startup | Unlimited stowing, for use at work. | $49.99 | Off |
 | …`business.3` | Business 3 | Small Business | Unlimited stowing, for use at work. | $99.99 | Off |
-| …`business.4` | Business 4 | Growing Company | Unlimited stowing, for use at work. | $249.99 | Off |
-| …`business.5` | Business 5 | Enterprise | Unlimited stowing, for use at work. | $499.99 | Off |
+| …`business.4` | Business 4 | Growing Company | Unlimited stowing, for use at work. | $149.99 | Off |
+| …`business.5` | Business 5 | Fintech | Unlimited stowing, for use at work. | $249.99 | Off |
+| …`business.6` | Business 6 | Enterprise | Unlimited stowing, for use at work. | $499.99 | Off |
 
 (…= `com.brooklynspaceport.stowaway.`)
 
