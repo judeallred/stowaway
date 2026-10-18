@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+/// Window identifiers.
+enum WindowID {
+  static let library = "library"
+}
+
 @main
 struct StowawayApp: App {
   @State private var model = AppModel()
@@ -14,7 +19,7 @@ struct StowawayApp: App {
     }
     .menuBarExtraStyle(.window)
 
-    Window("Stowaway", id: "library") {
+    Window("Stowaway", id: WindowID.library) {
       LibraryView(model: model)
         .frame(minWidth: 760, minHeight: 440)
         .sheet(isPresented: $model.showingOnboarding) { OnboardingView(model: model) }
@@ -63,7 +68,7 @@ private struct MenuBarLabel: View {
         guard !model.started else { return }
         model.started = true
         AppDelegate.model = model
-        model.openLibrary = { openWindow(id: "library") }
+        model.openLibrary = { openWindow(id: WindowID.library) }
         #if DEBUG
           if let folder = Snapshots.folder {
             await Snapshots.run(into: folder)
@@ -72,7 +77,7 @@ private struct MenuBarLabel: View {
         #endif
         model.start()
         if model.showingOnboarding {
-          openWindow(id: "library")
+          openWindow(id: WindowID.library)
           NSApp.activate()
         }
       }

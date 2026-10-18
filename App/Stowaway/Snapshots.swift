@@ -55,7 +55,7 @@
           CGSize(width: 560, height: 460)
         ),
         (
-          "4-support", "Try it free. Then pay what you want.",
+          "4-support", "Stow 100 GB free. Then pay what you want.",
           AnyView(SupportView(model: model, store: model.store)), CGSize(width: 560, height: 700)
         ),
       ]
@@ -126,8 +126,8 @@
         InvoicePage(
           invoice: Invoice(
             status: .paid,
-            item: "Stowaway for Mac: Business Plus. One-time purchase, unlimited stowing.",
-            amount: "$59.99", date: .now, number: "SW-2000000812345678",
+            item: "Stowaway for Mac: Growing Company. One-time purchase, unlimited stowing.",
+            amount: "$149.99", date: .now, number: "SW-2000000812345678",
             billTo: "Sam Rivera\nNorthwind Labs",
             payment: "Paid through the Mac App Store (transaction 2000000812345678).")),
         "expense-invoice-paid", width: 612, height: 792, in: folder)

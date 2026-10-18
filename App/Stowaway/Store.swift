@@ -54,21 +54,48 @@ final class Store {
     /// Snapshots only: pretend these were bought.
     func setDemoOwned(_ ids: Set<String>) { owned = ids }
 
-    /// Snapshots only: price labels to show when the App Store isn't reachable.
-    var demoPrices: [Audience: [(price: String, name: String)]] = [
-      .personal: [
-        ("$8", "A sandwich"), ("$16", "A really nice sandwich"),
-        ("$32", "Sandwiches for our whole team"), ("$64", "Movie night!"),
-        ("$128", "Still cheaper than upgrading your storage"),
-        ("$256", "We will send you a hand-written thank you card"),
-        ("$512", "We'll send you a birthday card every year"),
-      ],
-      .business: [
-        ("$24.99", "Independent"), ("$49.99", "Startup"), ("$99.99", "Small business"),
-        ("$149.99", "Growing company"), ("$249.99", "Fintech"), ("$499.99", "Enterprise"),
-      ],
+    /// Snapshots only: sample prices, in `productIDs` order, since StoreKit has no products
+    /// outside Xcode's test setup.
+    static let samplePrices: [Audience: [String]] = [
+      .personal: ["$8", "$16", "$32", "$64", "$128", "$256", "$512"],
+      .business: ["$24.99", "$49.99", "$99.99", "$149.99", "$249.99", "$499.99"],
     ]
   #endif
+
+  /// One price to offer.
+  struct PriceOption: Identifiable {
+    /// The product ID.
+    let id: String
+    let price: String
+    /// The app's line for it ("A sandwich").
+    let tagline: String
+    /// The App Store's short name, which receipts and invoices show.
+    let name: String
+    /// Nil for the sample prices snapshots use.
+    let product: Product?
+  }
+
+  /// The prices for an audience, cheapest first, leaving out any already bought.
+  func priceOptions(for audience: Audience) -> [PriceOption] {
+    let available = (products[audience] ?? []).filter { !owned.contains($0.id) }
+    if !available.isEmpty {
+      return available.map {
+        PriceOption(
+          id: $0.id, price: Self.price(of: $0), tagline: Self.taglines[$0.id] ?? "",
+          name: $0.displayName, product: $0)
+      }
+    }
+    #if DEBUG
+      if Snapshots.folder != nil {
+        let ids = Self.productIDs[audience] ?? []
+        return zip(ids, Self.samplePrices[audience] ?? []).map { id, price in
+          let line = Self.taglines[id] ?? ""
+          return PriceOption(id: id, price: price, tagline: line, name: line, product: nil)
+        }
+      }
+    #endif
+    return []
+  }
 
   /// What an invoice needs to know about a purchase.
   struct PurchaseRecord: Sendable {
@@ -99,7 +126,7 @@ final class Store {
       : product.displayPrice
   }
 
-  /// The App Store's name for a product, such as "Business Plus".
+  /// The App Store's name for a product, such as "Enterprise".
   func displayName(of productID: String) -> String? {
     products.values.joined().first { $0.id == productID }?.displayName
   }

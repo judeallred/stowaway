@@ -112,29 +112,8 @@ struct SupportView: View {
     }
   }
 
-  /// One price button's content: the price and what it buys, and the product (nil for the
-  /// sample prices snapshots use).
-  private struct Price: Identifiable {
-    let id: String
-    let price: String
-    let tagline: String
-    let product: Product?
-  }
-
-  private var priceList: [Price] {
-    let products = store.products[audience] ?? []
-    if products.isEmpty, let demo = snapshotPrices {
-      return demo.map { Price(id: $0.price, price: $0.price, tagline: $0.name, product: nil) }
-    }
-    return products.filter { !store.owned.contains($0.id) }.map {
-      Price(
-        id: $0.id, price: Store.price(of: $0), tagline: Store.taglines[$0.id] ?? "",
-        product: $0)
-    }
-  }
-
   @ViewBuilder private var prices: some View {
-    let list = priceList
+    let list = store.priceOptions(for: audience)
     if list.isEmpty && store.loadError == nil {
       HStack {
         ProgressView().controlSize(.small)
@@ -162,11 +141,11 @@ struct SupportView: View {
   }
 
   /// The prices that fill whole rows of the grid; any left over go full width below it.
-  private func gridded(_ list: [Price]) -> [Price] {
+  private func gridded(_ list: [Store.PriceOption]) -> [Store.PriceOption] {
     Array(list.prefix(list.count - list.count % 2))
   }
 
-  private func priceButton(_ item: Price) -> some View {
+  private func priceButton(_ item: Store.PriceOption) -> some View {
     Button {
       if let product = item.product { Task { _ = await store.purchase(product) } }
     } label: {
@@ -213,12 +192,4 @@ struct SupportView: View {
     }
   }
 
-  /// Debug snapshots only: sample prices, since StoreKit has no products outside Xcode's test setup.
-  private var snapshotPrices: [(price: String, name: String)]? {
-    #if DEBUG
-      Snapshots.folder == nil ? nil : store.demoPrices[audience]
-    #else
-      nil
-    #endif
-  }
 }

@@ -190,7 +190,7 @@ struct OnboardingView: View {
     let path = Format.path(suggestion.folder.path)
     let count = suggestion.projects
     return Button(
-      count > 0 ? "Use \(path) (\(count) project\(count == 1 ? "" : "s"))" : "Use \(path)"
+      count > 0 ? "Use \(path) (\(Format.count(count, "project")))" : "Use \(path)"
     ) {
       model.addRoot(
         startingAt: suggestion.folder, message: "Click Choose to let Stowaway look in \(path).")
@@ -206,7 +206,7 @@ struct OnboardingView: View {
       Label(
         count == 0
           ? "Nothing to tidy up there yet."
-          : "Found \(count) folder\(count == 1 ? "" : "s") you can reclaim, \(Format.bytes(model.reclaimableBytes)) in all.",
+          : "Found \(Format.count(count, "folder")) you can reclaim, \(Format.bytes(model.reclaimableBytes)) in all.",
         systemImage: "sparkles"
       )
       .font(.headline)

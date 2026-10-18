@@ -6,9 +6,6 @@ import StowawayCore
 enum BugReport {
   @MainActor
   static func url(model: AppModel) -> URL {
-    let info = Bundle.main.infoDictionary
-    let version = info?["CFBundleShortVersionString"] as? String ?? "?"
-    let build = info?["CFBundleVersion"] as? String ?? "?"
     let os = ProcessInfo.processInfo.operatingSystemVersionString
     let kinds = Dictionary(grouping: model.rows, by: \.kind).map {
       "\($0.key.rawValue): \($0.value.count)"
@@ -21,8 +18,8 @@ enum BugReport {
 
 
       ---
-      Stowaway \(version) (\(build)) on macOS \(os)
-      Offload location chosen: \(model.drivePath == nil ? "no" : "yes"), connected: \(model.driveConnected ? "yes" : "no")
+      Stowaway \(Bundle.main.versionString) on macOS \(os)
+      Drive chosen: \(model.drivePath == nil ? "no" : "yes"), connected: \(model.driveConnected ? "yes" : "no")
       Folders found: \(kinds.joined(separator: ", "))
       """
     var components = URLComponents(url: Links.issues, resolvingAgainstBaseURL: false)

@@ -161,16 +161,8 @@ struct InvoiceView: View {
     .frame(width: 560)
   }
 
-  /// Business tiers to preview, from the App Store (or sample prices in snapshots).
-  private var businessPrices: [(name: String, price: String)] {
-    let products = model.store.products[.business] ?? []
-    if !products.isEmpty { return products.map { ($0.displayName, Store.price(of: $0)) } }
-    #if DEBUG
-      return (model.store.demoPrices[.business] ?? []).map { (name: $0.name, price: $0.price) }
-    #else
-      return []
-    #endif
-  }
+  /// Business tiers to preview.
+  private var businessPrices: [Store.PriceOption] { model.store.priceOptions(for: .business) }
 
   private var current: Invoice {
     let to = billTo.isEmpty ? "Your name and company" : billTo

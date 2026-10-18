@@ -174,11 +174,15 @@ public final class Engine: @unchecked Sendable {
 
   /// Forgets the offload location. Refused while anything is on it.
   public func forgetDrive() throws {
-    guard entries().isEmpty else {
-      throw StowawayError("bring every folder back before choosing a different location")
+    try exclusively {
+      guard entries().isEmpty else {
+        throw StowawayError("bring every folder back before choosing a different location")
+      }
+      lock.withLock {
+        defaults.removeObject(forKey: "drive")
+        defaults.removeObject(forKey: "driveName")
+      }
     }
-    defaults.removeObject(forKey: "drive")
-    defaults.removeObject(forKey: "driveName")
   }
 
   /// Forgets the offload location while folders are still on it (it's gone for good, say). Each
@@ -264,7 +268,7 @@ public final class Engine: @unchecked Sendable {
   }
 
   /// Whether `path` is inside a granted root (and isn't the root itself).
-  public func isInsideRoot(_ path: String) -> Bool {
+  func isInsideRoot(_ path: String) -> Bool {
     let path = URL(fileURLWithPath: path).standardizedFileURL.path
     return rootPaths.contains { path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
   }
@@ -521,8 +525,6 @@ public final class Engine: @unchecked Sendable {
 
   // MARK: The drive coming and going
 
-  /// Makes every entry match whether the offload location is connected. Run at launch, when
-  /// volumes change and periodically (to re-offload what an npm install brought back).
   /// Re-measures what each stowed folder takes on the drive. Tools keep writing into stowed
   /// folders (a Cargo build into its target, say), so the size recorded when a folder was stowed
   /// falls behind. Measures without the lock, which can take a while, then records the sizes
@@ -543,6 +545,8 @@ public final class Engine: @unchecked Sendable {
     }
   }
 
+  /// Makes every entry match whether the offload location is connected. Run at launch, when
+  /// volumes change and periodically (to re-offload what an npm install brought back).
   public func reconcile() {
     _ = try? exclusively { reconcileUnlocked() }
   }

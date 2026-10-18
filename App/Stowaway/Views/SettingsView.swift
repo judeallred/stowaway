@@ -189,7 +189,7 @@ private struct GeneralSettings: View {
         Button("Restore Purchases") { Task { await model.store.restore() } }
       }
       Section("About") {
-        LabeledContent("Version", value: version)
+        LabeledContent("Version", value: Bundle.main.versionString)
         Link("Stowaway Website", destination: Links.website)
         Link("Privacy Policy", destination: Links.privacyPolicy)
         Link("Get Help", destination: Links.support)
@@ -198,11 +198,6 @@ private struct GeneralSettings: View {
     .formStyle(.grouped)
   }
 
-  private var version: String {
-    let info = Bundle.main.infoDictionary
-    return
-      "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
-  }
 }
 
 extension DriveSpeed {
@@ -250,7 +245,7 @@ struct SuggestedFolders: View {
         ForEach(projects, id: \.self) { suggestion in
           row(
             Format.path(suggestion.folder.path),
-            "\(suggestion.projects) project\(suggestion.projects == 1 ? "" : "s")",
+            Format.count(suggestion.projects, "project"),
             folder: suggestion.folder)
         }
       }

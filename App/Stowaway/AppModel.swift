@@ -337,7 +337,7 @@ final class AppModel {
       return
     }
     let bytes = Format.bytes(stowed.map(\.driveBytes).reduce(0, +))
-    let folders = "\(stowed.count) folder\(stowed.count == 1 ? "" : "s") (\(bytes))"
+    let folders = "\(Format.count(stowed.count, "folder")) (\(bytes))"
     if driveConnected {
       alert.informativeText =
         "\(folders) are stowed on it. Bring them back to this Mac, which needs room for them, or delete them: your tools re-create them when they need them."

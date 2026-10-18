@@ -23,7 +23,7 @@ struct MenuView: View {
       status
       Divider()
       VStack(alignment: .leading, spacing: 2) {
-        action("Open Stowaway…", "macwindow") { show { openWindow(id: "library") } }
+        action("Open Stowaway…", "macwindow") { show { openWindow(id: WindowID.library) } }
         let onMac = model.rows.filter { $0.place == .mac }
         if !onMac.isEmpty {
           let size = Format.bytes(model.reclaimableBytes)
@@ -42,7 +42,7 @@ struct MenuView: View {
         if !model.store.hasPurchased {
           action("Support Stowaway…", "heart") {
             show {
-              openWindow(id: "library")
+              openWindow(id: WindowID.library)
               model.showingSupport = true
             }
           }
@@ -67,7 +67,7 @@ struct MenuView: View {
         .fixedSize(horizontal: false, vertical: true)
       Button("Go Unlimited…") {
         show {
-          openWindow(id: "library")
+          openWindow(id: WindowID.library)
           model.showingSupport = true
         }
       }
@@ -128,7 +128,7 @@ struct MenuView: View {
     menu.addItem(
       ClosureMenuItem("Show Setup Again…") {
         show {
-          openWindow(id: "library")
+          openWindow(id: WindowID.library)
           model.showingOnboarding = true
         }
       })
@@ -141,7 +141,7 @@ struct MenuView: View {
     let alert = NSAlert()
     alert.alertStyle = .warning
     alert.messageText =
-      "Delete \(rows.count) folder\(rows.count == 1 ? "" : "s") (\(Format.bytes(model.reclaimableBytes)))?"
+      "Delete \(Format.count(rows.count, "folder")) (\(Format.bytes(model.reclaimableBytes)))?"
     alert.informativeText =
       "These are re-created by your tools (npm install, cargo build, Xcode…), which takes time and may need the network. Folders stowed on a drive aren't affected."
     alert.addButton(withTitle: "Delete")

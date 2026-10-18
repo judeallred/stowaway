@@ -21,6 +21,11 @@ enum Format {
     return "\(number) \(units[index])"
   }
 
+  /// "1 folder", "3 folders".
+  static func count(_ n: Int, _ noun: String) -> String {
+    "\(n) \(noun)\(n == 1 ? "" : "s")"
+  }
+
   /// "~/code" instead of "/Users/me/code".
   static func path(_ path: String) -> String {
     let home = realHomeDirectory.path
@@ -33,5 +38,14 @@ enum Format {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .full
     return formatter.localizedString(for: date, relativeTo: .now)
+  }
+}
+
+extension Bundle {
+  /// "1.0 (1)": the version and build, for Settings and bug reports.
+  var versionString: String {
+    let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    let build = infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    return "\(version) (\(build))"
   }
 }

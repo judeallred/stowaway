@@ -14,7 +14,7 @@ fail() { echo "check-release: $*" >&2; exit 1; }
 plutil -lint -s "$bundle/Contents/Resources/PrivacyInfo.xcprivacy" || fail "the privacy manifest doesn't parse"
 
 # Strings that mean a hidden feature or a tool the sandbox forbids (App Review 2.3.1, 2.4.5).
-for word in hdiutil launchctl lsof /usr/sbin/diskutil -- --adopt --grant --bench STOWAWAY_ Snapshots demoPrices loadDemo; do
+for word in hdiutil launchctl lsof /usr/sbin/diskutil -- --adopt --grant --bench STOWAWAY_ Snapshots samplePrices loadDemo; do
   [ "$word" = "--" ] && continue
   if strings -a "$binary" | grep -qF -- "$word"; then fail "the binary contains '$word'"; fi
 done

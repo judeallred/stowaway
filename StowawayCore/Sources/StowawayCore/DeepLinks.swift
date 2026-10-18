@@ -30,7 +30,7 @@ extension Engine {
   // MARK: Guards
 
   /// Why a node_modules can't be managed package by package, or nil if it can.
-  public static func packagesRefusal(_ nodeModules: URL, allowTurbopack: Bool) -> String? {
+  static func packagesRefusal(_ nodeModules: URL, allowTurbopack: Bool) -> String? {
     let fm = FileManager.default
     let project = nodeModules.deletingLastPathComponent()
     guard nodeModules.lastPathComponent == "node_modules",

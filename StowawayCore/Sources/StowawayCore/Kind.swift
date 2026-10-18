@@ -127,7 +127,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   }
 
   /// The kind a folder name belongs to in a project, if any.
-  public static func forFolderName(_ name: String) -> Kind? {
+  static func forFolderName(_ name: String) -> Kind? {
     allCases.first { $0.projectRule?.folderName == name }
   }
 }
