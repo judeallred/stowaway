@@ -74,7 +74,7 @@ extension Engine {
   /// have validated `local`.
   func adoptPackages(_ local: URL, store: URL, allowTurbopack: Bool) throws -> CopyStats {
     if let refusal = Self.packagesRefusal(local, allowTurbopack: allowTurbopack) {
-      throw StowawayError(refusal)
+      throw StowawayError.refusal(refusal)
     }
     let id = String(UUID().uuidString.prefix(8).lowercased())
     let project = local.deletingLastPathComponent().lastPathComponent
@@ -182,6 +182,7 @@ extension Engine {
     var total = CopyStats()
     try fm.createDirectory(at: store, withIntermediateDirectories: true)
     var manifest = Self.readManifest(store)
+    var replacedSlots: [URL] = []
     let todo = Self.packages(in: local, chain: Self.ancestorChain(of: local))
       .filter { !Self.contents(of: $0.path).isEmpty && !Self.isOffloaded($0.path, store: store) }
 
@@ -228,6 +229,10 @@ extension Engine {
         total.files += stats.files
         total.directories += stats.directories
         total.bytes += stats.bytes
+        // An upgraded package gets a new slot; the old one is deleted once the links move.
+        if let previous = manifest[rel].flatMap({ Self.validated($0, in: store) }) {
+          replacedSlots.append(previous)
+        }
         manifest[rel] = target.path
       }
       // Swap each entry for a link, keeping the folder's mtime so npm's lockfile stays trusted.
@@ -245,6 +250,7 @@ extension Engine {
     }
     let swapped = Date()
     try Self.writeManifest(manifest, to: store)
+    for slot in replacedSlots { removeSlot(slot, in: store) }
     try moveLockfile(local: local, store: store)
     if !todo.isEmpty { deleteSoon(trash) }
     total.seconds = Date().timeIntervalSince(start)
@@ -503,15 +509,18 @@ extension Engine {
     for (rel, target) in manifest where !live.contains(rel) {
       // A slot is the first folder under the store. The manifest lives on the drive, so a target
       // outside the store is dropped, never deleted.
-      if let target = Self.validated(target, in: store) {
-        let slot = String(target.path.dropFirst(store.path.count + 1).prefix { $0 != "/" })
-        let url = store.appendingPathComponent(slot)
-        if !slot.isEmpty, (try? checkContained(url, in: store)) != nil { try? Copier.remove(url) }
-      }
+      if let target = Self.validated(target, in: store) { removeSlot(target, in: store) }
       manifest[rel] = nil
       removed += 1
     }
     if removed > 0 { try? Self.writeManifest(manifest, to: store) }
+  }
+
+  /// Deletes the slot a package's copy lives in: the first folder under the store.
+  private func removeSlot(_ target: URL, in store: URL) {
+    let slot = String(target.path.dropFirst(store.path.count + 1).prefix { $0 != "/" })
+    let url = store.appendingPathComponent(slot)
+    if !slot.isEmpty, (try? checkContained(url, in: store)) != nil { try? Copier.remove(url) }
   }
 
   /// After an interrupted re-offload: deletes the trash (its contents are already on the drive)
@@ -522,6 +531,24 @@ extension Engine {
     for name in (try? fm.contentsOfDirectory(atPath: local.path)) ?? []
     where name.hasPrefix(".stowaway-trash-") {
       try? Copier.remove(local.appendingPathComponent(name))
+    }
+    // An interrupted release leaves `.<name>.stowaway-releasing-…` copies in package folders:
+    // one whose original is gone goes back in its place; the rest are deleted.
+    for package in Self.packages(in: local, chain: []) {
+      for name in (try? fm.contentsOfDirectory(atPath: package.path.path)) ?? [] {
+        guard name.hasPrefix("."), let marker = name.range(of: ".stowaway-releasing-") else {
+          continue
+        }
+        let staging = package.path.appendingPathComponent(name)
+        let original = package.path.appendingPathComponent(
+          String(name[name.index(after: name.startIndex)..<marker.lowerBound]))
+        var st = stat()
+        if lstat(original.path, &st) != 0 {
+          try? fm.moveItem(at: staging, to: original)
+        } else {
+          try? Copier.remove(staging)
+        }
+      }
     }
     guard let store = try? storePath(entry.remote, in: mine) else { return }
     for (rel, target) in Self.readManifest(store) {
@@ -556,7 +583,16 @@ extension Engine {
       lstat(package.path.path, &st)
       for name in Self.contents(of: package.path) {
         let path = package.path.appendingPathComponent(name)
-        guard let link = Self.storeLinkTarget(path, store: store) else { continue }
+        guard let link = Self.storeLinkTarget(path, store: store) else {
+          // A link that leads nowhere may be to this store under another name (the drive mounted
+          // differently): its contents would be lost with the store, so stop.
+          if isSymlink(path.path), !FileManager.default.fileExists(atPath: path.path) {
+            throw StowawayError(
+              "\(path.path) links to something that isn't there; connect the drive as before to bring it back"
+            )
+          }
+          continue
+        }
         // Follow chains only within the store (an older release could have left one), and refuse
         // anything else: the drive isn't trusted.
         let target = canonicalPath(link)

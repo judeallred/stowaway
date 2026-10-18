@@ -23,6 +23,7 @@ final class EngineTests: XCTestCase {
     let engine = Engine(
       defaults: try XCTUnwrap(UserDefaults(suiteName: "stowaway-tests-\(UUID().uuidString)")),
       stateDirectory: try s.dir("state"))
+    engine.quietPeriod = -1
     let code = try s.dir("code")
     try engine.grant(code, as: .root)
     try engine.grant(drive, as: .drive)

@@ -138,8 +138,14 @@ public final class Engine: @unchecked Sendable {
       options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
     switch role {
     case .drive:
+      // With folders stowed, only the drive that holds them will do: every entry's copy must be
+      // there. (Its store folder alone isn't proof: one is left behind after bringing
+      // everything back.)
       let ours = url.appendingPathComponent(Self.storeFolderName).appendingPathComponent(installID)
-      if !entries().isEmpty, !isRealDirectory(ours.path) {
+      let holdsEverything = entries().allSatisfy { entry in
+        (try? storePath(entry.remote, in: ours)).map { isRealDirectory($0.path) } ?? false
+      }
+      if !entries().isEmpty, !holdsEverything {
         throw StowawayError(
           "Stowaway keeps folders on \(driveName ?? "another drive"). Bring them back before choosing a different location."
         )
@@ -192,6 +198,10 @@ public final class Engine: @unchecked Sendable {
   public func abandonDrive() throws {
     try exclusively {
       let fm = FileManager.default
+      // npm deep links: remove links into this install's store, leaving folders npm repairs.
+      for entry in entries() where entry.mode == .packages {
+        removeStoreLinks(under: URL(fileURLWithPath: entry.local))
+      }
       for entry in entries() where entry.mode == .folder {
         if isSymlink(entry.local) { try? fm.removeItem(atPath: entry.local) }
         let parent = URL(fileURLWithPath: entry.local).deletingLastPathComponent().path
@@ -205,6 +215,23 @@ public final class Engine: @unchecked Sendable {
         defaults.removeObject(forKey: "driveName")
       }
       note("forgot the offload location; its copies stay on the drive")
+    }
+  }
+
+  /// Removes every symlink under `root` that leads into one of this install's stores.
+  private func removeStoreLinks(under root: URL) {
+    let fm = FileManager.default
+    let marker = "/\(Self.storeFolderName)/\(installID)/"
+    guard
+      let walker = fm.enumerator(
+        at: root, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [])
+    else { return }
+    for case let url as URL in walker {
+      guard isSymlink(url.path),
+        let destination = try? fm.destinationOfSymbolicLink(atPath: url.path),
+        destination.contains(marker)
+      else { continue }
+      try? fm.removeItem(at: url)
     }
   }
 
@@ -386,31 +413,41 @@ public final class Engine: @unchecked Sendable {
 
   /// Refuses anything Stowaway must not move.
   func validateAdoptable(_ local: URL, store: URL) throws {
-    guard isRealDirectory(local.path) else { throw StowawayError("\(local.path) isn't a folder") }
+    guard isRealDirectory(local.path) else {
+      throw StowawayError.refusal("\(local.path) isn't a folder")
+    }
     guard isInsideRoot(local.path) else {
-      throw StowawayError("\(local.path) isn't inside a folder you've given Stowaway")
+      throw StowawayError.refusal("\(local.path) isn't inside a folder you've given Stowaway")
     }
     let storePath = store.standardizedFileURL.path
     guard !local.path.hasPrefix(storePath), !storePath.hasPrefix(local.path + "/") else {
-      throw StowawayError("\(local.path) overlaps where Stowaway stows folders")
+      throw StowawayError.refusal("\(local.path) overlaps where Stowaway stows folders")
     }
     for entry in entries()
     where local.path == entry.local || local.path.hasPrefix(entry.local + "/")
       || entry.local.hasPrefix(local.path + "/")
     {
-      throw StowawayError("\(local.path) overlaps \(entry.local), which is already stowed")
+      throw StowawayError.refusal("\(local.path) overlaps \(entry.local), which is already stowed")
     }
     if GitIndex.containsRepository(local) {
-      throw StowawayError("\(local.path) contains a git repository, so Stowaway leaves it alone")
+      throw StowawayError.refusal(
+        "\(local.path) contains a git repository, so Stowaway leaves it alone")
     }
     switch GitIndex.tracking(of: local) {
     case .untracked: break
     case .tracked:
-      throw StowawayError("git tracks files in \(local.path), so Stowaway leaves it alone")
+      throw StowawayError.refusal("git tracks files in \(local.path), so Stowaway leaves it alone")
     case .unknown:
       throw StowawayError(
         "couldn't read the git repository around \(local.path), so Stowaway leaves it alone")
     }
+  }
+
+  /// Deletes a re-creatable folder that isn't stowed (see `Cleaner`), holding the engine's lock so
+  /// it can't interleave with stowing the same folder.
+  @discardableResult
+  public func delete(_ candidate: Candidate, roots: [String]) throws -> Int64 {
+    try exclusively { try Cleaner().delete(candidate, roots: roots, offloaded: entries()) }
   }
 
   /// Brings a folder back to the Mac for good. Always allowed, purchase or not.
@@ -560,24 +597,81 @@ public final class Engine: @unchecked Sendable {
       }
       let isLink = isSymlink(entry.local)
       if let store, !entry.online {
+        // Merging a folder a tool is still writing into would lose what it writes meanwhile.
+        if isRealDirectory(entry.local), isBeingWritten(entry) { continue }
         goOnline(entry, store: store)
       } else if store == nil, entry.online {
         goOffline(entry)
-      } else if let store, entry.online, !isLink,
-        !FileManager.default.fileExists(atPath: entry.local)
-      {
+      } else if let store, entry.online, isLink {
+        checkLink(entry, store: store)
+      } else if let store, entry.online, !FileManager.default.fileExists(atPath: entry.local) {
         // Interrupted between setting the folder aside and linking it: link it now.
         relink(entry, store: store)
-      } else if let store, entry.online, !isLink,
-        FileManager.default.fileExists(atPath: entry.local)
-      {
-        // A tool replaced the symlink (cargo clean, uv venv --clear): merge what's there.
-        note("\(entry.local) was replaced by a real folder; merging it onto the drive")
-        update(entry.id) { $0.online = false }
-        if let fresh = entries().first(where: { $0.id == entry.id }) {
-          goOnline(fresh, store: store)
-        }
+      } else if let store, entry.online, !isBeingWritten(entry) {
+        // A tool replaced the link with a fresh folder (cargo clean, uv venv --clear).
+        replace(entry, store: store)
       }
+    }
+  }
+
+  /// Whether a tool may be writing into an entry's local folder: something in it changed within
+  /// `quietPeriod`, or Cargo holds the lock of the build profile it belongs to.
+  func isBeingWritten(_ entry: Entry) -> Bool {
+    let local = URL(fileURLWithPath: entry.local)
+    if entry.kind == .cargoTarget {
+      // A part (target/debug/deps) or the whole target: check every profile's lock.
+      let target =
+        local.lastPathComponent == "target"
+        ? local : local.deletingLastPathComponent().deletingLastPathComponent()
+      if Measure.isBusy(Candidate(kind: .cargoTarget, path: target.path, project: nil)) {
+        return true
+      }
+    }
+    return Date().timeIntervalSince(Self.newestChange(under: local)) <= quietPeriod
+  }
+
+  /// A link that doesn't lead to the entry's copy (the drive mounted under another name, or the
+  /// copy is gone): point it at the copy, or switch to a local folder if there's none.
+  private func checkLink(_ entry: Entry, store: URL) {
+    guard let remote = try? storePath(entry.remote, in: store),
+      (try? checkContained(remote, in: store)) != nil
+    else { return }
+    guard isRealDirectory(remote.path) else {
+      note("\(entry.local)'s copy on the drive is missing; using a local folder")
+      goOffline(entry)
+      return
+    }
+    let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: entry.local)
+    if destination != remote.path {
+      try? FileManager.default.removeItem(atPath: entry.local)
+      relink(entry, store: store)
+    }
+  }
+
+  /// Puts a folder a tool made in place of the link onto the drive, replacing the old copy
+  /// rather than merging into it, so what the tool deleted stays deleted.
+  private func replace(_ entry: Entry, store: URL) {
+    let fm = FileManager.default
+    let local = URL(fileURLWithPath: entry.local)
+    do {
+      let remote = try storePath(entry.remote, in: store)
+      try checkContained(remote, in: store)
+      // Copy beside the old copy first; the swap is two renames.
+      let staging = Self.leftoverName(for: remote, kind: "staging")
+      _ = try Copier.copyContents(of: local, into: staging)
+      let old = Self.leftoverName(for: remote)
+      if fm.fileExists(atPath: remote.path) { try fm.moveItem(at: remote, to: old) }
+      try fm.moveItem(at: staging, to: remote)
+      let aside = Self.leftoverName(for: local)
+      try fm.moveItem(at: local, to: aside)
+      try fm.createSymbolicLink(at: local, withDestinationURL: remote)
+      deleteSoon(old)
+      deleteSoon(aside)
+      let bytes = Measure.allocatedSize(remote.path)
+      update(entry.id) { $0.bytes = bytes }
+      note("\(entry.local) was replaced by a new folder; it's on the drive in place of the old one")
+    } catch {
+      note("couldn't move the new \(entry.local) onto the drive: \(error.localizedDescription)")
     }
   }
 
@@ -663,9 +757,28 @@ public final class Engine: @unchecked Sendable {
         }
         if entry.mode == .packages, let store {
           recoverPackages(entry, store: store)
+        } else if let store, let remote = try? storePath(entry.remote, in: store) {
+          recoverReplacement(remote)
         }
       }
       reconcileUnlocked()
+    }
+  }
+
+  /// After an interrupted `replace`: if the copy is missing, the new one (staging) or else the old
+  /// one goes back in its place; whatever's left over is deleted.
+  private func recoverReplacement(_ remote: URL) {
+    let fm = FileManager.default
+    let parent = remote.deletingLastPathComponent()
+    let names = (try? fm.contentsOfDirectory(atPath: parent.path)) ?? []
+    let staging = names.filter { $0.hasPrefix(".\(remote.lastPathComponent).stowaway-staging-") }
+    let old = names.filter { $0.hasPrefix(".\(remote.lastPathComponent).stowaway-old-") }
+    if !fm.fileExists(atPath: remote.path), let back = staging.first ?? old.first {
+      try? fm.moveItem(at: parent.appendingPathComponent(back), to: remote)
+    }
+    for name in staging + old where fm.fileExists(atPath: parent.appendingPathComponent(name).path)
+    {
+      try? Copier.remove(parent.appendingPathComponent(name))
     }
   }
 
@@ -693,6 +806,15 @@ public struct OffloadLimitReached: LocalizedError, Equatable {
 
 public struct StowawayError: LocalizedError, Equatable {
   public let message: String
-  public init(_ message: String) { self.message = message }
+  /// Whether this folder can't be stowed as it is (git tracks it, it's a pnpm project…), as
+  /// opposed to a failure that may pass (the drive went away mid-copy).
+  public let isRefusal: Bool
+  public init(_ message: String, refusal: Bool = false) {
+    self.message = message
+    self.isRefusal = refusal
+  }
+  public static func refusal(_ message: String) -> StowawayError {
+    StowawayError(message, refusal: true)
+  }
   public var errorDescription: String? { message }
 }

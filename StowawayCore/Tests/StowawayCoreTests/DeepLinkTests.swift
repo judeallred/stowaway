@@ -115,4 +115,61 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertTrue(
       FileManager.default.fileExists(atPath: victim.appendingPathComponent("keep.txt").path))
   }
+
+  /// The slots in the store (not the manifest).
+  private func slots(_ store: URL) throws -> Set<String> {
+    Set(
+      try FileManager.default.contentsOfDirectory(atPath: store.path).filter { !$0.hasPrefix(".") })
+  }
+
+  /// An upgraded package moves to a new slot; the old one doesn't linger on the drive.
+  func testUpgradedPackagesDontLeaveOldCopies() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(
+      try XCTUnwrap(engine.entries().first).remote)
+    let before = try slots(store)
+    let b = nm.appendingPathComponent("b")
+    try Copier.remove(b)
+    try s.file("code/app/node_modules/b/package.json", #"{ "name": "b", "version": "3.0.0" }"#)
+    _ = try engine.exclusively { try engine.offloadPackages(local: nm, store: store) }
+    XCTAssertEqual(try slots(store).count, before.count)
+    XCTAssertTrue(isSymlink(b.appendingPathComponent("package.json").path))
+  }
+
+  /// Forgetting a drive that's gone leaves no links into its store: npm repairs the folder.
+  func testAbandoningLeavesNoLinksIntoTheStore() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    try engine.abandonDrive()
+    let walker = try XCTUnwrap(FileManager.default.enumerator(atPath: nm.path))
+    for case let rel as String in walker {
+      let path = nm.appendingPathComponent(rel).path
+      guard isSymlink(path) else { continue }
+      let destination = try FileManager.default.destinationOfSymbolicLink(atPath: path)
+      XCTAssertFalse(
+        destination.contains(Engine.storeFolderName), "\(rel) still links to the store")
+    }
+  }
+
+  /// Bringing back stops, keeping the store, if a link leads nowhere (the drive mounted under
+  /// another name): deleting the store would lose those packages.
+  func testReleaseStopsAtLinksThatLeadNowhere() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(
+      try XCTUnwrap(engine.entries().first).remote)
+    let file = nm.appendingPathComponent("a/index.js")
+    try FileManager.default.removeItem(at: file)
+    try FileManager.default.createSymbolicLink(
+      atPath: file.path, withDestinationPath: "/Volumes/Gone/Stowaway.noindex/x/index.js")
+    XCTAssertThrowsError(try engine.release(nm.path))
+    XCTAssertTrue(isRealDirectory(store.path))
+  }
 }

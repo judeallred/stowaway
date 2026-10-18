@@ -42,6 +42,8 @@ func makeEngine(_ scratch: Scratch) throws -> (Engine, code: URL, drive: URL) {
   let suite = "stowaway-tests-\(UUID().uuidString)"
   let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
   let engine = Engine(defaults: defaults, stateDirectory: try scratch.dir("state"))
+  // Tests write and reconcile at once; the tests of quiet time set their own.
+  engine.quietPeriod = -1
   let code = try scratch.dir("code")
   let drive = try scratch.dir("drive")
   try engine.grant(code, as: .root)
