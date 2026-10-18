@@ -161,4 +161,19 @@ final class EngineTests: XCTestCase {
       engine.installID)
     XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: store.path).isEmpty)
   }
+
+  func testRecountingCatchesGrowthOnTheDrive() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/small", "x")
+    let next = code.appendingPathComponent("app/.next")
+    try engine.adopt(next.path, kind: .next)
+    let before = engine.offloadedBytes
+    // A build writes through the link, onto the drive.
+    try Data(count: 2_000_000).write(to: next.appendingPathComponent("big"))
+    XCTAssertEqual(engine.offloadedBytes, before)
+    engine.recountStowed()
+    XCTAssertGreaterThan(engine.offloadedBytes, before + 1_900_000)
+  }
 }

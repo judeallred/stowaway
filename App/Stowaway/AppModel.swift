@@ -92,6 +92,8 @@ final class AppModel {
   /// Last measurement per folder, so a rescan only re-measures folders that changed.
   private var measured: [String: (bytes: Int64, activity: Date)] = [:]
   private var reconcileQueued = false
+  /// When stowed folders were last re-measured on the drive (see `recountStowed`).
+  private var lastRecount = Date.distantPast
   private var detectedProjectFolders: [ProjectFinder.Suggestion] = []
 
   /// Offload folders automatically once they've been unchanged this many minutes (0 = only by
@@ -561,6 +563,7 @@ final class AppModel {
     refreshSettings()
     await measure()
     saveCache(candidates)
+    await recountStowed()
     await autoOffload()
   }
 
@@ -602,6 +605,17 @@ final class AppModel {
   private static func projectFolder(of entry: Entry, container: String) -> String? {
     guard entry.kind?.isGlobal != true else { return nil }
     return URL(fileURLWithPath: container).deletingLastPathComponent().path
+  }
+
+  /// Every 10 minutes at most, re-measures stowed folders on the drive, so the stowed total keeps
+  /// up with tools that write into them.
+  private func recountStowed() async {
+    guard driveConnected, Date.now.timeIntervalSince(lastRecount) > 600 else { return }
+    lastRecount = .now
+    let engine = engine
+    await Task.detached { engine.recountStowed() }.value
+    rows = merge(candidates: rows.map(\.candidate), entries: engine.entries())
+    refreshSettings()
   }
 
   private func saveCache(_ candidates: [Candidate]) {

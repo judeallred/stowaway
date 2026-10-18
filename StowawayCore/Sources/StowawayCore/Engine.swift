@@ -523,6 +523,26 @@ public final class Engine: @unchecked Sendable {
 
   /// Makes every entry match whether the offload location is connected. Run at launch, when
   /// volumes change and periodically (to re-offload what an npm install brought back).
+  /// Re-measures what each stowed folder takes on the drive. Tools keep writing into stowed
+  /// folders (a Cargo build into its target, say), so the size recorded when a folder was stowed
+  /// falls behind. Measures without the lock, which can take a while, then records the sizes
+  /// under it. Does nothing while the drive is away.
+  public func recountStowed() {
+    guard let store = enterGrants() else { return }
+    var sizes: [String: Int64] = [:]
+    for entry in entries() where entry.online {
+      guard let remote = try? storePath(entry.remote, in: store) else { continue }
+      sizes[entry.id] = Measure.allocatedSize(remote.path)
+    }
+    _ = try? exclusively {
+      var all = entries()
+      for i in all.indices where all[i].online {
+        if let bytes = sizes[all[i].id] { all[i].bytes = bytes }
+      }
+      save(all)
+    }
+  }
+
   public func reconcile() {
     _ = try? exclusively { reconcileUnlocked() }
   }
