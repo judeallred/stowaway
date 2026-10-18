@@ -16,15 +16,43 @@ extension AppModel {
     }
     // Stowing by hand undoes "keep on this Mac".
     keptOnMac.subtract(rows.map(\.path))
+    for row in rows { broughtBack[row.path] = nil }
     await bulk(rows, .stowing, Self.stow)
   }
 
-  func bringBack(_ rows: [Row]) async {
-    // Kept here until stowed by hand, or automatic stowing would undo this within minutes.
-    keptOnMac.formUnion(rows.map(\.path))
+  /// Brings folders back. With `keep`, they stay on this Mac until stowed by hand; otherwise
+  /// automatic stowing takes them again once they've changed and gone quiet.
+  func bringBack(_ rows: [Row], keep: Bool = false) async {
+    if keep {
+      keptOnMac.formUnion(rows.map(\.path))
+    } else {
+      for row in rows { broughtBack[row.path] = .now }
+    }
     await bulk(rows, .bringingBack) { row, engine, _ in
       for path in row.entryPaths { try engine.release(path) }
     }
+  }
+
+  /// Keeps folders on this Mac, out of automatic stowing; stowed ones are brought back first.
+  func keepOnMac(_ rows: [Row]) async {
+    keptOnMac.formUnion(rows.map(\.path))
+    let stowed = rows.filter { $0.place != .mac }
+    if !stowed.isEmpty { await bringBack(stowed, keep: true) }
+  }
+
+  /// Lets automatic stowing take folders that were kept on this Mac.
+  func allowAutomaticStowing(_ rows: [Row]) {
+    keptOnMac.subtract(rows.map(\.path))
+    for row in rows { broughtBack[row.path] = nil }
+    Task { await autoOffload() }
+  }
+
+  /// Whether automatic stowing should leave a folder alone because the user kept it here, or
+  /// brought it back and it hasn't changed since.
+  func isHeldOnMac(_ row: Row) -> Bool {
+    if keptOnMac.contains(row.path) { return true }
+    guard let at = broughtBack[row.path] else { return false }
+    return (row.lastActivity ?? .distantPast) <= at
   }
 
   func delete(_ rows: [Row]) async {
@@ -143,7 +171,7 @@ extension AppModel {
     }
     let due = rows.filter { row in
       guard row.place == .mac, row.localBytes != nil, (row.lastActivity ?? .now) < cutoff,
-        !busy.contains(row.path), !keptOnMac.contains(row.path), !isRefused(row)
+        !busy.contains(row.path), !isHeldOnMac(row), !isRefused(row)
       else { return false }
       if row.kind == .xcodeDerivedData && xcodeRunning { return false }
       if row.kind == .gradleHome && gradleIDERunning { return false }
@@ -159,6 +187,7 @@ extension AppModel {
         continue
       }
       let failure = await runOne(row, .stowing, index: i, of: due.count, Self.stow)
+      if failure == nil { broughtBack[row.path] = nil }
       if failure is OffloadLimitReached { break }
       // Only real refusals are remembered; a failure that may pass is retried next time.
       if (failure as? StowawayError)?.isRefusal == true { refused[row.path] = row.lastActivity }

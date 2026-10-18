@@ -155,6 +155,15 @@ struct LibraryView: View {
       }
       .disabled(!model.driveConnected)
     }
+    let kept = rows.filter { model.keptOnMac.contains($0.path) }
+    if !rows.isEmpty, kept.count < rows.count {
+      Button("Keep on This Mac") { Task { await model.keepOnMac(rows) } }
+        .disabled(rows.contains { $0.place != .mac } && !model.driveConnected)
+        .help("Stowaway won't stow these automatically. Stowed ones are brought back.")
+    }
+    if !kept.isEmpty {
+      Button("Allow Automatic Stowing") { model.allowAutomaticStowing(kept) }
+    }
     if !rows.isEmpty {
       Button("Show in Finder") {
         NSWorkspace.shared.activateFileViewerSelecting(rows.map { URL(fileURLWithPath: $0.path) })
@@ -454,7 +463,9 @@ private struct PlaceLabel: View {
     case .mac where kept:
       Label("Kept on Mac", systemImage: "pin")
         .foregroundStyle(.secondary)
-        .help("You brought this back, so it isn't stowed automatically. Stow it to undo that.")
+        .help(
+          "You chose to keep this on your Mac, so it isn't stowed automatically. Stow it, or choose Allow Automatic Stowing, to undo that."
+        )
     case .mac: Label("This Mac", systemImage: "laptopcomputer").foregroundStyle(.secondary)
     case .drive: Label("Drive", systemImage: "externaldrive.fill")
     case .driveAway:

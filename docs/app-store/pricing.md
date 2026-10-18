@@ -54,7 +54,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 
 ## Suggested prices (yours to set in App Store Connect)
 
-- **Personal:** seven prices doubling from $8 to $512, each with a line in the app: "A sandwich", "A really nice sandwich", "Sandwiches for our whole team", "Movie night!", "Still cheaper than upgrading your storage", "We will send you a hand-written thank you card", "We'll send you a birthday card every year".
+- **Personal:** seven prices doubling from $8 to $512, each with a line in the app: "A sandwich", "A really nice sandwich", "Sandwiches for our whole team", "Movie night!", "Still cheaper than upgrading your storage", "You made our whole week", "You're a Stowaway legend".
 - **Business:** six prices, mostly just under common expense auto-approval limits, under "I can
   expense:": $24.99 "Independent", $49.99 "Startup", $99.99 "Small business", $149.99 "Growing company", $249.99 "Fintech", $499.99 "Enterprise". There's no standard limit
   (SAP Concur and Oracle set limits per approver, Learnerbly one for the whole organization:

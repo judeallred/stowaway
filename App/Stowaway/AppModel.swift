@@ -24,10 +24,21 @@ final class AppModel {
   /// Folders Stowaway couldn't stow (a pnpm project, say), with their last-changed date then.
   /// Automatic stowing leaves them alone until they change.
   var refused: [String: Date?] = [:]
-  /// Folders the user brought back: automatic stowing leaves them on this Mac until they're
-  /// stowed by hand. Kept across launches.
+  /// Folders the user chose to keep on this Mac: automatic stowing leaves them alone until
+  /// they're stowed by hand or allowed again. Kept across launches.
   var keptOnMac: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "keptOnMac") ?? []) {
     didSet { UserDefaults.standard.set(Array(keptOnMac), forKey: "keptOnMac") }
+  }
+  /// When folders were brought back. A brought-back folder keeps its old dates, so it would look
+  /// idle and be stowed again at once; it's left alone until it changes, then stowed as usual.
+  var broughtBack: [String: Date] =
+    (UserDefaults.standard.dictionary(forKey: "broughtBack") as? [String: Double] ?? [:])
+    .mapValues { Date(timeIntervalSince1970: $0) }
+  {
+    didSet {
+      UserDefaults.standard.set(
+        broughtBack.mapValues(\.timeIntervalSince1970), forKey: "broughtBack")
+    }
   }
   var roots: [String] = []
   var drivePath: String?

@@ -85,6 +85,7 @@ extension AppModel {
     let current = Set(candidates.map(\.path))
     measured = measured.filter { current.contains($0.key) }
     keptOnMac = keptOnMac.filter { current.contains($0) }
+    broughtBack = broughtBack.filter { current.contains($0.key) }
     ScanCache(folders: folders).save()
   }
 

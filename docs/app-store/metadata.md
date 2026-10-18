@@ -92,8 +92,8 @@ sheet: render one with the snapshot mode (`CONTRIBUTING.md`) or take one in the 
 | …`personal.3` | Personal 3 | Sandwiches for Our Whole Team | Unlimited stowing. Pay what you want. | $32 | On |
 | …`personal.4` | Personal 4 | Movie Night | Unlimited stowing. Pay what you want. | $64 | On |
 | …`personal.5` | Personal 5 | Cheaper Than Storage | Unlimited stowing. Pay what you want. | $128 | On |
-| …`personal.6` | Personal 6 | Thank-You Card | Unlimited stowing. Pay what you want. | $256 | On |
-| …`personal.7` | Personal 7 | Birthday Cards | Unlimited stowing. Pay what you want. | $512 | On |
+| …`personal.6` | Personal 6 | Made Our Week | Unlimited stowing. Pay what you want. | $256 | On |
+| …`personal.7` | Personal 7 | Stowaway Legend | Unlimited stowing. Pay what you want. | $512 | On |
 | …`business.1` | Business 1 | Independent | Unlimited stowing, for use at work. | $24.99 | Off |
 | …`business.2` | Business 2 | Startup | Unlimited stowing, for use at work. | $49.99 | Off |
 | …`business.3` | Business 3 | Small Business | Unlimited stowing, for use at work. | $99.99 | Off |
