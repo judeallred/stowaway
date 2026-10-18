@@ -84,6 +84,19 @@ extension AppModel {
     }
   }
 
+  static let cargoInUse = "A Cargo build or check is using it. Stowaway stows it once that's done."
+
+  /// Records why a folder wasn't stowed. Only real refusals keep automatic stowing away (until
+  /// the folder changes); a failure that may pass is retried next time.
+  private func noteFailure(_ failure: any Error, for row: Row) {
+    if (failure as? StowawayError)?.isRefusal == true {
+      refused[row.path] = row.lastActivity
+      problems[row.path] = .cantStow(Problem.sentence(failure))
+    } else {
+      problems[row.path] = .didntStow(Problem.sentence(failure))
+    }
+  }
+
   /// "Stowing node_modules in alchemist (2.8 GB) · 3 of 12…"
   static func describe(_ op: Operation, _ row: Row, index: Int, of count: Int) -> String {
     let what = row.project == nil ? row.kind.label : "\(row.kind.label) in \(row.name)"
@@ -104,6 +117,7 @@ extension AppModel {
     operation = op
     queued.remove(row.path)
     busy.insert(row.path)
+    problems[row.path] = nil
     defer {
       busy.remove(row.path)
       activity = nil
@@ -133,6 +147,11 @@ extension AppModel {
     defer { queued.subtract(rows.map(\.path)) }
     var failures: [any Error] = []
     for (i, row) in rows.enumerated() {
+      if op == .stowing, Measure.isBusy(row.candidate) {
+        queued.remove(row.path)
+        problems[row.path] = .inUse(Self.cargoInUse)
+        continue
+      }
       let failure = await runOne(row, op, index: i, of: rows.count, work)
       if failure is OffloadLimitReached {
         if store.loaded {
@@ -144,9 +163,7 @@ extension AppModel {
       }
       guard let failure else { continue }
       failures.append(failure)
-      if op == .stowing, (failure as? StowawayError)?.isRefusal == true {
-        refused[row.path] = row.lastActivity
-      }
+      if op == .stowing { noteFailure(failure, for: row) }
     }
     if rows.count == 1, let error = failures.first { message = error.localizedDescription }
     await scan()
@@ -184,13 +201,13 @@ extension AppModel {
       guard !stoppingDrive else { break }
       if Measure.isBusy(row.candidate) {
         queued.remove(row.path)
+        problems[row.path] = .inUse(Self.cargoInUse)
         continue
       }
       let failure = await runOne(row, .stowing, index: i, of: due.count, Self.stow)
       if failure == nil { broughtBack[row.path] = nil }
       if failure is OffloadLimitReached { break }
-      // Only real refusals are remembered; a failure that may pass is retried next time.
-      if (failure as? StowawayError)?.isRefusal == true { refused[row.path] = row.lastActivity }
+      if let failure, !(failure is OffloadLimitReached) { noteFailure(failure, for: row) }
     }
   }
 }

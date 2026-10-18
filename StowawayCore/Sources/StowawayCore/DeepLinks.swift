@@ -30,6 +30,12 @@ extension Engine {
   // MARK: Guards
 
   /// Why a node_modules can't be managed package by package, or nil if it can.
+  /// Why a project's node_modules can't be stowed (a pnpm project, a Turbopack build without
+  /// `turbopack.root`), found without trying: cheap enough to ask while scanning.
+  public static func refusal(forNodeModules nodeModules: URL) -> String? {
+    packagesRefusal(nodeModules, allowTurbopack: false)
+  }
+
   static func packagesRefusal(_ nodeModules: URL, allowTurbopack: Bool) -> String? {
     let fm = FileManager.default
     let project = nodeModules.deletingLastPathComponent()

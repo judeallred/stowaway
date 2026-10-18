@@ -130,7 +130,9 @@ struct LibraryView: View {
         } else if model.queued.contains(row.path) {
           Label("Queued", systemImage: "clock").foregroundStyle(.secondary)
         } else {
-          PlaceLabel(place: row.place, kept: model.keptOnMac.contains(row.path))
+          PlaceLabel(
+            place: row.place, kept: model.keptOnMac.contains(row.path),
+            problem: model.problem(for: row))
         }
       }
       .width(min: 110, ideal: 130)
@@ -214,7 +216,8 @@ struct LibraryView: View {
       }
       .disabled(offloaded.isEmpty || !model.driveConnected)
       let offload = Button(all ? "Stow All" : "Stow") {
-        Task { await model.offload(onMac) }
+        // Stow All leaves out folders Stowaway can't stow; a selection is tried as asked.
+        Task { await model.offload(all ? onMac.filter { !model.isRefused($0) } : onMac) }
       }
       .disabled(onMac.isEmpty || !model.driveConnected)
       .help(model.driveConnected ? "" : "Connect your drive first")
@@ -455,10 +458,26 @@ struct StorageBar: View {
 
 private struct PlaceLabel: View {
   let place: Row.Place
-  /// Brought back by the user: automatic stowing leaves it here.
+  /// Chosen to stay on this Mac: automatic stowing leaves it here.
   let kept: Bool
+  /// Why it wasn't stowed, if it wasn't.
+  let problem: AppModel.Problem?
 
   var body: some View {
+    switch problem {
+    case .cantStow(let reason):
+      Label("Can't stow", systemImage: "nosign").foregroundStyle(.secondary).help(reason)
+    case .didntStow(let reason):
+      Label("Didn't stow", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        .help(reason)
+    case .inUse(let reason):
+      Label("In use", systemImage: "hammer").foregroundStyle(.secondary).help(reason)
+    case nil:
+      placeLabel
+    }
+  }
+
+  @ViewBuilder private var placeLabel: some View {
     switch place {
     case .mac where kept:
       Label("Kept on Mac", systemImage: "pin")

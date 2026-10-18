@@ -172,4 +172,16 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertThrowsError(try engine.release(nm.path))
     XCTAssertTrue(isRealDirectory(store.path))
   }
+
+  /// A pnpm project is recognized as one Stowaway can't stow, without trying.
+  func testPnpmProjectsAreKnownUnstowable() throws {
+    let s = try Scratch()
+    let npm = try project(s)
+    XCTAssertNil(Engine.refusal(forNodeModules: npm))
+    try s.file("code/web/package.json", "{}")
+    try s.file("code/web/pnpm-lock.yaml", "lockfileVersion: '9.0'")
+    try s.file("code/web/node_modules/.pnpm/lock.yaml", "")
+    XCTAssertNotNil(
+      Engine.refusal(forNodeModules: s.root.appendingPathComponent("code/web/node_modules")))
+  }
 }

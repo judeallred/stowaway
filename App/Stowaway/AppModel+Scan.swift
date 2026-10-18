@@ -34,6 +34,15 @@ extension AppModel {
       return Scanner().scan(roots: roots)
     }.value
     rows = merge(candidates: candidates, entries: engine.entries())
+    unstowable = await Task.detached {
+      var found: [String: String] = [:]
+      for c in candidates where c.kind == .node {
+        if let reason = Engine.refusal(forNodeModules: c.url) {
+          found[c.path] = reason.prefix(1).uppercased() + reason.dropFirst() + "."
+        }
+      }
+      return found
+    }.value
     refreshSettings()
     await measure()
     saveCache(candidates)

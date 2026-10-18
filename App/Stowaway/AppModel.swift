@@ -24,6 +24,10 @@ final class AppModel {
   /// Folders Stowaway couldn't stow (a pnpm project, say), with their last-changed date then.
   /// Automatic stowing leaves them alone until they change.
   var refused: [String: Date?] = [:]
+  /// Why a folder on this Mac wasn't stowed, for the library to show.
+  var problems: [String: Problem] = [:]
+  /// Folders the scan found Stowaway can't stow (pnpm projects…), with the reason.
+  var unstowable: [String: String] = [:]
   /// Folders the user chose to keep on this Mac: automatic stowing leaves them alone until
   /// they're stowed by hand or allowed again. Kept across launches.
   var keptOnMac: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "keptOnMac") ?? []) {
@@ -112,6 +116,29 @@ final class AppModel {
   var didOnboard: Bool {
     get { UserDefaults.standard.bool(forKey: "didOnboard") }
     set { UserDefaults.standard.set(newValue, forKey: "didOnboard") }
+  }
+
+  /// Why a folder wasn't stowed.
+  enum Problem: Equatable {
+    /// Stowaway won't stow it as it is (a pnpm project, a folder git tracks…).
+    case cantStow(String)
+    /// It failed this time (the drive went away, a file couldn't be copied…).
+    case didntStow(String)
+    /// A tool is using it; it's stowed once the tool's done.
+    case inUse(String)
+
+    var reason: String {
+      switch self {
+      case .cantStow(let text), .didntStow(let text), .inUse(let text): text
+      }
+    }
+
+    /// The engine's message as a sentence: capitalized, with a full stop.
+    static func sentence(_ error: any Error) -> String {
+      let text = error.localizedDescription
+      let capitalized = text.prefix(1).uppercased() + text.dropFirst()
+      return capitalized.hasSuffix(".") ? capitalized : capitalized + "."
+    }
   }
 
   // MARK: Kinds of work
@@ -234,8 +261,15 @@ final class AppModel {
 
   // MARK: Totals
 
-  /// Whether a row couldn't be stowed and hasn't changed since.
+  /// What the library shows about a row on this Mac that isn't stowed, if anything.
+  func problem(for row: Row) -> Problem? {
+    guard row.place == .mac else { return nil }
+    return problems[row.path] ?? unstowable[row.path].map(Problem.cantStow)
+  }
+
+  /// Whether a row can't be stowed: the scan says so, or it was refused and hasn't changed since.
   func isRefused(_ row: Row) -> Bool {
+    if unstowable[row.path] != nil { return true }
     if let at = refused[row.path], at == row.lastActivity { return true }
     return false
   }
