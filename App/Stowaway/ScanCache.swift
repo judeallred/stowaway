@@ -15,8 +15,9 @@ struct ScanCache: Codable {
   var folders: [Folder] = []
 
   private static var url: URL {
-    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
-      0]
+    let support =
+      (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? FileManager.default.temporaryDirectory)
     try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
     return support.appendingPathComponent("scan-cache.json")
   }

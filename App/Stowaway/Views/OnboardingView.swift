@@ -147,7 +147,7 @@ struct OnboardingView: View {
         if let name = model.driveName {
           Label(name, systemImage: "externaldrive.fill")
           Text(
-            "Folders left unchanged for 5 minutes move there automatically, up to \(Format.bytes(Store.freeOffloadLimit)) free. You can change this in Settings."
+            "Folders move there automatically \(AppModel.AutoStow.describe(model.autoOffloadMinutes)), up to \(Format.bytes(Store.freeOffloadLimit)) free. You can change this in Settings."
           )
           .font(.callout).foregroundStyle(.secondary)
         } else {

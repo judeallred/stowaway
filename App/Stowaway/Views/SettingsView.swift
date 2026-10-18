@@ -78,7 +78,7 @@ struct OffloadSettings: View {
           if let name = model.driveName {
             Label(
               model.drivePath.map(Format.path) ?? name,
-              systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark"
+              systemImage: model.driveSymbol
             )
             if !model.driveConnected { Text("disconnected").foregroundStyle(.secondary) }
           } else {
@@ -144,12 +144,7 @@ struct OffloadSettings: View {
       }
       Section {
         Picker("Stow automatically", selection: $model.autoOffloadMinutes) {
-          Text("Immediately").tag(AppModel.immediately)
-          Text("After 5 minutes unchanged").tag(5)
-          Text("After 1 hour unchanged").tag(60)
-          Text("After 1 day unchanged").tag(1440)
-          Text("After 1 week unchanged").tag(10_080)
-          Text("Never (only when I choose)").tag(0)
+          ForEach(AppModel.AutoStow.choices, id: \.minutes) { Text($0.label).tag($0.minutes) }
         }
       } footer: {
         Text(

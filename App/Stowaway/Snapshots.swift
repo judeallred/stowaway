@@ -187,7 +187,7 @@
         if place != .mac { r.entryPaths = [r.path] }
         return r
       }
-      demoRows = [
+      rows = [
         row(.node, "storefront-web", "node_modules", 1.21, 0.2, .mac),
         row(.cargoTarget, "telemetry-agent", "target", 14.8, 3, .drive),
         row(.node, "design-system", "node_modules", 0.84, 41, .drive),

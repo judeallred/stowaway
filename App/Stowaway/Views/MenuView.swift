@@ -25,27 +25,24 @@ struct MenuView: View {
       VStack(alignment: .leading, spacing: 2) {
         action("Open Stowaway…", "macwindow") { show { openWindow(id: WindowID.library) } }
         let onMac = model.rows.filter { $0.place == .mac }
-        if !onMac.isEmpty {
-          let size = Format.bytes(model.reclaimableBytes)
-          if model.driveConnected {
-            action("Stow All (\(size))", "shippingbox") { Task { await model.offload(onMac) } }
-              .disabled(model.activity != nil)
-          } else {
-            action("Purge All (\(size))…", "trash") { show { confirmPurge(onMac) } }
-              .disabled(model.activity != nil)
+        if model.driveConnected, model.pendingBytes > 0 {
+          // What's pending: Stow All skips folders that can't be stowed.
+          action("Stow All (\(Format.bytes(model.pendingBytes)))", "shippingbox") {
+            Task { await model.offload(onMac.filter { !model.isRefused($0) }) }
           }
+          .disabled(model.activity != nil)
+        } else if !model.driveConnected, !onMac.isEmpty {
+          action("Purge All (\(Format.bytes(model.reclaimableBytes)))…", "trash") {
+            show { confirmPurge(onMac) }
+          }
+          .disabled(model.activity != nil)
         }
       }
       Divider()
       VStack(alignment: .leading, spacing: 2) {
         action("Settings…", "gearshape") { show { openSettings() } }
         if !model.store.hasPurchased {
-          action("Support Stowaway…", "heart") {
-            show {
-              openWindow(id: WindowID.library)
-              model.showingSupport = true
-            }
-          }
+          action("Support Stowaway…", "heart") { openLibrary(showing: \.showingSupport) }
         }
         action("Help", "questionmark.circle", submenu: true) { showHelp() }
       }
@@ -65,13 +62,8 @@ struct MenuView: View {
       Text("New folders stay on this Mac until you go unlimited.")
         .font(.caption).foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-      Button("Go Unlimited…") {
-        show {
-          openWindow(id: WindowID.library)
-          model.showingSupport = true
-        }
-      }
-      .buttonStyle(.link).font(.callout)
+      Button("Go Unlimited…") { openLibrary(showing: \.showingSupport) }
+        .buttonStyle(.link).font(.callout)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(10)
@@ -84,7 +76,7 @@ struct MenuView: View {
       if let name = model.driveName {
         Label(
           model.driveConnected ? "\(name) connected" : "\(name) disconnected",
-          systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark")
+          systemImage: model.driveSymbol)
         StowageSummary(model: model)
       } else {
         action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
@@ -126,30 +118,29 @@ struct MenuView: View {
     }
     menu.addItem(.separator())
     menu.addItem(
-      ClosureMenuItem("Show Setup Again…") {
-        show {
-          openWindow(id: WindowID.library)
-          model.showingOnboarding = true
-        }
-      })
+      ClosureMenuItem("Show Setup Again…") { openLibrary(showing: \.showingOnboarding) })
     menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
   }
 
   /// Deletes every re-creatable folder on this Mac, after asking. Offered when there's no drive
   /// to stow them on.
   private func confirmPurge(_ rows: [Row]) {
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-    alert.messageText =
-      "Delete \(Format.count(rows.count, "folder")) (\(Format.bytes(model.reclaimableBytes)))?"
-    alert.informativeText =
-      "These are re-created by your tools (npm install, cargo build, Xcode…), which takes time and may need the network. Folders stowed on a drive aren't affected."
-    alert.addButton(withTitle: "Delete")
-    alert.addButton(withTitle: "Cancel")
-    alert.buttons[0].hasDestructiveAction = true
-    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    guard
+      Panels.ask(
+        "Delete \(Format.count(rows.count, "folder")) (\(Format.bytes(model.reclaimableBytes)))?",
+        Panels.deleteNote + " Folders stowed on a drive aren't affected.",
+        buttons: ["Delete"], destructive: [0]) != nil
+    else { return }
     let model = model
     Task { await model.delete(rows) }
+  }
+
+  /// Opens the library window with one of its sheets showing.
+  private func openLibrary(showing sheet: ReferenceWritableKeyPath<AppModel, Bool>) {
+    show {
+      openWindow(id: WindowID.library)
+      model[keyPath: sheet] = true
+    }
   }
 
   private func show(_ open: () -> Void) {

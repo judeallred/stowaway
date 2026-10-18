@@ -35,13 +35,7 @@ struct LibraryView: View {
   }
 
   /// What the row being worked on shows in the Where column.
-  private var working: String {
-    switch model.operation {
-    case .bringingBack: "Bringing back…"
-    case .deleting: "Deleting…"
-    default: "Stowing…"
-    }
-  }
+  private var working: String { "\((model.operation ?? .stowing).verb)…" }
 
   private var selected: [Row] { model.rows.filter { selection.contains($0.id) } }
 
@@ -100,7 +94,7 @@ struct LibraryView: View {
       }
     } message: {
       Text(
-        "These folders are re-created by your tools (npm install, cargo build, Xcode…), which takes time and may need the network. Stowed copies on the drive are deleted too."
+        Panels.deleteNote + " Stowed copies on the drive are deleted too."
       )
     }
   }
@@ -136,7 +130,7 @@ struct LibraryView: View {
         } else if model.queued.contains(row.path) {
           Label("Queued", systemImage: "clock").foregroundStyle(.secondary)
         } else {
-          PlaceLabel(place: row.place)
+          PlaceLabel(place: row.place, kept: model.keptOnMac.contains(row.path))
         }
       }
       .width(min: 110, ideal: 130)
@@ -169,7 +163,12 @@ struct LibraryView: View {
       Button("Delete…", role: .destructive) { confirmingDelete = rows }
       Divider()
     }
+    selectionButtons
+  }
+
+  @ViewBuilder private var selectionButtons: some View {
     Button("Select All") { selection = Set(visible.map(\.id)) }
+      .disabled(visible.isEmpty || visible.allSatisfy { selection.contains($0.id) })
     Button("Select None") { selection = [] }
       .disabled(selection.isEmpty)
   }
@@ -196,10 +195,7 @@ struct LibraryView: View {
       let rows = all ? visible : selected
       let onMac = rows.filter { $0.place == .mac }
       let offloaded = rows.filter { $0.place != .mac }
-      Button("Select All") { selection = Set(visible.map(\.id)) }
-        .disabled(visible.isEmpty || visible.allSatisfy { selection.contains($0.id) })
-      Button("Select None") { selection = [] }
-        .disabled(selection.isEmpty)
+      selectionButtons
       Divider().frame(height: 16)
       Button(all ? "Delete All…" : "Delete…", role: .destructive) { confirmingDelete = rows }
         .disabled(rows.isEmpty)
@@ -339,7 +335,7 @@ private struct DriveButton: View {
         } label: {
           Label(
             name,
-            systemImage: model.driveConnected ? "externaldrive.fill" : "externaldrive.badge.xmark"
+            systemImage: model.driveSymbol
           )
           .lineLimit(1)
           .frame(maxWidth: .infinity)
@@ -450,33 +446,21 @@ struct StorageBar: View {
 
 private struct PlaceLabel: View {
   let place: Row.Place
+  /// Brought back by the user: automatic stowing leaves it here.
+  let kept: Bool
 
   var body: some View {
     switch place {
+    case .mac where kept:
+      Label("Kept on Mac", systemImage: "pin")
+        .foregroundStyle(.secondary)
+        .help("You brought this back, so it isn't stowed automatically. Stow it to undo that.")
     case .mac: Label("This Mac", systemImage: "laptopcomputer").foregroundStyle(.secondary)
     case .drive: Label("Drive", systemImage: "externaldrive.fill")
     case .driveAway:
       Label("Drive (away)", systemImage: "externaldrive.badge.xmark")
         .foregroundStyle(.orange)
         .help("The drive is disconnected, so your tools are using a local folder meanwhile.")
-    }
-  }
-}
-
-extension Row {
-  var sortSize: Int64 { (localBytes ?? 0) + driveBytes }
-  var sortDate: Date { lastActivity ?? .distantPast }
-  var placeOrder: Int {
-    switch place {
-    case .mac: 0
-    case .drive: 1
-    case .driveAway: 2
-    }
-  }
-  var sizeText: String {
-    switch place {
-    case .mac: localBytes.map(Format.bytes) ?? "…"
-    case .drive, .driveAway: Format.bytes(driveBytes)
     }
   }
 }

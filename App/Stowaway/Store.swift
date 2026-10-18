@@ -185,9 +185,9 @@ final class Store {
     loaded = true
   }
 
-  /// Waits (briefly) for the first entitlement check.
+  /// Waits (up to 15 seconds) for the first entitlement check.
   func waitUntilLoaded() async {
-    for _ in 0..<50 where !loaded {
+    for _ in 0..<150 where !loaded {
       try? await Task.sleep(for: .milliseconds(100))
     }
   }

@@ -103,7 +103,8 @@ public final class Engine: @unchecked Sendable {
     self.defaults = defaults
     let support =
       stateDirectory
-      ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      ?? (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.temporaryDirectory)
       .appendingPathComponent("Stowaway", isDirectory: true)
     try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
     self.stateDirectory = support

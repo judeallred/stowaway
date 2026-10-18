@@ -30,4 +30,14 @@ info="$bundle/Contents/Info.plist"
 expected="com.apple.security.app-sandbox com.apple.security.files.bookmarks.app-scope com.apple.security.files.user-selected.executable com.apple.security.files.user-selected.read-write"
 actual=$(plutil -convert json -o - "$app/Stowaway/Stowaway.entitlements" | /usr/bin/python3 -I -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin))))')
 [ "$actual" = "$expected" ] || fail "unexpected entitlements: $actual"
+
+# A signed bundle (an archive or exported build) must carry the same entitlements, and no
+# debugging one. build.sh's builds carry none (the linker's ad-hoc signature only), so this
+# applies when a signed app is passed in.
+signed_xml=$(codesign -d --entitlements - --xml "$bundle" 2>/dev/null || true)
+if [ -n "$signed_xml" ]; then
+  signed=$(printf '%s' "$signed_xml" | plutil -convert json -o - - |
+    /usr/bin/python3 -I -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin))))')
+  [ "$signed" = "$expected" ] || fail "the signed app's entitlements differ: $signed"
+fi
 echo "check-release: OK"

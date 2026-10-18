@@ -112,28 +112,43 @@ every 30 seconds:
   links are left dangling. npm can't read its lockfile then, so the next install repairs them.
 - **Drive back:** whatever was built locally is merged into the store (local files win), the
   link returns, and the local copy is deleted in the background.
-- **A tool replaced a link** (for example, `cargo clean` then a build): the new folder is merged
-  and linked again.
+- **A tool replaced a link** (for example, `cargo clean` then a build): the tool's new folder
+  goes onto the drive in place of the old copy (not merged into it, so what the tool deleted
+  stays deleted), and the link returns.
+- **A link leads somewhere else** (the drive mounted under another name): it's pointed back at
+  the copy. If the copy is gone, the folder becomes a local one.
+
+Merging or replacing waits while a tool may still be writing: until nothing in the folder has
+changed for 20 seconds, and no Cargo build holds its profile's lock (`Engine.isBeingWritten`).
+
+Tools keep writing into stowed folders, so after a scan (at most every 10 minutes) the app
+re-measures them on the drive (`Engine.recountStowed`), keeping the stowed total and the free
+limit honest.
 
 The app has to be running for the first two to happen automatically, which is why onboarding
 offers Open at Login.
 
-## Offloading automatically
+## Stowing automatically
 
-Once an offload location is chosen, the app rescans every 2 minutes and offloads every folder,
+Once a drive is chosen, the app rescans every 2 minutes and stows every folder,
 caches included, that hasn't changed for the window set in Settings (5 minutes by default; it can
-be turned off). "Immediately" offloads anything that's been quiet for 30 seconds, so a folder is
+be turned off). "Immediately" stows anything that's been quiet for 30 seconds, so a folder is
 never copied mid-write. "Changed" looks two levels into the folder, so a build writing into
 `target/debug/deps` counts. It skips folders a tool is using right now:
 - a Cargo `target/` whose `.cargo-lock` is held (`Measure.isBusy`);
 - DerivedData while Xcode is running;
 - Gradle's caches while Android Studio or IntelliJ is running.
 
-It stops at the free limit. Nothing is ever deleted automatically.
+It also skips folders the user brought back ("Kept on Mac", until they're stowed by hand) and
+folders it couldn't stow (a pnpm project), until they change. It stops at the free limit, and
+waits until purchases are read, so a paying user is never held to it. Stowaway never deletes a
+folder of yours on its own; it only cleans up its own copies (a package's old copy on the drive
+after an upgrade, a local folder after it's moved to the drive).
 
 ## Deleting
 
-`Cleaner` applies the same guard rails as offloading. It refuses folders outside the roots,
+`Cleaner` applies the same guard rails as stowing, and runs under the engine's lock
+(`Engine.delete`), so a delete can't interleave with stowing the same folder. It refuses folders outside the roots,
 folders git tracks, offloaded folders, and folders that no longer match their kind. It deletes
 project folders outright, but only empties a cache folder, so the user's grant for it stays
 valid. Deleting an offloaded folder (`Engine.discard`) removes the link and its copy on the drive.

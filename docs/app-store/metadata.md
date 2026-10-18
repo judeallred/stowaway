@@ -56,11 +56,10 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 > • No accounts, no tracking, no data collected.
 >
 > FREE, WITH UNLIMITED STOWING WHEN YOU'RE READY
-> Finding and deleting folders is free, and so is stowing up to 100 GB. Any purchase, at a
-> price you choose, makes stowing unlimited. Are we helping you
+> Finding and deleting folders is free, and so is stowing up to 100 GB. Are we helping you
 > avoid an expensive storage upgrade? Any purchase, at a price you choose, makes stowing
-> unlimited. Using it at work? Please choose a business price: business purchases
-> keep Stowaway free for everyone using it personally.
+> unlimited. Using it at work? Please choose a business price: business purchases keep prices
+> low for everyone using it personally.
 >
 > Made by Brooklyn Spaceport, a 3-person team making creative products.
 
