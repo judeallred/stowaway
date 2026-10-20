@@ -88,6 +88,27 @@ public final class Engine: @unchecked Sendable {
   /// Folders being accessed, by path. Access is started once and kept for the life of the
   /// process: stopping it while another thread is mid-operation would make that operation fail.
   private var scoped: [String: URL] = [:]
+  /// For npm entries that are settled (everything on the drive, quiet), the top-level change
+  /// time then. Reconcile skips them until it changes: walking every package of every project
+  /// each time took minutes with many projects, holding the lock stowing needs.
+  /// Kept in the engine's defaults, so the first reconcile after a launch is quick too.
+  func settledChange(of id: String) -> Date? {
+    lock.withLock {
+      (defaults.dictionary(forKey: "settledPackages")?[id] as? Double).map {
+        Date(timeIntervalSince1970: $0)
+      }
+    }
+  }
+
+  func setSettledChange(_ date: Date?, of id: String) {
+    let ids = Set(entries().map(\.id))
+    lock.withLock {
+      var all = defaults.dictionary(forKey: "settledPackages") as? [String: Double] ?? [:]
+      all[id] = date?.timeIntervalSince1970
+      // Entries that no longer exist drop out.
+      defaults.set(all.filter { ids.contains($0.key) }, forKey: "settledPackages")
+    }
+  }
   let logger = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "engine")
 
   /// Receives one line per notable event (the app shows the latest; tests print them).

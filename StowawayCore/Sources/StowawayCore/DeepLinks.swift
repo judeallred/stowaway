@@ -377,20 +377,7 @@ extension Engine {
 
   /// Whether node_modules has been untouched for `quietPeriod` (an install isn't running).
   func isQuiet(_ local: URL) -> Bool {
-    var newest = Date.distantPast
-    let fm = FileManager.default
-    var dirs = [local.path]
-    for name in (try? fm.contentsOfDirectory(atPath: local.path)) ?? [] where name.hasPrefix("@") {
-      dirs.append(local.path + "/" + name)
-    }
-    for dir in dirs {
-      for name in [""] + ((try? fm.contentsOfDirectory(atPath: dir)) ?? []) {
-        var st = stat()
-        if lstat(name.isEmpty ? dir : dir + "/" + name, &st) == 0 {
-          newest = max(newest, Date(timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec)))
-        }
-      }
-    }
+    var newest = Self.topLevelChange(local)
     if Date().timeIntervalSince(newest) <= quietPeriod { return false }
     // Packages with real files may still be being written (a postinstall compiling for minutes
     // touches only its own folder): look inside those too.
@@ -404,6 +391,30 @@ extension Engine {
   }
 
   /// The newest modification time of anything under `root`, not following links.
+  /// The newest change at node_modules' top level: the folder, its entries (the hidden lockfile
+  /// among them) and its scoped folders' entries. Cheap: no package is opened.
+  static func topLevelChange(_ local: URL) -> Date {
+    var newest = Date.distantPast
+    let fm = FileManager.default
+    var dirs = [local.path]
+    for name in (try? fm.contentsOfDirectory(atPath: local.path)) ?? [] where name.hasPrefix("@") {
+      dirs.append(local.path + "/" + name)
+    }
+    for dir in dirs {
+      for name in [""] + ((try? fm.contentsOfDirectory(atPath: dir)) ?? []) {
+        var st = stat()
+        if lstat(name.isEmpty ? dir : dir + "/" + name, &st) == 0 {
+          newest = max(
+            newest,
+            Date(
+              timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec)
+                + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9))
+        }
+      }
+    }
+    return newest
+  }
+
   static func newestChange(under root: URL) -> Date {
     var newest = Date.distantPast
     var paths: [UnsafeMutablePointer<CChar>?] = [strdup(root.path), nil]
@@ -483,6 +494,10 @@ extension Engine {
       }
       return
     }
+    // npm can only have changed the tree by changing its top level (it rewrites the hidden
+    // lockfile on every install), so a settled project whose top level hasn't moved is skipped.
+    let before = Self.topLevelChange(local)
+    if entry.online, settledChange(of: entry.id) == before { return }
     var st = stat()
     let lockfile = local.appendingPathComponent(Self.hiddenLockfile).path
     let lockfileIsLocal = lstat(lockfile, &st) == 0 && st.st_mode & S_IFMT == S_IFREG
@@ -504,7 +519,10 @@ extension Engine {
       update(entry.id) { $0.online = true }
       note("online: \(entry.local) packages on the drive again")
     }
-    if isQuiet(local) { pruneStore(local: local, store: store) }
+    if isQuiet(local) {
+      pruneStore(local: local, store: store)
+      setSettledChange(Self.topLevelChange(local), of: entry.id)
+    }
   }
 
   /// Deletes package copies in the store that no local package uses any more.

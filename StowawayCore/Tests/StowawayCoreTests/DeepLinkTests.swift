@@ -184,4 +184,26 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertNotNil(
       Engine.refusal(forNodeModules: s.root.appendingPathComponent("code/web/node_modules")))
   }
+
+  /// A settled project isn't walked again until npm changes its top level; then it is, and
+  /// what npm reinstalled goes back to the drive.
+  func testReconcileSkipsSettledProjectsUntilNpmChangesThem() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    engine.reconcile()
+    let id = try XCTUnwrap(engine.entries().first).id
+    XCTAssertNotNil(engine.settledChange(of: id), "settled after a quiet pass")
+    // npm reinstalls b and rewrites its lockfile (replacing the link with a file).
+    let b = nm.appendingPathComponent("b")
+    try Copier.remove(b)
+    try s.file("code/app/node_modules/b/package.json", #"{ "name": "b", "version": "2.1.0" }"#)
+    let lockfile = nm.appendingPathComponent(".package-lock.json")
+    try FileManager.default.removeItem(at: lockfile)
+    try "{}".write(to: lockfile, atomically: true, encoding: .utf8)
+    engine.reconcile()
+    XCTAssertTrue(isSymlink(b.appendingPathComponent("package.json").path))
+    XCTAssertTrue(isSymlink(lockfile.path))
+  }
 }
