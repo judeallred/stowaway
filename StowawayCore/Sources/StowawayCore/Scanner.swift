@@ -50,7 +50,7 @@ public struct Scanner: Sendable {
   public func scan(roots: [String]) -> [Candidate] {
     var found: [Candidate] = []
     var seen = Set<String>()
-    for root in roots {
+    for root in Self.walkable(roots) {
       var st = stat()
       guard lstat(root, &st) == 0 else { continue }
       visit(
@@ -58,6 +58,22 @@ public struct Scanner: Sendable {
     }
     found += caches(roots: roots)
     return found.filter { seen.insert($0.path).inserted }
+  }
+
+  /// The roots worth walking for projects. Cache folders granted for their caches (anything in
+  /// ~/Library, or a hidden folder in the home folder such as ~/.cargo) hold no projects and are
+  /// huge, so they're only searched for caches; a root inside another root is walked with it.
+  static func walkable(_ roots: [String]) -> [String] {
+    let home = realHomeDirectory.standardizedFileURL.path
+    return roots.filter { root in
+      if root.hasPrefix(home + "/") {
+        let first = root.dropFirst(home.count + 1).prefix { $0 != "/" }
+        if first == "Library" || first.hasPrefix(".") { return false }
+      }
+      return !roots.contains { other in
+        other != root && root.hasPrefix(other.hasSuffix("/") ? other : other + "/")
+      }
+    }
   }
 
   /// The machine-wide caches that exist under the roots. Instant, unlike walking the roots, so

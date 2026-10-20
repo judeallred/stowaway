@@ -199,3 +199,14 @@ final class ScannerSkipTests: XCTestCase {
     XCTAssertEqual(found, [root.appendingPathComponent("code/web/node_modules").path])
   }
 }
+
+final class WalkableRootTests: XCTestCase {
+  func testCacheFoldersAndNestedRootsArentWalked() {
+    let home = realHomeDirectory.standardizedFileURL.path
+    let roots = [
+      "\(home)/code", "\(home)/code/work", "\(home)/.cargo", "\(home)/Library/Caches",
+      "\(home)/Library/Developer/Xcode", "/Volumes/Work/src",
+    ]
+    XCTAssertEqual(Scanner.walkable(roots), ["\(home)/code", "/Volumes/Work/src"])
+  }
+}
