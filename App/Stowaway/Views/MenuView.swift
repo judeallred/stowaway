@@ -34,18 +34,7 @@ struct MenuView: View {
   }
 
   /// How much is stowed, and how much more is on this Mac.
-  private var headline: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text("\(Format.bytes(model.offloadedBytes)) stowed")
-        .font(.title2.weight(.semibold)).monospacedDigit()
-      Text(
-        model.pendingBytes > 0
-          ? "\(Format.bytes(model.pendingBytes)) more on this Mac to stow"
-          : "Nothing left on this Mac to stow"
-      )
-      .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-    }
-  }
+  private var headline: some View { StowedHeadline(model: model) }
 
   /// The drive and its space.
   @ViewBuilder private var storage: some View {

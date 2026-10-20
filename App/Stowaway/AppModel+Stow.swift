@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import StowawayCore
+import os
 
 /// Stowing, bringing back and deleting, by hand and automatically.
 extension AppModel {
@@ -75,7 +76,8 @@ extension AppModel {
     let paths: [String]
     if let parts = row.kind.parts(of: row.candidate.url) {
       paths = parts.map(\.path).filter { !row.entryPaths.contains($0) }
-      if paths.isEmpty { throw StowawayError("\(row.name) has no build folders to stow yet.") }
+      // No build folders yet (or all already stowed): nothing to do.
+      if paths.isEmpty { return }
     } else {
       paths = [row.path]
     }
@@ -86,16 +88,23 @@ extension AppModel {
 
   static let cargoInUse = "A Cargo build or check is using it. Stowaway stows it once that's done."
 
-  /// Records why a folder wasn't stowed. Only real refusals keep automatic stowing away (until
-  /// the folder changes); a failure that may pass is retried next time.
+  /// Records why a folder wasn't stowed. A refusal keeps automatic stowing away until the folder
+  /// changes; any other failure leaves it pending, retried after `Timing.retryFailedAfter`
+  /// rather than at every scan (a copy that fails partway is costly to repeat).
   private func noteFailure(_ failure: any Error, for row: Row) {
+    let reason = Problem.sentence(failure)
+    Self.logger.error("Couldn't stow \(row.path, privacy: .private): \(reason, privacy: .private)")
     if (failure as? StowawayError)?.isRefusal == true {
       refused[row.path] = row.lastActivity
-      problems[row.path] = .cantStow(Problem.sentence(failure))
+      problems[row.path] = .cantStow(reason)
     } else {
-      problems[row.path] = .didntStow(Problem.sentence(failure))
+      retryAfter[row.path] = .now.addingTimeInterval(Timing.retryFailedAfter)
+      problems[row.path] = .waiting(
+        "The last try didn't work, so Stowaway will try again soon: \(reason)")
     }
   }
+
+  static let logger = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "stow")
 
   /// "Stowing node_modules in alchemist (2.8 GB) · 3 of 12…"
   static func describe(_ op: Operation, _ row: Row, index: Int, of count: Int) -> String {
@@ -149,7 +158,7 @@ extension AppModel {
     for (i, row) in rows.enumerated() {
       if op == .stowing, Measure.isBusy(row.candidate) {
         queued.remove(row.path)
-        problems[row.path] = .inUse(Self.cargoInUse)
+        problems[row.path] = .waiting(Self.cargoInUse)
         continue
       }
       let failure = await runOne(row, op, index: i, of: rows.count, work)
@@ -188,7 +197,8 @@ extension AppModel {
     }
     let due = rows.filter { row in
       guard row.place == .mac, row.localBytes != nil, (row.lastActivity ?? .now) < cutoff,
-        !busy.contains(row.path), !isHeldOnMac(row), !isRefused(row)
+        !busy.contains(row.path), !isHeldOnMac(row), !isRefused(row),
+        retryAfter[row.path].map({ $0 < .now }) ?? true
       else { return false }
       if row.kind == .xcodeDerivedData && xcodeRunning { return false }
       if row.kind == .gradleHome && gradleIDERunning { return false }
@@ -201,11 +211,14 @@ extension AppModel {
       guard !stoppingDrive else { break }
       if Measure.isBusy(row.candidate) {
         queued.remove(row.path)
-        problems[row.path] = .inUse(Self.cargoInUse)
+        problems[row.path] = .waiting(Self.cargoInUse)
         continue
       }
       let failure = await runOne(row, .stowing, index: i, of: due.count, Self.stow)
-      if failure == nil { broughtBack[row.path] = nil }
+      if failure == nil {
+        broughtBack[row.path] = nil
+        retryAfter[row.path] = nil
+      }
       if failure is OffloadLimitReached { break }
       if let failure, !(failure is OffloadLimitReached) { noteFailure(failure, for: row) }
     }

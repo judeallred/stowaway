@@ -260,7 +260,7 @@ struct SummaryHeader: View {
 
   var body: some View {
     HStack(alignment: .top, spacing: 24) {
-      StowageSummary(model: model, prominent: true)
+      StowedHeadline(model: model)
       Spacer()
       if let plan = model.store.planName {
         PlanBadge(plan: plan) { model.showingSupport = true }
@@ -458,28 +458,16 @@ struct StorageBar: View {
   }
 }
 
+/// Where a folder is: on the drive or on this Mac. A folder on this Mac is pending; if it's
+/// taking a while (a tool is using it, or the last try failed), the reason is in the tooltip.
 private struct PlaceLabel: View {
   let place: Row.Place
   /// Chosen to stay on this Mac: automatic stowing leaves it here.
   let kept: Bool
-  /// Why it wasn't stowed, if it wasn't.
+  /// Why it isn't stowed yet, if there's a reason to give.
   let problem: AppModel.Problem?
 
   var body: some View {
-    switch problem {
-    case .cantStow(let reason):
-      Label("Can't stow", systemImage: "nosign").foregroundStyle(.secondary).help(reason)
-    case .didntStow(let reason):
-      Label("Didn't stow", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
-        .help(reason)
-    case .inUse(let reason):
-      Label("In use", systemImage: "hammer").foregroundStyle(.secondary).help(reason)
-    case nil:
-      placeLabel
-    }
-  }
-
-  @ViewBuilder private var placeLabel: some View {
     switch place {
     case .mac where kept:
       Label("Kept on Mac", systemImage: "pin")
@@ -487,7 +475,9 @@ private struct PlaceLabel: View {
         .help(
           "You chose to keep this on your Mac, so it isn't stowed automatically. Stow it, or choose Allow Automatic Stowing, to undo that."
         )
-    case .mac: Label("This Mac", systemImage: "laptopcomputer").foregroundStyle(.secondary)
+    case .mac:
+      Label("This Mac", systemImage: "laptopcomputer").foregroundStyle(.secondary)
+        .help(problem?.reason ?? "Waiting to be stowed.")
     case .drive: Label("Drive", systemImage: "externaldrive.fill")
     case .driveAway:
       Label("Drive (away)", systemImage: "externaldrive.badge.xmark")

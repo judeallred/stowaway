@@ -53,20 +53,6 @@ struct DashboardView: View {
       if waiting > 0 {
         Text("\(Format.count(waiting, "more folder")) queued.").foregroundStyle(.secondary)
       }
-      let stuck = model.rows.filter {
-        switch model.problem(for: $0) {
-        case .didntStow, .inUse: true
-        default: false
-        }
-      }
-      if !stuck.isEmpty {
-        HStack(spacing: 6) {
-          Text("\(Format.count(stuck.count, "folder")) waiting: in use, or not stowed this time.")
-            .foregroundStyle(.secondary)
-          Button("See Folders…") { openWindow(id: WindowID.folders) }
-            .buttonStyle(.link)
-        }
-      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)

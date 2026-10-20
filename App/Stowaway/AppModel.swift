@@ -26,6 +26,8 @@ final class AppModel {
   var refused: [String: Date?] = [:]
   /// Why a folder on this Mac wasn't stowed, for the library to show.
   var problems: [String: Problem] = [:]
+  /// Folders whose last stow failed, and when automatic stowing may try again.
+  var retryAfter: [String: Date] = [:]
   /// Folders the scan found Stowaway can't stow (pnpm projects…), with the reason.
   var unstowable: [String: String] = [:]
   /// Folders the user chose to keep on this Mac: automatic stowing leaves them alone until
@@ -118,18 +120,18 @@ final class AppModel {
     set { UserDefaults.standard.set(newValue, forKey: "didOnboard") }
   }
 
-  /// Why a folder wasn't stowed.
+  /// Why a folder isn't stowed.
   enum Problem: Equatable {
-    /// Stowaway won't stow it as it is (a pnpm project, a folder git tracks…).
+    /// Stowaway won't stow it as it is (a pnpm project, a folder git tracks…). Such folders
+    /// aren't listed or counted.
     case cantStow(String)
-    /// It failed this time (the drive went away, a file couldn't be copied…).
-    case didntStow(String)
-    /// A tool is using it; it's stowed once the tool's done.
-    case inUse(String)
+    /// It's pending, and here's why it's taking a while: a tool is using it, or the last try
+    /// failed and Stowaway will try again later.
+    case waiting(String)
 
     var reason: String {
       switch self {
-      case .cantStow(let text), .didntStow(let text), .inUse(let text): text
+      case .cantStow(let text), .waiting(let text): text
       }
     }
 
@@ -169,6 +171,8 @@ final class AppModel {
     /// "Immediately" still waits this long, so a folder is never copied mid-write.
     static let immediateQuiet: TimeInterval = 30
     static let measuredAtOnce = 4
+    /// After a stow fails (not a refusal), automatic stowing waits this long to try again.
+    static let retryFailedAfter: TimeInterval = 1800
   }
 
   /// The choices for stowing automatically.

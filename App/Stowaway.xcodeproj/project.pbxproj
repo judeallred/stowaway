@@ -19,9 +19,9 @@
 		54A43427C4D5DD91101E2ED4 /* Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A1E91EAA4D2D64CA8B8A2D /* Snapshots.swift */; };
 		59C1554D0BB98D211BA1AB1E /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B0A2BE706D7AB3CAB8289F /* Format.swift */; };
 		61AA22F0E6CF2F85D9331792 /* StowawayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 9AB1DB8F2368EC1D9DC113C6 /* StowawayCore */; };
+		7D87FE8D3870185DB91CCE36 /* StowStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25084F527DA06485522666B0 /* StowStatus.swift */; };
 		7ED76B451E078047A15A9A2B /* AppModel+Scan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18FB0099D08FDF0FA8944A57 /* AppModel+Scan.swift */; };
 		81C0594C0295E5EEDB6BE039 /* Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73501BAE820AD14F4F5D83F /* Panels.swift */; };
-		8E8A7FF366D6C08BAA3EA027 /* StowageSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64272A8D93510A06A563F517 /* StowageSummary.swift */; };
 		937B9364907816C2F861E791 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5FFFD0BBB9EAD6BE348B1AC9 /* Assets.xcassets */; };
 		9EE9B21E8956CAAA4D8647AC /* ScanCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA49F390174C3127C845384 /* ScanCache.swift */; };
 		A9CDFBE15E1E075A03968C49 /* Links.swift in Sources */ = {isa = PBXBuildFile; fileRef = A742B6F999B77AA3279FB057 /* Links.swift */; };
@@ -43,12 +43,12 @@
 		11C4956EE0571AC3F00B7DB3 /* Logo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logo.swift; sourceTree = "<group>"; };
 		12D5081333372AF939802B7B /* ProjectFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFinder.swift; sourceTree = "<group>"; };
 		18FB0099D08FDF0FA8944A57 /* AppModel+Scan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Scan.swift"; sourceTree = "<group>"; };
+		25084F527DA06485522666B0 /* StowStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StowStatus.swift; sourceTree = "<group>"; };
 		26022092A5847F8F62977F32 /* StowawayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StowawayApp.swift; sourceTree = "<group>"; };
 		28B0A2BE706D7AB3CAB8289F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		3FD0031FDDF84733C353DD8F /* Row.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Row.swift; sourceTree = "<group>"; };
 		56A0A8B92B42DE610604A304 /* AppModel+Stow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Stow.swift"; sourceTree = "<group>"; };
 		5FFFD0BBB9EAD6BE348B1AC9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		64272A8D93510A06A563F517 /* StowageSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StowageSummary.swift; sourceTree = "<group>"; };
 		6529079C3D37E34B3F0DE2D9 /* AppModel+Folders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Folders.swift"; sourceTree = "<group>"; };
 		6E8BCFC4A5129628D012E55A /* FoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersView.swift; sourceTree = "<group>"; };
 		733FBCEB8E4E38C0DB765291 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
@@ -111,7 +111,7 @@
 				733FBCEB8E4E38C0DB765291 /* MenuView.swift */,
 				0B43FD7B635E6C995001192B /* OnboardingView.swift */,
 				DCACF1BEC5C005F105DDAEE1 /* SettingsView.swift */,
-				64272A8D93510A06A563F517 /* StowageSummary.swift */,
+				25084F527DA06485522666B0 /* StowStatus.swift */,
 				B4BA2BD9483908A8EB8F670D /* SupportView.swift */,
 			);
 			path = Views;
@@ -270,7 +270,7 @@
 				1CAB8B6495BBEF743D66C50B /* SettingsView.swift in Sources */,
 				54A43427C4D5DD91101E2ED4 /* Snapshots.swift in Sources */,
 				B088F092456D9D21DF53AF36 /* Store.swift in Sources */,
-				8E8A7FF366D6C08BAA3EA027 /* StowageSummary.swift in Sources */,
+				7D87FE8D3870185DB91CCE36 /* StowStatus.swift in Sources */,
 				B65896A3BAA8A8099E615107 /* StowawayApp.swift in Sources */,
 				387A36B2B2411E1A09AC6268 /* SupportView.swift in Sources */,
 			);
