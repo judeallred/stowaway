@@ -86,6 +86,59 @@ extension AppModel {
     }
   }
 
+  /// Folders unchanged since this are due for automatic stowing.
+  var autoStowCutoff: Date {
+    let minutes = autoOffloadMinutes
+    return Date().addingTimeInterval(
+      minutes == AutoStow.immediately ? -Timing.immediateQuiet : -Double(minutes) * 60)
+  }
+
+  /// DerivedData while Xcode runs, Gradle's caches while an IDE that runs Gradle does.
+  func ideIsUsing(_ row: Row) -> Bool {
+    guard row.kind == .xcodeDerivedData || row.kind == .gradleHome else { return false }
+    let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+    if row.kind == .xcodeDerivedData {
+      return running.contains { $0.hasPrefix("com.apple.dt.Xcode") }
+    }
+    return running.contains {
+      $0.hasPrefix("com.google.android.studio") || $0.hasPrefix("com.jetbrains.intellij")
+    }
+  }
+
+  /// Why folders on this Mac aren't being stowed right now ("2 changed recently, 1 in use"), or
+  /// nil if nothing's waiting or some are due.
+  var waitingSummary: String? {
+    let pending = rows.filter { $0.place == .mac && !isRefused($0) }
+    // Queued folders are about to be stowed: nothing to explain.
+    guard !pending.isEmpty, queued.isEmpty else { return nil }
+    if freeStowageFull { return "Waiting: free stowage is full" }
+    let cutoff = autoStowCutoff
+    var recent = 0
+    var inUse = 0
+    var kept = 0
+    var retrying = 0
+    for row in pending {
+      if keptOnMac.contains(row.path) {
+        kept += 1
+      } else if problems[row.path] == .waiting(Self.cargoInUse) || ideIsUsing(row) {
+        inUse += 1
+      } else if let at = retryAfter[row.path], at > .now {
+        retrying += 1
+      } else if (row.lastActivity ?? .now) >= cutoff || isHeldOnMac(row) {
+        recent += 1
+      } else {
+        return nil  // due: stowed at the next pass
+      }
+    }
+    let parts = [
+      recent > 0 ? "\(recent) changed recently" : nil,
+      inUse > 0 ? "\(inUse) in use" : nil,
+      retrying > 0 ? "\(retrying) to retry later" : nil,
+      kept > 0 ? "\(kept) kept on this Mac" : nil,
+    ].compactMap { $0 }
+    return "Waiting: " + parts.joined(separator: ", ")
+  }
+
   static let cargoInUse = "A Cargo build or check is using it. Stowaway stows it once that's done."
 
   /// Records why a folder wasn't stowed. A refusal keeps automatic stowing away until the folder
@@ -188,20 +241,12 @@ extension AppModel {
     await store.waitUntilLoaded()
     // Until purchases are read, the free limit could hold back a paying user's folders.
     guard store.loaded else { return }
-    let cutoff = Date().addingTimeInterval(
-      minutes == AutoStow.immediately ? -Timing.immediateQuiet : -Double(minutes) * 60)
-    let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-    let xcodeRunning = running.contains { $0.hasPrefix("com.apple.dt.Xcode") }
-    let gradleIDERunning = running.contains {
-      $0.hasPrefix("com.google.android.studio") || $0.hasPrefix("com.jetbrains.intellij")
-    }
+    let cutoff = autoStowCutoff
     let due = rows.filter { row in
-      guard row.place == .mac, row.localBytes != nil, (row.lastActivity ?? .now) < cutoff,
+      guard row.place == .mac, (row.lastActivity ?? .now) < cutoff,
         !busy.contains(row.path), !isHeldOnMac(row), !isRefused(row),
-        retryAfter[row.path].map({ $0 < .now }) ?? true
+        retryAfter[row.path].map({ $0 < .now }) ?? true, !ideIsUsing(row)
       else { return false }
-      if row.kind == .xcodeDerivedData && xcodeRunning { return false }
-      if row.kind == .gradleHome && gradleIDERunning { return false }
       return true
     }
     // Shown as queued in the library until their turn.

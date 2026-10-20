@@ -44,10 +44,31 @@ extension AppModel {
       return found
     }.value
     refreshSettings()
+    // What changed is quick to find, and it's all automatic stowing needs: stow what's due
+    // first, then measure sizes, which takes a while with many folders.
+    await checkActivity()
+    await autoOffload()
+    if activity == nil {
+      activity = "Measuring folders…"
+      operation = .scanning
+    }
     await measure()
     saveCache(candidates)
     await recountStowed()
     await autoOffload()
+  }
+
+  /// Updates when each folder on this Mac last changed (cheap: it looks two levels deep).
+  func checkActivity() async {
+    let candidates = rows.filter { $0.place == .mac }.map(\.candidate)
+    let dates = await Task.detached {
+      var dates: [String: Date] = [:]
+      for candidate in candidates { dates[candidate.path] = Measure.lastActivity(of: candidate) }
+      return dates
+    }.value
+    for i in rows.indices {
+      if let date = dates[rows[i].path] { rows[i].lastActivity = date }
+    }
   }
 
   /// Combines what the scan found with what's stowed. Stowed parts (a Cargo `target/`'s build

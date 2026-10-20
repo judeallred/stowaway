@@ -40,7 +40,9 @@ struct StowStatus: View {
     } else if model.autoOffloadMinutes == AppModel.AutoStow.never {
       Label("Automatic stowing is off", systemImage: "pause.circle")
     } else if model.pendingBytes > 0 {
-      Label(AppModel.AutoStow.status(model.autoOffloadMinutes), systemImage: "clock")
+      Label(
+        model.waitingSummary ?? AppModel.AutoStow.status(model.autoOffloadMinutes),
+        systemImage: "clock")
     } else {
       Label("All caught up", systemImage: "checkmark.circle")
     }
