@@ -4,6 +4,7 @@ import SwiftUI
 /// Window identifiers.
 enum WindowID {
   static let library = "library"
+  static let folders = "folders"
 }
 
 @main
@@ -20,10 +21,16 @@ struct StowawayApp: App {
     .menuBarExtraStyle(.window)
 
     Window("Stowaway", id: WindowID.library) {
-      LibraryView(model: model)
+      DashboardView(model: model)
         .frame(minWidth: 760, minHeight: 440)
         .sheet(isPresented: $model.showingOnboarding) { OnboardingView(model: model) }
         .sheet(isPresented: $model.showingSupport) { SupportView(model: model, store: model.store) }
+    }
+    .defaultSize(width: 860, height: 560)
+
+    Window("Folders", id: WindowID.folders) {
+      FoldersView(model: model)
+        .frame(minWidth: 760, minHeight: 400)
     }
     .defaultSize(width: 920, height: 600)
 

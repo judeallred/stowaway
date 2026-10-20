@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The menu bar window: status at a glance, then a single column of actions grouped by
-/// dividers, with rarely used items in a Help menu.
+/// The menu bar window: how much is stowed, the drive, what's happening, then a few actions.
+/// Stowing is automatic, so there's nothing to stow by hand here.
 struct MenuView: View {
   let model: AppModel
   @Environment(\.openWindow) private var openWindow
@@ -10,36 +10,16 @@ struct MenuView: View {
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 12) {
       if model.freeStowageFull {
         fullNotice
       }
-      HStack(spacing: 8) {
-        Image(nsImage: Logo.image(size: 22))
-        Text("Stowaway").font(.headline)
-        Spacer()
-        if model.scanning { ProgressView().controlSize(.small) }
-      }
+      headline
+      storage
       status
       Divider()
       VStack(alignment: .leading, spacing: 2) {
         action("Open Stowaway…", "macwindow") { show { openWindow(id: WindowID.library) } }
-        let onMac = model.rows.filter { $0.place == .mac }
-        if model.driveConnected, model.pendingBytes > 0 {
-          // What's pending: Stow All skips folders that can't be stowed.
-          action("Stow All (\(Format.bytes(model.pendingBytes)))", "shippingbox") {
-            Task { await model.offload(onMac.filter { !model.isRefused($0) }) }
-          }
-          .disabled(model.activity != nil)
-        } else if !model.driveConnected, !onMac.isEmpty {
-          action("Purge All (\(Format.bytes(model.reclaimableBytes)))…", "trash") {
-            show { confirmPurge(onMac) }
-          }
-          .disabled(model.activity != nil)
-        }
-      }
-      Divider()
-      VStack(alignment: .leading, spacing: 2) {
         action("Settings…", "gearshape") { show { openSettings() } }
         if !model.store.hasPurchased {
           action("Support Stowaway…", "heart") { openLibrary(showing: \.showingSupport) }
@@ -49,8 +29,49 @@ struct MenuView: View {
       Divider()
       action("Quit Stowaway", "power") { NSApp.terminate(nil) }
     }
-    .padding(12)
-    .frame(width: 290)
+    .padding(14)
+    .frame(width: 300)
+  }
+
+  /// How much is stowed, and how much more is on this Mac.
+  private var headline: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text("\(Format.bytes(model.offloadedBytes)) stowed")
+        .font(.title2.weight(.semibold)).monospacedDigit()
+      Text(
+        model.pendingBytes > 0
+          ? "\(Format.bytes(model.pendingBytes)) more on this Mac to stow"
+          : "Nothing left on this Mac to stow"
+      )
+      .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+    }
+  }
+
+  /// The drive and its space.
+  @ViewBuilder private var storage: some View {
+    if let name = model.driveName {
+      VStack(alignment: .leading, spacing: 5) {
+        Label(
+          model.driveConnected ? name : "\(name) (disconnected)", systemImage: model.driveSymbol
+        )
+        .font(.callout)
+        if model.driveConnected, let free = model.driveFreeBytes, let total = model.driveTotalBytes,
+          total > 0
+        {
+          DriveSpaceBar(model: model, free: free, total: total)
+          Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
+            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+      }
+    } else {
+      action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
+        .padding(.horizontal, -6)
+    }
+  }
+
+  /// What's happening now, or what happens next.
+  private var status: some View {
+    StowStatus(model: model).font(.callout).foregroundStyle(.secondary)
   }
 
   /// At the very top when the free stowage is used up.
@@ -69,24 +90,6 @@ struct MenuView: View {
     .padding(10)
     .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.orange.opacity(0.6)))
-  }
-
-  @ViewBuilder private var status: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      if let name = model.driveName {
-        Label(
-          model.driveConnected ? "\(name) connected" : "\(name) disconnected",
-          systemImage: model.driveSymbol)
-        StowageSummary(model: model)
-      } else {
-        action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
-          .padding(.horizontal, -6)
-      }
-      if let activity = model.activity {
-        Text(activity).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-      }
-    }
-    .font(.callout)
   }
 
   private func action(
@@ -120,19 +123,6 @@ struct MenuView: View {
     menu.addItem(
       ClosureMenuItem("Show Setup Again…") { openLibrary(showing: \.showingOnboarding) })
     menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-  }
-
-  /// Deletes every re-creatable folder on this Mac, after asking. Offered when there's no drive
-  /// to stow them on.
-  private func confirmPurge(_ rows: [Row]) {
-    guard
-      Panels.ask(
-        "Delete \(Format.count(rows.count, "folder")) (\(Format.bytes(model.reclaimableBytes)))?",
-        Panels.deleteNote + " Folders stowed on a drive aren't affected.",
-        buttons: ["Delete"], destructive: [0]) != nil
-    else { return }
-    let model = model
-    Task { await model.delete(rows) }
   }
 
   /// Opens the library window with one of its sheets showing.

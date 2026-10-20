@@ -12,16 +12,20 @@ chooses, and can delete them or keep them on an external drive.
 HOW TO TRY IT (no external drive needed)
 
 1. On first launch the Stowaway window opens with a short welcome. Click "Set Up Later" to go
-   straight to the library, then click "Or Create a Sample Project to Try It…" and choose any
-   folder, such as Documents. Stowaway creates a small sample (a web project with node_modules
-   and a Rust project with build files) and adds it to the folders it looks in. (Or go through
-   the welcome steps and choose any folder of your own that holds code; each step is optional.)
-2. The library window lists the sample's node_modules and Cargo build files with their sizes.
-3. Click "Connect External Storage…" (top right) and pick any folder, for example a new folder in
-   Documents. An external drive works the same way, but isn't required.
-4. Select the row and click Stow. The folder moves to the drive, and Stowaway
+   straight to the main window, then click "Or Create a Sample Project to Try It…" and choose
+   any folder, such as Documents. Stowaway creates a small sample (a web project with
+   node_modules and a Rust project with build files) and adds it to the folders it looks in.
+   (Or go through the welcome steps and choose any folder of your own that holds code; each
+   step is optional.)
+2. The main window shows what Stowaway found, by kind, and what it's doing. Click "Folders…"
+   (bottom right) to see each folder with its size.
+3. Click "Connect External Storage…" (top right of the main window) and pick any folder, for
+   example a new folder in Documents. An external drive works the same way, but isn't required.
+4. Stowing is automatic, after the folders are left unchanged for a few minutes. To see it at
+   once: in Folders, select a row and click Stow. The folder moves to the drive, and Stowaway
    leaves a symbolic link where it was, so tools still find it. "Where" shows "Drive".
-5. Click Bring Back to restore it, or Delete… to remove it. Neither ever requires a purchase.
+5. Right-click it for Bring Back to Mac, or click Delete… to remove it. Neither ever requires a
+   purchase.
 
 Once a drive is chosen, Stowaway also stows folders that have been left unchanged
 for 5 minutes on its own (Settings → "Stow automatically": immediately, after a set time, or

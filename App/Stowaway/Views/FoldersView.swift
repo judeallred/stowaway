@@ -1,9 +1,11 @@
 import StowawayCore
 import SwiftUI
 
-/// The main window: every re-creatable folder Stowaway found, where it is and how big it is,
-/// with actions to offload it, bring it back or delete it.
-struct LibraryView: View {
+/// The Folders window: every folder Stowaway manages, where it is and how big it is, for the
+/// occasional hand: stowing a few now, bringing some back, deleting. (Stowing is automatic; the
+/// main window is the dashboard.) Folders Stowaway can't stow, such as pnpm projects, aren't
+/// listed.
+struct FoldersView: View {
   @Bindable var model: AppModel
   @State private var selection: Set<Row.ID> = []
   @State private var filter: Filter = .all
@@ -20,6 +22,7 @@ struct LibraryView: View {
 
   private var visible: [Row] {
     model.rows
+      .filter { !model.cantStow($0) }
       .filter {
         switch filter {
         case .all: true
@@ -41,8 +44,6 @@ struct LibraryView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      SummaryHeader(model: model)
-      Divider()
       if model.roots.isEmpty {
         emptyState(
           "Choose the folders Stowaway looks in",
@@ -215,14 +216,15 @@ struct LibraryView: View {
         Task { await model.bringBack(offloaded) }
       }
       .disabled(offloaded.isEmpty || !model.driveConnected)
-      let offload = Button(all ? "Stow All" : "Stow") {
-        // Stow All leaves out folders Stowaway can't stow; a selection is tried as asked.
-        Task { await model.offload(all ? onMac.filter { !model.isRefused($0) } : onMac) }
-      }
-      .disabled(onMac.isEmpty || !model.driveConnected)
-      .help(model.driveConnected ? "" : "Connect your drive first")
-      // Return offloads a selection, never everything.
-      if all { offload } else { offload.keyboardShortcut(.defaultAction) }
+      // Stowing is automatic; this stows a selection now. There's no Stow All.
+      Button("Stow") { Task { await model.offload(onMac) } }
+        .disabled(all || onMac.isEmpty || !model.driveConnected)
+        .help(
+          all
+            ? "Select folders to stow them now; the rest are stowed automatically."
+            : model.driveConnected ? "" : "Connect your drive first"
+        )
+        .keyboardShortcut(.defaultAction)
     }
     .padding(10)
   }
@@ -251,7 +253,7 @@ struct LibraryView: View {
 
 /// Totals and the drive, above the table. Everything is top-aligned with the drive button,
 /// which stays in the same place whether or not a drive is chosen.
-private struct SummaryHeader: View {
+struct SummaryHeader: View {
   let model: AppModel
   /// The drive column's width: the button, and the bar or explanation under it.
   static let driveWidth: CGFloat = 230

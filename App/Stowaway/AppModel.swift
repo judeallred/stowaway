@@ -267,6 +267,12 @@ final class AppModel {
     return problems[row.path] ?? unstowable[row.path].map(Problem.cantStow)
   }
 
+  /// Whether Stowaway can't stow a row as it is (a pnpm project, a folder git tracks…).
+  func cantStow(_ row: Row) -> Bool {
+    if case .cantStow = problem(for: row) { return true }
+    return false
+  }
+
   /// Whether a row can't be stowed: the scan says so, or it was refused and hasn't changed since.
   func isRefused(_ row: Row) -> Bool {
     if unstowable[row.path] != nil { return true }

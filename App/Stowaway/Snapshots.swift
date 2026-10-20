@@ -25,7 +25,7 @@
           OnboardingView(model: fresh, step: .projects), "onboarding-1-this-mac", width: 560,
           height: 460, in: folder.appendingPathComponent(name))
         render(
-          LibraryView(model: fresh), "library-no-drive", width: 1100, height: 300,
+          DashboardView(model: fresh), "library-no-drive", width: 1100, height: 300,
           in: folder.appendingPathComponent(name))
         render(
           MenuView(model: fresh), "menu-no-drive", width: 290, height: 360,
@@ -43,7 +43,8 @@
       model.loadDemo()
       let size = CGSize(width: 1440, height: 900)
       render(
-        LibraryView(model: model), "1-library", width: size.width, height: size.height, in: folder,
+        DashboardView(model: model), "1-library", width: size.width, height: size.height,
+        in: folder,
         scale: 2)
       let shots: [(String, String, AnyView, CGSize)] = [
         (
@@ -98,7 +99,8 @@
       try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       let model = AppModel()
       model.loadDemo()
-      render(LibraryView(model: model), "library", width: 1100, height: 680, in: folder)
+      render(DashboardView(model: model), "library", width: 900, height: 560, in: folder)
+      render(FoldersView(model: model), "folders", width: 1100, height: 600, in: folder)
       render(MenuView(model: model), "menu", width: 290, height: 360, in: folder)
       for step in OnboardingView.Step.allCases {
         render(
@@ -115,7 +117,7 @@
       let paid = AppModel()
       paid.loadDemo()
       paid.store.setDemoOwned(["com.brooklynspaceport.stowaway.personal.2"])
-      render(LibraryView(model: paid), "library-purchased", width: 1100, height: 300, in: folder)
+      render(DashboardView(model: paid), "library-purchased", width: 1100, height: 300, in: folder)
       render(
         SupportView(model: paid, store: paid.store), "support-thanks", width: 560, height: 420,
         in: folder)
