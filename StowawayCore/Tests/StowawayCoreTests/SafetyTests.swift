@@ -204,4 +204,23 @@ final class SafetyTests: XCTestCase {
     let bytes = try XCTUnwrap(engine.entries().first).bytes
     XCTAssertLessThan(bytes, 3 * 4096 + 1, "recounted, not added up: \(bytes)")
   }
+
+  /// A repository nothing was added to has no index, and a worktree git has pruned points at
+  /// an index that's gone: neither tracks anything, so their folders can be stowed.
+  func testMissingIndexesTrackNothing() throws {
+    let s = try Scratch()
+    try s.file("fresh/.git/HEAD", "ref: refs/heads/main")
+    try s.file("fresh/node_modules/a/index.js", "a")
+    XCTAssertEqual(
+      GitIndex.tracking(of: s.root.appendingPathComponent("fresh/node_modules")), .untracked)
+    try s.file("pruned/.git", "gitdir: \(s.root.path)/main/.git/worktrees/gone")
+    try s.file("pruned/node_modules/a/index.js", "a")
+    XCTAssertEqual(
+      GitIndex.tracking(of: s.root.appendingPathComponent("pruned/node_modules")), .untracked)
+    // An index that's there but unreadable still fails closed.
+    try s.file("broken/.git/index", "not an index")
+    try s.file("broken/node_modules/a/index.js", "a")
+    XCTAssertEqual(
+      GitIndex.tracking(of: s.root.appendingPathComponent("broken/node_modules")), .unknown)
+  }
 }

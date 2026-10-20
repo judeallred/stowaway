@@ -15,6 +15,11 @@ public enum GitIndex {
   /// Whether git tracks any file under `folder`.
   public static func tracking(of folder: URL) -> GitTracking {
     guard let (root, index) = repository(containing: folder) else { return .untracked }
+    // No index at all means nothing is tracked: a repository nothing was ever added to, or a
+    // worktree whose record git has since pruned (git itself no longer sees a repository
+    // there). An index that's there but can't be read or parsed is another matter.
+    var st = stat()
+    if lstat(index.path, &st) != 0, errno == ENOENT { return .untracked }
     guard let data = FileManager.default.contents(atPath: index.path), let paths = paths(in: data)
     else {
       return .unknown
