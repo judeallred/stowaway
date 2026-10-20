@@ -199,6 +199,17 @@ final class AppModel {
           .lowercased()
       }
     }
+
+    /// A short status line for the menu and the main window.
+    static func status(_ minutes: Int) -> String {
+      switch minutes {
+      case immediately: "Stows new folders right away"
+      case 60: "Stows folders idle for an hour"
+      case 1440: "Stows folders idle for a day"
+      case 10_080: "Stows folders idle for a week"
+      default: "Stows folders idle for \(minutes) minutes"
+      }
+    }
   }
 
   // MARK: Starting

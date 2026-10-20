@@ -24,23 +24,25 @@ struct StowStatus: View {
   let model: AppModel
 
   var body: some View {
+    content.fixedSize(horizontal: false, vertical: true)
+  }
+
+  @ViewBuilder private var content: some View {
     if let activity = model.activity {
       HStack(spacing: 6) {
         ProgressView().controlSize(.small)
-        Text(activity).lineLimit(1).truncationMode(.middle)
+        Text(activity).lineLimit(2).truncationMode(.middle)
       }
     } else if model.driveName != nil && !model.driveConnected {
-      Label("Your tools use local folders until the drive is back.", systemImage: "info.circle")
+      Label("Your tools use local folders until the drive is back", systemImage: "info.circle")
     } else if model.driveName == nil {
-      Label("Choose a drive to stow folders on.", systemImage: "info.circle")
+      Label("Choose a drive to stow folders on", systemImage: "info.circle")
     } else if model.autoOffloadMinutes == AppModel.AutoStow.never {
-      Label("Automatic stowing is off.", systemImage: "pause.circle")
+      Label("Automatic stowing is off", systemImage: "pause.circle")
     } else if model.pendingBytes > 0 {
-      Label(
-        "Stows folders \(AppModel.AutoStow.describe(model.autoOffloadMinutes)).",
-        systemImage: "clock")
+      Label(AppModel.AutoStow.status(model.autoOffloadMinutes), systemImage: "clock")
     } else {
-      Label("All caught up.", systemImage: "checkmark.circle")
+      Label("All caught up", systemImage: "checkmark.circle")
     }
   }
 }
