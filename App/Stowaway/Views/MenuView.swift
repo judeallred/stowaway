@@ -21,6 +21,10 @@ struct MenuView: View {
       VStack(alignment: .leading, spacing: 2) {
         action("Open Stowaway…", "macwindow") { show { openWindow(id: WindowID.library) } }
         action("Settings…", "gearshape") { show { openSettings() } }
+        action("Report a Bug…", "ladybug") {
+          dismiss()
+          NSWorkspace.shared.open(BugReport.url(model: model))
+        }
         if !model.store.hasPurchased {
           action("Support Stowaway…", "heart") { openLibrary(showing: \.showingSupport) }
         }
@@ -101,10 +105,9 @@ struct MenuView: View {
   /// other action (a SwiftUI Menu draws its title differently).
   private func showHelp() {
     let menu = NSMenu()
-    let model = model
     for (title, url) in [
       ("Stowaway Website", Links.website), ("Get Help", Links.support),
-      ("Report a Bug…", BugReport.url(model: model)), ("Privacy Policy", Links.privacyPolicy),
+      ("Privacy Policy", Links.privacyPolicy),
     ] {
       menu.addItem(ClosureMenuItem(title) { NSWorkspace.shared.open(url) })
     }
