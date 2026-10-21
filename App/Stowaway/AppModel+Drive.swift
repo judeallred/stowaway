@@ -9,7 +9,9 @@ extension AppModel {
   /// Reads the folders, drive and login setting. Everything that touches the drive runs off the
   /// main thread: a drive busy with a big copy can take seconds to answer.
   func refreshSettings() {
+    let before = roots
     roots = engine.rootPaths
+    if roots != before, started { watchFolders() }
     driveName = engine.driveName
     loginItemEnabled = SMAppService.mainApp.status == .enabled
     let engine = engine

@@ -81,10 +81,15 @@ final class DeepLinkTests: XCTestCase {
     let (engine, _, _) = try makeEngine(s)
     let nm = try project(s)
     try engine.adopt(nm.path)
-    // npm replaces b with an identical copy and adds d.
+    // npm replaces b with an identical copy and adds d. npm gives every file it extracts the same
+    // fixed date, so the copy's dates match the original's.
     let b = nm.appendingPathComponent("b")
+    let manifest = b.appendingPathComponent("package.json")
+    let date = try XCTUnwrap(
+      FileManager.default.attributesOfItem(atPath: manifest.path)[.modificationDate] as? Date)
     try Copier.remove(b)
     try s.file("code/app/node_modules/b/package.json", #"{ "name": "b", "version": "2.0.0" }"#)
+    try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: manifest.path)
     try s.file("code/app/node_modules/d/package.json", #"{ "name": "d" }"#)
     let stats = try engine.exclusively { () -> CopyStats in
       let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(

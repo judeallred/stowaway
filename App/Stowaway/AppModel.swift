@@ -102,6 +102,14 @@ final class AppModel {
   /// When stowed folders were last re-measured on the drive.
   var lastRecount = Date.distantPast
   var detectedProjectFolders: [ProjectFinder.Suggestion] = []
+  /// Watches the project folders, so a new project or install is noticed without polling.
+  var watcher: FolderWatcher?
+  var lastScan = Date.distantPast
+  /// A change arrived while a scan was running or too soon after one: scan again when allowed.
+  var scanRequested = false
+  var scanScheduled = false
+  /// Wakes when the next pending folder becomes due for automatic stowing.
+  var dueCheck: Task<Void, Never>?
 
   /// Stow folders automatically once they've been unchanged this many minutes (see `AutoStow`).
   /// Stored, not read through from UserDefaults, so SwiftUI sees changes.
@@ -111,7 +119,10 @@ final class AppModel {
   {
     didSet {
       UserDefaults.standard.set(autoOffloadMinutes, forKey: "autoOffloadMinutes")
-      Task { await autoOffload() }
+      Task {
+        await autoOffload()
+        scheduleDueCheck()
+      }
     }
   }
 
@@ -165,7 +176,11 @@ final class AppModel {
   /// How long things take or wait.
   enum Timing {
     static let reconcileEvery: TimeInterval = 30
-    static let scanEvery: TimeInterval = 120
+    /// Scans happen when watched folders change; this is the safety net (and how caches outside
+    /// the project folders are noticed growing).
+    static let scanEvery: TimeInterval = 900
+    /// At most one scan a minute, however busy the folders are.
+    static let minScanGap: TimeInterval = 60
     static let recountEvery: TimeInterval = 600
     static let messageShown = Duration.seconds(8)
     /// Mount and unmount notifications come in bursts (a drive and its images).
@@ -230,12 +245,13 @@ final class AppModel {
     showingOnboarding = !didOnboard && roots.isEmpty
     if !roots.isEmpty { didOnboard = true }
     watchVolumes()
+    watchFolders()
     timers = [
       Timer.scheduledTimer(withTimeInterval: Timing.reconcileEvery, repeats: true) {
         [weak self] _ in
         Task { @MainActor in self?.queueReconcile() }
       },
-      // Look again every couple of minutes, so automatic stowing keeps up with new folders.
+      // Changes are watched (watchFolders); this full scan is the safety net.
       Timer.scheduledTimer(withTimeInterval: Timing.scanEvery, repeats: true) { [weak self] _ in
         Task { @MainActor in await self?.scan() }
       },

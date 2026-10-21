@@ -22,6 +22,7 @@
 		7D87FE8D3870185DB91CCE36 /* StowStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25084F527DA06485522666B0 /* StowStatus.swift */; };
 		7ED76B451E078047A15A9A2B /* AppModel+Scan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18FB0099D08FDF0FA8944A57 /* AppModel+Scan.swift */; };
 		81C0594C0295E5EEDB6BE039 /* Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73501BAE820AD14F4F5D83F /* Panels.swift */; };
+		8DE73CEBE9119E5E3EF7A6EF /* FolderWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFAA9366AC9E108157A10CEC /* FolderWatcher.swift */; };
 		937B9364907816C2F861E791 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5FFFD0BBB9EAD6BE348B1AC9 /* Assets.xcassets */; };
 		9EE9B21E8956CAAA4D8647AC /* ScanCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA49F390174C3127C845384 /* ScanCache.swift */; };
 		A9CDFBE15E1E075A03968C49 /* Links.swift in Sources */ = {isa = PBXBuildFile; fileRef = A742B6F999B77AA3279FB057 /* Links.swift */; };
@@ -71,6 +72,7 @@
 		E5B68FE87CAE686F8FA57C04 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		E73501BAE820AD14F4F5D83F /* Panels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels.swift; sourceTree = "<group>"; };
 		E771D811017E307261D18D3D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FFAA9366AC9E108157A10CEC /* FolderWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +155,7 @@
 				18FB0099D08FDF0FA8944A57 /* AppModel+Scan.swift */,
 				56A0A8B92B42DE610604A304 /* AppModel+Stow.swift */,
 				901B7E9737A31AE93B4EAD6C /* BugReport.swift */,
+				FFAA9366AC9E108157A10CEC /* FolderWatcher.swift */,
 				28B0A2BE706D7AB3CAB8289F /* Format.swift */,
 				AC38304823DC0655220A64AD /* Info.plist */,
 				A742B6F999B77AA3279FB057 /* Links.swift */,
@@ -256,6 +259,7 @@
 				278A2FDF7C354323F292BAC2 /* BugReport.swift in Sources */,
 				CACAAA47083520FA4C64434E /* DashboardView.swift in Sources */,
 				3156F1C2846988D5EAF78755 /* ExpenseViews.swift in Sources */,
+				8DE73CEBE9119E5E3EF7A6EF /* FolderWatcher.swift in Sources */,
 				C5A031E814FE7585C8733344 /* FoldersView.swift in Sources */,
 				59C1554D0BB98D211BA1AB1E /* Format.swift in Sources */,
 				A9CDFBE15E1E075A03968C49 /* Links.swift in Sources */,

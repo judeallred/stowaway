@@ -63,7 +63,7 @@ public struct Scanner: Sendable {
   /// The roots worth walking for projects. Cache folders granted for their caches (anything in
   /// ~/Library, or a hidden folder in the home folder such as ~/.cargo) hold no projects and are
   /// huge, so they're only searched for caches; a root inside another root is walked with it.
-  static func walkable(_ roots: [String]) -> [String] {
+  public static func walkable(_ roots: [String]) -> [String] {
     let home = realHomeDirectory.standardizedFileURL.path
     return roots.filter { root in
       if root.hasPrefix(home + "/") {

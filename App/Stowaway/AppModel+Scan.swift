@@ -4,9 +4,14 @@ import StowawayCore
 /// Finding re-creatable folders and measuring them.
 extension AppModel {
   func scan() async {
-    guard !scanning else { return }
+    guard !scanning else {
+      scanRequested = true
+      return
+    }
     scanning = true
-    if activity == nil {
+    lastScan = .now
+    // Scanning is housekeeping: shown only while there's nothing else to show yet.
+    if activity == nil && rows.isEmpty {
       activity = "Scanning your folders…"
       operation = .scanning
     }
@@ -15,6 +20,11 @@ extension AppModel {
       if operation == .scanning {
         activity = nil
         operation = nil
+      }
+      scheduleDueCheck()
+      if scanRequested {
+        scanRequested = false
+        requestScan()
       }
     }
     let engine = engine
@@ -48,14 +58,75 @@ extension AppModel {
     // first, then measure sizes, which takes a while with many folders.
     await checkActivity()
     await autoOffload()
-    if activity == nil {
-      activity = "Measuring folders…"
-      operation = .scanning
-    }
     await measure()
     saveCache(candidates)
     await recountStowed()
     await autoOffload()
+  }
+
+  // MARK: Watching
+
+  /// Watches the project folders (not caches, whose contents churn on their own).
+  func watchFolders() {
+    if watcher == nil {
+      watcher = FolderWatcher { [weak self] changed in self?.foldersChanged(changed) }
+    }
+    watcher?.watch(Scanner.walkable(roots))
+  }
+
+  /// Folders that changed: rescan if any is where a project or a new folder could appear.
+  /// Changes inside folders Stowaway manages (a build writing into target, npm into
+  /// node_modules) don't need a scan: those folders are already known.
+  private func foldersChanged(_ changed: [String]) {
+    let inside: Set<Substring> = [
+      "node_modules", "target", ".next", ".venv", ".git", "DerivedData",
+    ]
+    let relevant = changed.contains { path in
+      !path.split(separator: "/").contains { inside.contains($0) }
+    }
+    if relevant { requestScan() }
+  }
+
+  /// Scans now, or as soon as a minute has passed since the last one.
+  func requestScan() {
+    if scanning {
+      scanRequested = true
+      return
+    }
+    let wait = Timing.minScanGap - Date.now.timeIntervalSince(lastScan)
+    guard wait > 0 else {
+      Task { await scan() }
+      return
+    }
+    guard !scanScheduled else { return }
+    scanScheduled = true
+    Task {
+      try? await Task.sleep(for: .seconds(wait))
+      scanScheduled = false
+      await scan()
+    }
+  }
+
+  /// Wakes when the next pending folder becomes due for automatic stowing (it's been unchanged
+  /// long enough), checks what changed, and stows what's due: no full scan needed.
+  func scheduleDueCheck() {
+    dueCheck?.cancel()
+    guard autoOffloadMinutes != AutoStow.never, driveConnected else { return }
+    let window =
+      autoOffloadMinutes == AutoStow.immediately
+      ? Timing.immediateQuiet : Double(autoOffloadMinutes) * 60
+    let next = rows.filter { $0.place == .mac && !isRefused($0) && !isHeldOnMac($0) }
+      .compactMap { $0.lastActivity?.addingTimeInterval(window) }
+      .filter { $0 > .now }
+      .min()
+    guard let next else { return }
+    dueCheck = Task {
+      try? await Task.sleep(for: .seconds(next.timeIntervalSinceNow + 2))
+      guard !Task.isCancelled, !scanning else { return }
+      await checkActivity()
+      await autoOffload()
+      scheduleDueCheck()
+    }
   }
 
   /// Updates when each folder on this Mac last changed (cheap: it looks two levels deep).
