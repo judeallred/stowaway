@@ -76,8 +76,8 @@ extension AppModel {
     let paths: [String]
     if let parts = row.kind.parts(of: row.candidate.url) {
       paths = parts.map(\.path).filter { !row.entryPaths.contains($0) }
-      // No build folders yet (or all already stowed): nothing to do.
-      if paths.isEmpty { return }
+      // No build folders yet (or all already stowed): nothing to do until it changes.
+      if paths.isEmpty { throw NothingToStow() }
     } else {
       paths = [row.path]
     }
@@ -144,7 +144,15 @@ extension AppModel {
   /// Records why a folder wasn't stowed. A refusal keeps automatic stowing away until the folder
   /// changes; any other failure leaves it pending, retried after `Timing.retryFailedAfter`
   /// rather than at every scan (a copy that fails partway is costly to repeat).
+  /// A folder with nothing left to stow (a Cargo target whose build folders are all stowed).
+  struct NothingToStow: Error {}
+
   private func noteFailure(_ failure: any Error, for row: Row) {
+    // Not a problem: it's left out of pending until it changes.
+    if failure is NothingToStow {
+      refused[row.path] = row.lastActivity
+      return
+    }
     let reason = Problem.sentence(failure)
     Self.logger.error("Couldn't stow \(row.path, privacy: .private): \(reason, privacy: .private)")
     recentFailures.append((.now, "Couldn't stow \(row.path): \(reason)"))
@@ -229,7 +237,9 @@ extension AppModel {
       failures.append(failure)
       if op == .stowing { noteFailure(failure, for: row) }
     }
-    if rows.count == 1, let error = failures.first { message = error.localizedDescription }
+    if rows.count == 1, let error = failures.first, !(error is NothingToStow) {
+      message = error.localizedDescription
+    }
     await scan()
   }
 

@@ -85,9 +85,15 @@ extension AppModel {
       }
       rows[c.path] = row
     }
+    // Parts stowed before containers were recorded (a Cargo target's deps, DerivedData's
+    // intermediates) belong to the folder of their kind that holds them.
+    let splitFolders = candidates.filter { $0.kind == .cargoTarget || $0.kind == .xcodeDerivedData }
     for entry in entries {
       // The row an entry belongs to: the container recorded when it was stowed.
-      let container = entry.container ?? entry.local
+      let container =
+        entry.container
+        ?? splitFolders.first { $0.kind == entry.kind && entry.local.isWithin($0.path) }?.path
+        ?? entry.local
       var row =
         rows[container]
         ?? Row(
