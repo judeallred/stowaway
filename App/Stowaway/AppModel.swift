@@ -26,6 +26,8 @@ final class AppModel {
   var refused: [String: Date?] = [:]
   /// Why a folder on this Mac wasn't stowed, for the library to show.
   var problems: [String: Problem] = [:]
+  /// The last few things that went wrong, newest last, for bug reports (kept in memory only).
+  var recentFailures: [(date: Date, text: String)] = []
   /// Folders whose last stow failed, and when automatic stowing may try again.
   var retryAfter: [String: Date] = [:]
   /// Folders the scan found Stowaway can't stow (pnpm projects…), with the reason.

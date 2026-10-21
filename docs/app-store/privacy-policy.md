@@ -33,9 +33,11 @@ your Apple Account information. Apple's privacy policy covers those transactions
 
 ## Reporting a bug
 
-"Report a Bug…" opens a prefilled issue on GitHub in your browser. It contains only the app and
-macOS versions, whether a drive is set, and counts of the kinds of folders found.
-It doesn't contain file names or paths. Nothing is sent unless you choose to submit it, and
+"Report a Bug…" opens a prefilled issue on GitHub in your browser. It contains the app and
+macOS versions, whether a drive is set, counts of the kinds of folders found, and the last few
+problems Stowaway ran into, which name the folders involved (with your home folder shown as
+`~`). GitHub issues are public, so you can edit or remove anything before submitting. Nothing
+is sent unless you choose to submit it, and
 GitHub's privacy policy then applies.
 
 ## Children

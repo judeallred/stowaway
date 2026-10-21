@@ -147,6 +147,8 @@ extension AppModel {
   private func noteFailure(_ failure: any Error, for row: Row) {
     let reason = Problem.sentence(failure)
     Self.logger.error("Couldn't stow \(row.path, privacy: .private): \(reason, privacy: .private)")
+    recentFailures.append((.now, "Couldn't stow \(row.path): \(reason)"))
+    if recentFailures.count > BugReport.failuresKept { recentFailures.removeFirst() }
     if (failure as? StowawayError)?.isRefusal == true {
       refused[row.path] = row.lastActivity
       problems[row.path] = .cantStow(reason)
