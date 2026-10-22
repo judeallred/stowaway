@@ -285,6 +285,9 @@ final class AppModel {
     ]
     let engine = engine
     Task {
+      // A Quick Drop chosen before quitting goes first: it needs no scan, and stowing must not
+      // carry on meanwhile.
+      if stopIntent == .quickDrop { await continueStopping() }
       // Finish anything a quit or crash interrupted before doing anything else.
       await Task.detached { engine.recover() }.value
       await store.waitUntilLoaded()
