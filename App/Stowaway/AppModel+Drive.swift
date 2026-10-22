@@ -62,6 +62,29 @@ extension AppModel {
     }
   }
 
+  /// Ejects the drive: stowed folders switch to local ones first, as when it's unplugged. If
+  /// macOS can't eject it (something's using it), they link up again.
+  func ejectDrive() {
+    guard let path = drivePath, let name = driveName else { return }
+    let drive = URL(fileURLWithPath: path)
+    let volume = (try? drive.resourceValues(forKeys: [.volumeURLKey]).volume) ?? drive
+    let engine = engine
+    engine.paused = true
+    activity = "Ejecting \(name)…"
+    Task {
+      await Task.detached { engine.prepareForEject() }.value
+      do {
+        try await FileManager.default.unmountVolume(
+          at: volume, options: [.allPartitionsAndEjectDisk])
+      } catch {
+        message = "Couldn't eject \(name): \(error.localizedDescription)"
+      }
+      engine.paused = paused
+      activity = nil
+      queueReconcile()
+    }
+  }
+
   // MARK: Choosing and forgetting
 
   func chooseDrive() {
@@ -128,21 +151,16 @@ extension AppModel {
     if driveConnected {
       let choice = Panels.ask(
         title,
-        "\(folders) are stowed on it. Bring them back to this Mac, which needs room for them, or delete them: your tools re-create them when they need them.",
-        buttons: ["Bring Everything Back", "Delete Stowed Folders"], destructive: [1])
-      guard let choice else { return }
-      // Automatic stowing holds off meanwhile, or it would stow what's being brought back.
-      stoppingDrive = true
-      Task {
-        defer { stoppingDrive = false }
-        if choice == 0 { await bringBack(stowed) } else { await delete(stowed) }
-        guard engine.entries().isEmpty else {
-          message =
-            "Some folders couldn't be brought back or deleted, so Stowaway still uses \(name)."
-          return
-        }
-        forgetDrive()
+        "\(folders) are stowed on it. Bring them back to this Mac (it needs room for them), or delete them. Or drop them quickly: each becomes a local folder your tools rebuild into, and the copies stay on the drive, in its Stowaway.noindex folder.",
+        buttons: ["Bring Everything Back", "Delete Stowed Folders", "Quick Drop"],
+        destructive: [1, 2])
+      switch choice {
+      case 0: stopIntent = .bringBack
+      case 1: stopIntent = .delete
+      case 2: quickDrop()
+      default: return
       }
+      Task { await continueStopping() }
     } else {
       guard
         Panels.ask(
@@ -150,16 +168,43 @@ extension AppModel {
           "\(folders) are stowed on it, and it isn't connected. Connect it to bring them back. Or forget it anyway: each becomes a local folder your tools rebuild into, and the copies stay on the drive, in its Stowaway.noindex folder.",
           buttons: ["Forget Anyway"], destructive: [0]) != nil
       else { return }
-      let engine = engine
-      Task {
-        do {
-          try await Task.detached { try engine.abandonDrive() }.value
-        } catch {
-          message = error.localizedDescription
-        }
-        driveForgotten()
-      }
+      quickDrop()
     }
+  }
+
+  /// Stops using the drive at once: stowed folders become local ones and the links are gone;
+  /// the copies on the drive are left alone.
+  private func quickDrop() {
+    let engine = engine
+    Task {
+      do {
+        try await Task.detached { try engine.abandonDrive() }.value
+      } catch {
+        message = error.localizedDescription
+      }
+      stopIntent = nil
+      driveForgotten()
+    }
+  }
+
+  /// Carries on bringing everything back (or deleting it) after the user chose to stop using
+  /// the drive; then forgets the drive. Runs when chosen, at launch, and when the drive returns.
+  func continueStopping() async {
+    guard let intent = stopIntent, !stopping, driveName != nil else { return }
+    guard driveConnected else { return }  // resumes when the drive is back
+    stopping = true
+    defer { stopping = false }
+    let stowed = rows.filter { !$0.entryPaths.isEmpty }
+    switch intent {
+    case .bringBack: await bringBack(stowed)
+    case .delete: await delete(stowed)
+    }
+    guard engine.entries().isEmpty else {
+      message = "Some folders couldn't be brought back or deleted yet; Stowaway will keep trying."
+      return
+    }
+    stopIntent = nil
+    forgetDrive()
   }
 
   private func forgetDrive() {
@@ -206,6 +251,7 @@ extension AppModel {
         rows[i].place = online ? .drive : .driveAway
       }
       refreshSettings()
+      if stopIntent != nil { Task { await continueStopping() } }
     }
   }
 

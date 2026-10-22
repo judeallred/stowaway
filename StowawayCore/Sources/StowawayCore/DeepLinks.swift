@@ -494,6 +494,11 @@ extension Engine {
       }
       return
     }
+    // Paused: the links work again with the drive back; re-stowing waits.
+    if paused {
+      if !entry.online { update(entry.id) { $0.online = true } }
+      return
+    }
     // npm can only have changed the tree by changing its top level (it rewrites the hidden
     // lockfile on every install), so a settled project whose top level hasn't moved is skipped.
     let before = Self.topLevelChange(local)

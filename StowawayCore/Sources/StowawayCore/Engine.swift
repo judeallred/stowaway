@@ -120,6 +120,15 @@ public final class Engine: @unchecked Sendable {
   /// offloaded again.
   public var quietPeriod: TimeInterval = 20
 
+  /// Paused: reconcile does what keeps tools working (local folders when the drive goes, links
+  /// put right) but moves nothing onto the drive: no merging local builds back, no re-stowing
+  /// what npm reinstalled. Those wait until it's resumed.
+  public var paused: Bool {
+    get { lock.withLock { isPaused } }
+    set { lock.withLock { isPaused = newValue } }
+  }
+  private var isPaused = false
+
   public init(defaults: UserDefaults = .standard, stateDirectory: URL? = nil) {
     self.defaults = defaults
     let support =
@@ -606,6 +615,21 @@ public final class Engine: @unchecked Sendable {
     }
   }
 
+  /// Before ejecting the drive: every stowed folder becomes a local one, as when it's unplugged,
+  /// so nothing on the Mac points at the drive while it unmounts. (Pause the engine meanwhile,
+  /// or a reconcile would link them again while the drive is still there.)
+  public func prepareForEject() {
+    _ = try? exclusively {
+      for entry in entries() where entry.online {
+        if entry.mode == .packages {
+          update(entry.id) { $0.online = false }
+        } else {
+          goOffline(entry)
+        }
+      }
+    }
+  }
+
   /// Makes every entry match whether the offload location is connected. Run at launch, when
   /// volumes change and periodically (to re-offload what an npm install brought back).
   public func reconcile() {
@@ -621,6 +645,8 @@ public final class Engine: @unchecked Sendable {
       }
       let isLink = isSymlink(entry.local)
       if let store, !entry.online {
+        // Paused: the local folder stays in use until resumed.
+        if paused { continue }
         // Merging a folder a tool is still writing into would lose what it writes meanwhile.
         if isRealDirectory(entry.local), isBeingWritten(entry) { continue }
         goOnline(entry, store: store)
@@ -631,7 +657,7 @@ public final class Engine: @unchecked Sendable {
       } else if let store, entry.online, !FileManager.default.fileExists(atPath: entry.local) {
         // Interrupted between setting the folder aside and linking it: link it now.
         relink(entry, store: store)
-      } else if let store, entry.online, !isBeingWritten(entry) {
+      } else if let store, entry.online, !paused, !isBeingWritten(entry) {
         // A tool replaced the link with a fresh folder (cargo clean, uv venv --clear).
         replace(entry, store: store)
       }

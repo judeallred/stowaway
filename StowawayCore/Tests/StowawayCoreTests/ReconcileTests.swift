@@ -149,4 +149,33 @@ final class ReconcileTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: aside.path))
     XCTAssertNil(defaults.stringArray(forKey: "trash"))
   }
+
+  /// Paused, a folder a tool replaced stays as it is; resumed, it goes to the drive.
+  func testPausedReconcileMovesNothingOntoTheDrive() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let (local, _) = try stowedNext(engine, s)
+    try FileManager.default.removeItem(at: local)
+    try s.file("code/app/.next/new", "new")
+    engine.paused = true
+    engine.reconcile()
+    XCTAssertTrue(isRealDirectory(local.path))
+    engine.paused = false
+    engine.reconcile()
+    XCTAssertTrue(isSymlink(local.path))
+  }
+
+  /// Before an eject, stowed folders become local ones; with the engine paused, a reconcile
+  /// doesn't link them again while the drive is still mounted.
+  func testPreparingToEjectSwitchesToLocalFolders() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let (local, _) = try stowedNext(engine, s)
+    engine.paused = true
+    engine.prepareForEject()
+    XCTAssertTrue(isRealDirectory(local.path))
+    XCTAssertEqual(engine.entries().first?.online, false)
+    engine.reconcile()
+    XCTAssertTrue(isRealDirectory(local.path), "still local while paused")
+  }
 }

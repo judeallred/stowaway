@@ -357,6 +357,15 @@ private struct DriveButton: View {
         .help(
           "Stowing on \(model.drivePath.map(Format.path) ?? name)\(model.driveConnected ? "" : " (disconnected)"). Click to choose a different drive."
         )
+        if model.driveConnected {
+          Button {
+            model.ejectDrive()
+          } label: {
+            Image(systemName: "eject")
+          }
+          .help("Eject \(name)")
+          .accessibilityLabel("Eject \(name)")
+        }
         Menu {
           Button("Choose a Different Drive…") { model.chooseDrive() }
           Button("Stop Using \(name)…") { model.stopUsingDrive() }

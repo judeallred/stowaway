@@ -249,7 +249,7 @@ extension AppModel {
   /// couldn't be stowed and haven't changed since.
   func autoOffload() async {
     let minutes = autoOffloadMinutes
-    guard minutes != AutoStow.never, driveConnected, !stoppingDrive else { return }
+    guard minutes != AutoStow.never, driveConnected, !stoppingDrive, !paused else { return }
     await store.waitUntilLoaded()
     // Until purchases are read, the free limit could hold back a paying user's folders.
     guard store.loaded else { return }

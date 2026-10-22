@@ -20,6 +20,12 @@ struct MenuView: View {
       Divider()
       VStack(alignment: .leading, spacing: 2) {
         action("Open Stowaway…", "macwindow") { show { openWindow(id: WindowID.library) } }
+        if model.driveName != nil {
+          action(
+            model.paused ? "Resume Stowing" : "Pause Stowing",
+            model.paused ? "play.circle" : "pause.circle"
+          ) { model.paused.toggle() }
+        }
         action("Settings…", "gearshape") { show { openSettings() } }
         action("Report a Bug…", "ladybug") {
           dismiss()
@@ -44,9 +50,23 @@ struct MenuView: View {
   @ViewBuilder private var storage: some View {
     if let name = model.driveName {
       VStack(alignment: .leading, spacing: 5) {
-        Label(
-          model.driveConnected ? name : "\(name) (disconnected)", systemImage: model.driveSymbol
-        )
+        HStack {
+          Label(
+            model.driveConnected ? name : "\(name) (disconnected)", systemImage: model.driveSymbol
+          )
+          Spacer()
+          if model.driveConnected {
+            Button {
+              dismiss()
+              model.ejectDrive()
+            } label: {
+              Image(systemName: "eject")
+            }
+            .buttonStyle(.borderless)
+            .help("Eject \(name)")
+            .accessibilityLabel("Eject \(name)")
+          }
+        }
         .font(.callout)
         if model.driveConnected, let free = model.driveFreeBytes, let total = model.driveTotalBytes,
           total > 0

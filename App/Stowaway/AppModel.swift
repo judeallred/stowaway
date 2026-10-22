@@ -74,8 +74,34 @@ final class AppModel {
   var activity: String?
   /// The kind of work `activity` describes, for the menu bar icon and the library's rows.
   var operation: Operation?
-  /// Set while the user is stopping using the drive, so automatic stowing holds off.
-  var stoppingDrive = false
+  /// The user chose to stop using the drive: bring everything back, or delete it. Kept across
+  /// launches, so the work carries on after a relaunch or once the drive is back, and automatic
+  /// stowing stays off until it's done and the drive is forgotten.
+  var stopIntent: StopIntent? = UserDefaults.standard.string(forKey: "stopIntent").flatMap(
+    StopIntent.init)
+  {
+    didSet { UserDefaults.standard.set(stopIntent?.rawValue, forKey: "stopIntent") }
+  }
+  /// Paused by the user: no automatic stowing and nothing moved onto the drive, though stowed
+  /// folders still switch to local ones when the drive goes. Kept across launches.
+  var paused = UserDefaults.standard.bool(forKey: "paused") {
+    didSet {
+      UserDefaults.standard.set(paused, forKey: "paused")
+      engine.paused = paused
+      if !paused {
+        queueReconcile()
+        Task { await autoOffload() }
+      }
+      scheduleDueCheck()
+    }
+  }
+  /// The work of stopping is running now.
+  var stopping = false
+  var stoppingDrive: Bool { stopIntent != nil }
+
+  enum StopIntent: String {
+    case bringBack, delete
+  }
   /// A problem with something the user just did. Cleared after a few seconds: the status line
   /// is for what's happening now, not a log.
   var message: String? {
@@ -234,6 +260,7 @@ final class AppModel {
   init() {
     engine = Engine()
     engine.cleanupInBackground = true
+    engine.paused = UserDefaults.standard.bool(forKey: "paused")
   }
 
   func start() {
@@ -263,6 +290,8 @@ final class AppModel {
       await store.waitUntilLoaded()
       queueReconcile()
       await scan()
+      // A stop the user chose before quitting carries on.
+      await continueStopping()
     }
   }
 
@@ -346,7 +375,8 @@ final class AppModel {
   /// What the menu bar icon shows: the plain logo when all is well, or a small badge for
   /// what's happening now or what needs attention. Problems outrank work in progress.
   enum IconState {
-    case idle, scanning, stowing, bringingBack, deleting, testing, disconnected, warning, error
+    case idle, scanning, stowing, bringingBack, deleting, testing, disconnected, paused, warning,
+      error
 
     /// The SF Symbol on the logo's corner, nil for the plain logo. Badges never animate.
     var badge: String? {
@@ -358,6 +388,7 @@ final class AppModel {
       case .deleting: "trash.fill"
       case .testing: "speedometer"
       case .disconnected: "xmark.circle.fill"
+      case .paused: "pause.circle.fill"
       case .warning: "exclamationmark.circle.fill"
       case .error: "exclamationmark.triangle.fill"
       }
@@ -373,6 +404,7 @@ final class AppModel {
       case .deleting: "Stowaway, deleting folders"
       case .testing: "Stowaway, testing the drive"
       case .disconnected: "Stowaway, drive disconnected"
+      case .paused: "Stowaway, paused"
       case .warning: "Stowaway, needs attention"
       case .error: "Stowaway, problem"
       }
@@ -390,6 +422,7 @@ final class AppModel {
     case .scanning: return .scanning
     case nil: break
     }
+    if paused { return .paused }
     return needsAttention ? .warning : .idle
   }
 

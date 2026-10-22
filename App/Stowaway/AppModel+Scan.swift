@@ -111,7 +111,7 @@ extension AppModel {
   /// long enough), checks what changed, and stows what's due: no full scan needed.
   func scheduleDueCheck() {
     dueCheck?.cancel()
-    guard autoOffloadMinutes != AutoStow.never, driveConnected else { return }
+    guard autoOffloadMinutes != AutoStow.never, driveConnected, !paused else { return }
     let window =
       autoOffloadMinutes == AutoStow.immediately
       ? Timing.immediateQuiet : Double(autoOffloadMinutes) * 60
