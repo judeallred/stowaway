@@ -135,4 +135,18 @@ final class ReconcileTests: XCTestCase {
     XCTAssertTrue(isRealDirectory(cache.path))
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cache.path), [])
   }
+
+  /// Deleting sets the folder aside and erases it later; an erase a quit interrupted is finished
+  /// at the next launch.
+  func testInterruptedErasesFinishAtLaunch() throws {
+    let s = try Scratch()
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: "stowaway-tests-\(UUID().uuidString)"))
+    let engine = Engine(defaults: defaults, stateDirectory: try s.dir("state"))
+    try s.file("code/.next.stowaway-trash-abc/big", "x")
+    let aside = s.root.appendingPathComponent("code/.next.stowaway-trash-abc")
+    defaults.set([aside.path], forKey: "trash")
+    engine.recover()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: aside.path))
+    XCTAssertNil(defaults.stringArray(forKey: "trash"))
+  }
 }

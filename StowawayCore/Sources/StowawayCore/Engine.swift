@@ -466,10 +466,12 @@ public final class Engine: @unchecked Sendable {
   }
 
   /// Deletes a re-creatable folder that isn't stowed (see `Cleaner`), holding the engine's lock so
-  /// it can't interleave with stowing the same folder.
-  @discardableResult
-  public func delete(_ candidate: Candidate, roots: [String]) throws -> Int64 {
-    try exclusively { try Cleaner().delete(candidate, roots: roots, offloaded: entries()) }
+  /// it can't interleave with stowing the same folder. The folder goes at once; erasing its
+  /// files finishes in the background (`trash`).
+  public func delete(_ candidate: Candidate, roots: [String]) throws {
+    try exclusively {
+      try Cleaner().delete(candidate, roots: roots, offloaded: entries(), remove: trash)
+    }
   }
 
   /// Brings a folder back to the Mac for good. Always allowed, purchase or not.
@@ -509,7 +511,7 @@ public final class Engine: @unchecked Sendable {
       let stats = try Copier.copyContents(of: remote, into: staging)
       try fm.removeItem(atPath: path)
       try fm.moveItem(at: staging, to: URL(fileURLWithPath: path))
-      try Copier.remove(remote.deletingLastPathComponent())
+      try trash(remote.deletingLastPathComponent())
       note("brought back \(path): \(stats)")
     }
     save(entries().filter { $0.id != entry.id })
@@ -560,8 +562,8 @@ public final class Engine: @unchecked Sendable {
       let remote = try storePath(entry.remote, in: store)
       let slot = entry.mode == .packages ? remote : remote.deletingLastPathComponent()
       try checkContained(slot, in: store)
-      try Copier.remove(slot)
-      try Copier.remove(URL(fileURLWithPath: path))
+      try trash(slot)
+      try trash(URL(fileURLWithPath: path))
       if entry.kind?.isGlobal == true {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false)
       }
@@ -767,6 +769,7 @@ public final class Engine: @unchecked Sendable {
   public func recover() {
     _ = try? exclusively {
       let store = enterGrants()
+      finishTrash()
       let fm = FileManager.default
       for entry in entries() {
         let local = URL(fileURLWithPath: entry.local)
@@ -806,6 +809,46 @@ public final class Engine: @unchecked Sendable {
 
   /// Deletes a folder: in the background when this engine runs in a long-lived process (the
   /// links are already in place, so nothing waits on it), otherwise right away.
+  /// Deletes `url` without waiting: renames it aside (instant: same folder, same disk) and
+  /// erases it in the background. Erases still pending are recorded, so `recover` finishes them
+  /// after a quit or crash. Symlinks aren't followed.
+  func trash(_ url: URL) throws {
+    var st = stat()
+    guard lstat(url.path, &st) == 0 else { return }
+    // A link or a file goes at once; only folders take time to erase.
+    guard st.st_mode & S_IFMT == S_IFDIR else {
+      try Copier.remove(url)
+      return
+    }
+    let aside = Self.leftoverName(for: url, kind: "trash")
+    try FileManager.default.moveItem(at: url, to: aside)
+    lock.withLock {
+      defaults.set((defaults.stringArray(forKey: "trash") ?? []) + [aside.path], forKey: "trash")
+    }
+    let erase: @Sendable () -> Void = { [self] in
+      try? Copier.remove(aside)
+      lock.withLock {
+        defaults.set(
+          (defaults.stringArray(forKey: "trash") ?? []).filter { $0 != aside.path }, forKey: "trash"
+        )
+      }
+    }
+    if cleanupInBackground {
+      DispatchQueue.global(qos: .utility).async(execute: erase)
+    } else {
+      erase()
+    }
+  }
+
+  /// Finishes erasing what `trash` set aside before a quit or crash.
+  private func finishTrash() {
+    let pending = lock.withLock { defaults.stringArray(forKey: "trash") ?? [] }
+    for path in pending where path.contains(".stowaway-trash-") {
+      try? Copier.remove(URL(fileURLWithPath: path))
+    }
+    lock.withLock { defaults.removeObject(forKey: "trash") }
+  }
+
   func deleteSoon(_ url: URL) {
     if cleanupInBackground {
       DispatchQueue.global(qos: .utility).async { try? Copier.remove(url) }

@@ -36,20 +36,23 @@ public struct Cleaner: Sendable {
   }
 
   /// Deletes a project folder outright. For a machine-wide cache, empties it but keeps the folder,
-  /// so the permission the user granted for it stays valid.
-  @discardableResult
-  public func delete(_ candidate: Candidate, roots: [String], offloaded: [Entry]) throws -> Int64 {
+  /// so the permission the user granted for it stays valid. `remove` does the deleting (the
+  /// engine's sets folders aside and erases them in the background).
+  public func delete(
+    _ candidate: Candidate, roots: [String], offloaded: [Entry],
+    remove: (URL) throws -> Void = { try Copier.remove($0) }
+  ) throws {
     if let refusal = refusal(candidate, roots: roots, offloaded: offloaded) {
       throw StowawayError("Stowaway didn't delete \(candidate.path): \(refusal)")
     }
-    let freed = Measure.allocatedSize(candidate.path)
     if candidate.kind.isGlobal {
-      for name in try FileManager.default.contentsOfDirectory(atPath: candidate.path) {
-        try Copier.remove(candidate.url.appendingPathComponent(name))
+      for name in try FileManager.default.contentsOfDirectory(atPath: candidate.path)
+      where !name.contains(".stowaway-trash-") {
+        try remove(candidate.url.appendingPathComponent(name))
       }
     } else {
-      try Copier.remove(candidate.url)
+      try remove(candidate.url)
     }
-    return freed
   }
+
 }

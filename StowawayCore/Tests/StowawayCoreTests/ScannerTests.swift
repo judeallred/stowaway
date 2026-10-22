@@ -119,7 +119,7 @@ final class ScannerTests: XCTestCase {
     XCTAssertNotNil(cleaner.refusal(web, roots: ["/somewhere/else"], offloaded: []))
     let entry = Entry(id: "x", local: web.path, remote: "x", online: true, adoptedAt: Date())
     XCTAssertNotNil(cleaner.refusal(web, roots: roots, offloaded: [entry]))
-    XCTAssertGreaterThan(try cleaner.delete(web, roots: roots, offloaded: []), 0)
+    try cleaner.delete(web, roots: roots, offloaded: [])
     XCTAssertFalse(FileManager.default.fileExists(atPath: web.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: s.path("web/package.json")))
   }

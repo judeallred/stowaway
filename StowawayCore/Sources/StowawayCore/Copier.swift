@@ -153,7 +153,7 @@ public enum Copier {
   }
 }
 
-private final class Failure: @unchecked Sendable {
+final class Failure: @unchecked Sendable {
   private let lock = NSLock()
   private var first: (any Error)?
 

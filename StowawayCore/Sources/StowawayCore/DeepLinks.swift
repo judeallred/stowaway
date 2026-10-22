@@ -544,7 +544,7 @@ extension Engine {
   private func removeSlot(_ target: URL, in store: URL) {
     let slot = String(target.path.dropFirst(store.path.count + 1).prefix { $0 != "/" })
     let url = store.appendingPathComponent(slot)
-    if !slot.isEmpty, (try? checkContained(url, in: store)) != nil { try? Copier.remove(url) }
+    if !slot.isEmpty, (try? checkContained(url, in: store)) != nil { try? trash(url) }
   }
 
   /// After an interrupted re-offload: deletes the trash (its contents are already on the drive)
@@ -602,9 +602,14 @@ extension Engine {
       throw StowawayError("connect the drive to bring \(entry.local) back")
     }
     let store = try storePath(entry.remote, in: mine)
+    // Check every link first, then copy in parallel (one file at a time took minutes for a big
+    // project), then swap each copy in for its link.
+    var jobs: [(path: URL, target: String, staging: URL)] = []
+    var times: [(URL, stat)] = []
     for package in Self.packages(in: local, chain: []) {
       var st = stat()
       lstat(package.path.path, &st)
+      times.append((package.path, st))
       for name in Self.contents(of: package.path) {
         let path = package.path.appendingPathComponent(name)
         guard let link = Self.storeLinkTarget(path, store: store) else {
@@ -624,22 +629,39 @@ extension Engine {
           throw StowawayError(
             "\(path.path) links to \(link), outside Stowaway's store; leaving it alone")
         }
-        let staging = Self.leftoverName(for: path, kind: "releasing")
-        if isRealDirectory(target) {
-          _ = try Copier.copyContents(of: URL(fileURLWithPath: target), into: staging)
-        } else {
-          guard
-            copyfile(target, staging.path, nil, copyfile_flags_t(COPYFILE_ALL | COPYFILE_NOFOLLOW))
-              == 0
-          else {
-            throw StowawayError("copying \(target): \(String(cString: strerror(errno)))")
-          }
-        }
-        try fm.removeItem(at: path)
-        try fm.moveItem(at: staging, to: path)
+        jobs.append((path, target, Self.leftoverName(for: path, kind: "releasing")))
       }
-      Self.setTimes(package.path, from: st)
     }
+    let failure = Failure()
+    let work = jobs
+    DispatchQueue.concurrentPerform(iterations: Copier.workers) { worker in
+      var i = worker
+      while i < work.count, !failure.isSet {
+        let job = work[i]
+        if isRealDirectory(job.target) {
+          do {
+            _ = try Copier.copyContents(of: URL(fileURLWithPath: job.target), into: job.staging)
+          } catch {
+            failure.set(error)
+          }
+        } else if copyfile(
+          job.target, job.staging.path, nil, copyfile_flags_t(COPYFILE_ALL | COPYFILE_NOFOLLOW))
+          != 0
+        {
+          failure.set(StowawayError("copying \(job.target): \(String(cString: strerror(errno)))"))
+        }
+        i += Copier.workers
+      }
+    }
+    if let error = failure.error {
+      for job in jobs { try? Copier.remove(job.staging) }
+      throw error
+    }
+    for job in jobs {
+      try fm.removeItem(at: job.path)
+      try fm.moveItem(at: job.staging, to: job.path)
+    }
+    for (folder, st) in times { Self.setTimes(folder, from: st) }
     let lockfile = local.appendingPathComponent(Self.hiddenLockfile)
     if let target = Self.storeLinkTarget(lockfile, store: store) {
       var dirStat = stat()
@@ -649,7 +671,7 @@ extension Engine {
       Self.setTimes(local, from: dirStat)
     }
     try checkContained(store, in: mine)
-    try Copier.remove(store)
+    try trash(store)
     note("released \(entry.local)")
   }
 }
