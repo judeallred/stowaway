@@ -219,6 +219,8 @@ extension AppModel {
     defer { queued.subtract(rows.map(\.path)) }
     var failures: [any Error] = []
     for (i, row) in rows.enumerated() {
+      // The user stopped using the drive: stow nothing more.
+      if op == .stowing, stoppingDrive { break }
       if op == .stowing, Measure.isBusy(row.candidate) {
         queued.remove(row.path)
         problems[row.path] = .waiting(Self.cargoInUse)

@@ -100,7 +100,7 @@ final class AppModel {
   var stoppingDrive: Bool { stopIntent != nil }
 
   enum StopIntent: String {
-    case bringBack, delete
+    case bringBack, delete, quickDrop
   }
   /// A problem with something the user just did. Cleared after a few seconds: the status line
   /// is for what's happening now, not a log.

@@ -37,9 +37,11 @@ struct StowStatus: View {
       Label("Paused: nothing moves to the drive until you resume", systemImage: "pause.circle")
     } else if let intent = model.stopIntent, let name = model.driveName {
       Label(
-        model.driveConnected
-          ? "Stopping using \(name): \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")"
-          : "Connect \(name) to finish \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")",
+        intent == .quickDrop
+          ? "Dropping \(name)…"
+          : model.driveConnected
+            ? "Stopping using \(name): \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")"
+            : "Connect \(name) to finish \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")",
         systemImage: "externaldrive.badge.minus")
     } else if model.driveName != nil && !model.driveConnected {
       Label("Your tools use local folders until the drive is back", systemImage: "info.circle")

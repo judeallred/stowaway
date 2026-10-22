@@ -173,32 +173,34 @@ extension AppModel {
   }
 
   /// Stops using the drive at once: stowed folders become local ones and the links are gone;
-  /// the copies on the drive are left alone.
+  /// the copies on the drive are left alone. Recorded first, so stowing stops before the next
+  /// folder and a relaunch finishes the drop.
   private func quickDrop() {
-    let engine = engine
-    Task {
-      do {
-        try await Task.detached { try engine.abandonDrive() }.value
-      } catch {
-        message = error.localizedDescription
-      }
-      stopIntent = nil
-      driveForgotten()
-    }
+    stopIntent = .quickDrop
+    Task { await continueStopping() }
   }
 
   /// Carries on bringing everything back (or deleting it) after the user chose to stop using
   /// the drive; then forgets the drive. Runs when chosen, at launch, and when the drive returns.
   func continueStopping() async {
     guard let intent = stopIntent, !stopping, driveName != nil else { return }
-    guard driveConnected else { return }  // resumes when the drive is back
     stopping = true
     defer { stopping = false }
-    let stowed = rows.filter { !$0.entryPaths.isEmpty }
-    switch intent {
-    case .bringBack: await bringBack(stowed)
-    case .delete: await delete(stowed)
+    if intent == .quickDrop {
+      let engine = engine
+      do {
+        try await Task.detached { try engine.abandonDrive() }.value
+      } catch {
+        message = error.localizedDescription
+        return
+      }
+      stopIntent = nil
+      driveForgotten()
+      return
     }
+    guard driveConnected else { return }  // resumes when the drive is back
+    let stowed = rows.filter { !$0.entryPaths.isEmpty }
+    if intent == .bringBack { await bringBack(stowed) } else { await delete(stowed) }
     guard engine.entries().isEmpty else {
       message = "Some folders couldn't be brought back or deleted yet; Stowaway will keep trying."
       return
