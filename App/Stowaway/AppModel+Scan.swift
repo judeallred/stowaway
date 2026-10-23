@@ -83,7 +83,8 @@ extension AppModel {
     ]
     let names = Kind.allCases.compactMap { $0.projectRule?.folderName }
     let known = Set(rows.map(\.path))
-    for path in changed where !path.split(separator: "/").contains(where: { inside.contains($0) }) {
+    for path in Set(changed)
+    where !path.split(separator: "/").contains(where: { inside.contains($0) }) {
       // A managed folder appeared here, or one Stowaway knew of went away.
       for name in names {
         let folder = path.hasSuffix("/") ? path + name : path + "/" + name

@@ -31,7 +31,9 @@ final class FolderWatcher {
     guard
       let stream = FSEventStreamCreate(
         nil, callback, &context, paths as CFArray,
-        FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 5,
+        // Changes are gathered for 30 seconds: prompt enough to notice a new folder, and a
+        // folder that keeps changing (a build, an editor) is reported once per batch.
+        FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 30,
         FSEventStreamCreateFlags(
           kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagIgnoreSelf))
     else { return }
