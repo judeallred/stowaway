@@ -508,7 +508,9 @@ public final class Engine: @unchecked Sendable {
       Entry(
         id: id, local: local.path, remote: remoteRel, online: true, adoptedAt: Date(),
         kind: kind ?? Kind.forFolderName(local.lastPathComponent),
-        bytes: stats.bytes, container: container ?? local.path))
+        // Space used on the drive, as every later update measures it (not the files' sizes,
+        // which the free limit and the stowed total would otherwise mix with it).
+        bytes: Measure.allocatedSize(remote.path), container: container ?? local.path))
     do {
       try save(all)
     } catch {

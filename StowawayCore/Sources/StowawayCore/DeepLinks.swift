@@ -103,7 +103,9 @@ extension Engine {
       }
       throw error
     }
-    update(id) { $0.bytes = stats.bytes }
+    // Space used on the drive, as every later update measures it.
+    let used = Measure.allocatedSize(store.appendingPathComponent(remoteRel).path)
+    update(id) { $0.bytes = used }
     note("offloaded \(local.path) package by package: \(stats)")
     return stats
   }
