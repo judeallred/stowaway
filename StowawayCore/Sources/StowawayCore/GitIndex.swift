@@ -15,6 +15,8 @@ public enum GitIndex {
   /// Whether git tracks any file under `folder`.
   public static func tracking(of folder: URL) -> GitTracking {
     guard let (root, index) = repository(containing: folder) else { return .untracked }
+    // A `.git` file that doesn't say where its repository is: can't tell, so don't touch.
+    guard let index else { return .unknown }
     // No index at all means nothing is tracked: a repository nothing was ever added to, or a
     // worktree whose record git has since pruned (git itself no longer sees a repository
     // there). An index that's there but can't be read or parsed is another matter.
@@ -31,7 +33,8 @@ public enum GitIndex {
   }
 
   /// Whether `folder` is, or directly holds, a git repository (a package cloned by hand into
-  /// node_modules, say): uncommitted work could be inside, so Stowaway leaves it alone.
+  /// node_modules, say): uncommitted work could be inside, so Stowaway leaves it alone. A Python
+  /// `.venv` is also checked one level deeper, in `src/`, where `pip install -e git+…` clones.
   public static func containsRepository(_ folder: URL) -> Bool {
     func hasGit(_ dir: URL) -> Bool {
       var st = stat()
@@ -44,11 +47,17 @@ public enum GitIndex {
         return true
       }
     }
+    if folder.lastPathComponent == ".venv",
+      subdirectories(of: folder.appendingPathComponent("src")).contains(where: hasGit)
+    {
+      return true
+    }
     return false
   }
 
-  /// The working tree's root and its index file, for the repository `folder` is in.
-  static func repository(containing folder: URL) -> (root: URL, index: URL)? {
+  /// The working tree's root and its index file, for the repository `folder` is in. The index is
+  /// nil when `.git` is a file that can't be read or doesn't name its repository.
+  static func repository(containing folder: URL) -> (root: URL, index: URL?)? {
     var dir = folder.standardizedFileURL.deletingLastPathComponent()
     while dir.path != "/" {
       let git = dir.appendingPathComponent(".git")
@@ -68,7 +77,7 @@ public enum GitIndex {
             path.hasPrefix("/") ? URL(fileURLWithPath: path) : dir.appendingPathComponent(path)
           return (dir, gitdir.appendingPathComponent("index"))
         }
-        return nil
+        return (dir, nil)
       }
       dir = dir.deletingLastPathComponent()
     }
@@ -125,6 +134,9 @@ public enum GitIndex {
         let length = end - start
         offset = start + ((length + 8) & ~7)
       }
+      // The flags carry the name's length (when it's under 0xFFF). A mismatch means the layout
+      // was misread (a SHA-256 repository's longer entries, for one): fail closed.
+      if flags & 0xFFF < 0xFFF, name.count != flags & 0xFFF { return nil }
       previous = name
       paths.append(String(decoding: name, as: UTF8.self))
     }
@@ -136,6 +148,8 @@ public enum GitIndex {
       if signature == "link" || signature == "sdir" { return nil }
       offset += 8 + u32(offset + 4)
     }
+    // What's left must be exactly the 20-byte SHA-1 checksum; anything else was misread.
+    guard offset == bytes.count - 20 else { return nil }
     return paths
   }
 }
