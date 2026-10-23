@@ -118,6 +118,9 @@ final class DeepLinkTests: XCTestCase {
     engine.reconcile()
     XCTAssertTrue(
       FileManager.default.fileExists(atPath: victim.appendingPathComponent("keep.txt").path))
+    // The second names the drive itself: it and the store are still there.
+    XCTAssertTrue(isRealDirectory(store.path))
+    XCTAssertTrue(isRealDirectory(s.path("drive")))
   }
 
   /// The slots in the store (not the manifest).
@@ -199,6 +202,13 @@ final class DeepLinkTests: XCTestCase {
     engine.reconcile()
     let id = try XCTUnwrap(engine.entries().first).id
     XCTAssertNotNil(engine.settledChange(of: id), "settled after a quiet pass")
+    // A change inside a package, with npm's top level untouched, isn't looked at.
+    let index = nm.appendingPathComponent("a/index.js")
+    let contents = try Data(contentsOf: index)
+    try FileManager.default.removeItem(at: index)
+    try contents.write(to: index)
+    engine.reconcile()
+    XCTAssertFalse(isSymlink(index.path), "a settled project isn't walked")
     // npm reinstalls b and rewrites its lockfile (replacing the link with a file).
     let b = nm.appendingPathComponent("b")
     try Copier.remove(b)
@@ -209,6 +219,7 @@ final class DeepLinkTests: XCTestCase {
     engine.reconcile()
     XCTAssertTrue(isSymlink(b.appendingPathComponent("package.json").path))
     XCTAssertTrue(isSymlink(lockfile.path))
+    XCTAssertTrue(isSymlink(index.path), "once npm changed it, the whole project is walked")
   }
 
   /// A re-offload interrupted after moving a package's files aside, before linking them: the
@@ -323,5 +334,21 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertTrue(engine.entries().isEmpty)
     XCTAssertFalse(isSymlink(index.path))
     XCTAssertFalse(isSymlink(nm.appendingPathComponent("a/package.json").path))
+  }
+
+  /// Turbopack refuses files outside the project, so its projects are refused unless the user
+  /// allows it (having set `turbopack.root`).
+  func testTurbopackProjectsAreRefusedUnlessAllowed() throws {
+    let s = try Scratch()
+    let next16 = try s.dir("next16/node_modules")
+    try s.file("next16/package.json", #"{ "dependencies": { "next": "^16.0.1" } }"#)
+    let flag = try s.dir("flag/node_modules")
+    try s.file("flag/package.json", #"{ "scripts": { "dev": "next dev --turbopack" } }"#)
+    let plain = try s.dir("plain/node_modules")
+    try s.file("plain/package.json", #"{ "dependencies": { "next": "15.2.0" } }"#)
+    XCTAssertNotNil(Engine.packagesRefusal(next16, allowTurbopack: false))
+    XCTAssertNotNil(Engine.packagesRefusal(flag, allowTurbopack: false))
+    XCTAssertNil(Engine.packagesRefusal(next16, allowTurbopack: true))
+    XCTAssertNil(Engine.packagesRefusal(plain, allowTurbopack: false))
   }
 }

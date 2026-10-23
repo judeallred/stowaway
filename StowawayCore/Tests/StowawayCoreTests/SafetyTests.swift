@@ -171,7 +171,9 @@ final class SafetyTests: XCTestCase {
     try s.file("code/app/package.json", "{}")
     try s.file("code/app/node_modules/hand-cloned/.git/HEAD", "ref: refs/heads/main")
     try s.file("code/app/node_modules/hand-cloned/index.js", "uncommitted work")
-    XCTAssertThrowsError(try engine.adopt(code.appendingPathComponent("app/node_modules").path))
+    XCTAssertThrowsError(try engine.adopt(code.appendingPathComponent("app/node_modules").path)) {
+      XCTAssertEqual(($0 as? StowawayError)?.isRefusal, true, "\($0)")
+    }
     let candidate = Candidate(
       kind: .node, path: s.path("code/app/node_modules"), project: s.path("code/app"))
     XCTAssertNotNil(Cleaner().refusal(candidate, roots: [code.path], offloaded: []))
@@ -201,6 +203,21 @@ final class SafetyTests: XCTestCase {
     try shell("/usr/bin/git", ["update-index", "--split-index"], in: s.root)
     XCTAssertEqual(
       GitIndex.tracking(of: s.root.appendingPathComponent("app/node_modules")), .unknown)
+
+    let sparse = try Scratch()
+    try shell("/usr/bin/git", ["init", "-q"], in: sparse.root)
+    try sparse.file("app/package.json", "{}")
+    try sparse.file("lib/vendored/node_modules/x/index.js", "x")
+    try shell("/usr/bin/git", ["add", "."], in: sparse.root)
+    try shell(
+      "/usr/bin/git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+      in: sparse.root)
+    try shell(
+      "/usr/bin/git", ["sparse-checkout", "set", "--cone", "--sparse-index", "app"], in: sparse.root
+    )
+    XCTAssertEqual(
+      GitIndex.tracking(of: sparse.root.appendingPathComponent("lib/vendored/node_modules")),
+      .unknown)
   }
 
   func testReconnectingDoesntDoubleCountBytes() throws {

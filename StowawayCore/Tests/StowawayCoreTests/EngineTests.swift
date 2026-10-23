@@ -67,15 +67,18 @@ final class EngineTests: XCTestCase {
   func testRefusesWhatItMustNotMove() throws {
     let s = try Scratch()
     let (engine, code, _) = try makeEngine(s)
+    let refused = { (error: any Error) in
+      XCTAssertEqual((error as? StowawayError)?.isRefusal, true, "\(error)")
+    }
     let outside = try s.dir("outside/node_modules")
-    XCTAssertThrowsError(try engine.adopt(outside.path))
-    XCTAssertThrowsError(try engine.adopt(code.path), "the root itself")
+    XCTAssertThrowsError(try engine.adopt(outside.path), "outside the roots", refused)
+    XCTAssertThrowsError(try engine.adopt(code.path), "the root itself", refused)
     try shell("/usr/bin/git", ["init", "-q"], in: code)
     try s.file("code/app/package.json", "{}")
     try s.file("code/app/.next/vendored.js")
     try shell("/usr/bin/git", ["add", "app/.next"], in: code)
     XCTAssertThrowsError(
-      try engine.adopt(code.appendingPathComponent("app/.next").path), "tracked by git")
+      try engine.adopt(code.appendingPathComponent("app/.next").path), "tracked by git", refused)
   }
 
   func testStorePathsCantEscape() throws {
