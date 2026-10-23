@@ -241,4 +241,24 @@ final class DeepLinkTests: XCTestCase {
       FileManager.default.fileExists(atPath: package.appendingPathComponent("package.json").path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: trash.path))
   }
+
+  /// A stow that fails partway (a package can't be read) undoes the packages it had linked, as
+  /// stowing a whole folder does.
+  func testAFailedStowIsUndone() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    let locked = nm.appendingPathComponent("@scope/c/dist")
+    XCTAssertEqual(chmod(locked.path, 0o300), 0)
+    defer { chmod(locked.path, 0o700) }
+
+    XCTAssertThrowsError(try engine.adopt(nm.path))
+    XCTAssertTrue(engine.entries().isEmpty)
+    for name in ["a/index.js", "a/package.json", "b/package.json"] {
+      XCTAssertFalse(isSymlink(nm.appendingPathComponent(name).path), name)
+    }
+    XCTAssertEqual(
+      try String(contentsOf: nm.appendingPathComponent("a/index.js"), encoding: .utf8),
+      "module.exports = require('b')")
+  }
 }

@@ -90,7 +90,19 @@ extension Engine {
         id: id, local: local.path, remote: remoteRel, online: true, adoptedAt: Date(),
         mode: .packages, kind: .node))
     try save(all)
-    let stats = try offloadPackages(local: local, store: store.appendingPathComponent(remoteRel))
+    let stats: CopyStats
+    do {
+      stats = try offloadPackages(local: local, store: store.appendingPathComponent(remoteRel))
+    } catch {
+      // Undo the packages linked so far, as bringing the project back would. If that fails too,
+      // the entry stays, so the links keep working and reconcile and recovery can finish.
+      if let entry = entries().first(where: { $0.id == id }),
+        (try? releasePackages(entry, store: store)) != nil
+      {
+        try? save(entries().filter { $0.id != id })
+      }
+      throw error
+    }
     update(id) { $0.bytes = stats.bytes }
     note("offloaded \(local.path) package by package: \(stats)")
     return stats
