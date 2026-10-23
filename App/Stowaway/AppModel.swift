@@ -388,11 +388,16 @@ final class AppModel {
     rows.filter { $0.place == .mac }.compactMap(\.localBytes).reduce(0, +)
   }
 
-  /// Bytes on this Mac still to be stowed: every re-creatable folder here that Stowaway can stow
-  /// (folders it couldn't, such as a pnpm project, are left out until they change). Stowed plus
-  /// pending is `eligibleBytes`.
+  /// Whether a folder on this Mac is still to be stowed. Left out: folders Stowaway couldn't stow
+  /// (a pnpm project, say) and ones the user kept here or brought back, until they change.
+  func isPending(_ row: Row) -> Bool {
+    row.place == .mac && !isRefused(row) && !isHeldOnMac(row)
+  }
+
+  /// Bytes on this Mac still to be stowed (see `isPending`). Stowed plus pending is
+  /// `eligibleBytes`.
   var pendingBytes: Int64 {
-    rows.filter { $0.place == .mac && !isRefused($0) }.compactMap(\.localBytes).reduce(0, +)
+    rows.filter(isPending).compactMap(\.localBytes).reduce(0, +)
   }
 
   /// All the re-creatable data Stowaway manages: what's stowed plus what's pending.

@@ -203,7 +203,7 @@ extension AppModel {
     let window =
       autoOffloadMinutes == AutoStow.immediately
       ? Timing.immediateQuiet : Double(autoOffloadMinutes) * 60
-    let dueAt = rows.filter { $0.place == .mac && !isRefused($0) && !isHeldOnMac($0) }
+    let dueAt = rows.filter(isPending)
       .compactMap { row in row.lastActivity.map { (row.path, $0.addingTimeInterval(window)) } }
       .filter { $0.1 > .now }
     guard let next = dueAt.map(\.1).min() else { return }

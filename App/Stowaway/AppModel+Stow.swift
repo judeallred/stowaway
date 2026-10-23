@@ -117,23 +117,20 @@ extension AppModel {
   /// Why folders on this Mac aren't being stowed right now ("2 changed recently, 1 in use"), or
   /// nil if nothing's waiting or some are due.
   var waitingSummary: String? {
-    let pending = rows.filter { $0.place == .mac && !isRefused($0) }
+    let pending = rows.filter(isPending)
     // Queued folders are about to be stowed: nothing to explain.
     guard !pending.isEmpty, queued.isEmpty else { return nil }
     if freeStowageFull { return "Waiting: free stowage is full" }
     let cutoff = autoStowCutoff
     var recent = 0
     var inUse = 0
-    var kept = 0
     var retrying = 0
     for row in pending {
-      if keptOnMac.contains(row.path) {
-        kept += 1
-      } else if problems[row.path] == .waiting(Self.cargoInUse) || ideIsUsing(row) {
+      if problems[row.path] == .waiting(Self.cargoInUse) || ideIsUsing(row) {
         inUse += 1
       } else if let at = retryAfter[row.path], at > .now {
         retrying += 1
-      } else if (row.lastActivity ?? .now) >= cutoff || isHeldOnMac(row) {
+      } else if (row.lastActivity ?? .now) >= cutoff {
         recent += 1
       } else {
         return nil  // due: stowed at the next pass
@@ -143,7 +140,6 @@ extension AppModel {
       recent > 0 ? "\(recent) changed recently" : nil,
       inUse > 0 ? "\(inUse) in use" : nil,
       retrying > 0 ? "\(retrying) to retry later" : nil,
-      kept > 0 ? "\(kept) kept on this Mac" : nil,
     ].compactMap { $0 }
     return "Waiting: " + parts.joined(separator: ", ")
   }
