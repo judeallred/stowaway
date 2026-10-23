@@ -244,6 +244,10 @@ extension Engine {
       lstat(package.path.path, &st)
       let aside = trash.appendingPathComponent("\(i)")
       try fm.createDirectory(at: aside, withIntermediateDirectories: false)
+      // Whose files these are, written first: after a crash between moving an entry aside and
+      // linking it, `recoverPackages` puts it back.
+      try Data(package.path.path.utf8).write(
+        to: trash.appendingPathComponent("\(i)\(Self.asideOwnerSuffix)"))
       for entry in real {
         let source = package.path.appendingPathComponent(entry)
         try fm.moveItem(at: source, to: aside.appendingPathComponent(entry))
@@ -579,12 +583,40 @@ extension Engine {
 
   /// After an interrupted re-offload: deletes the trash (its contents are already on the drive)
   /// and restores links that were set aside but not yet created.
+  /// Marks the file naming the package an aside folder's entries came from.
+  static let asideOwnerSuffix = ".package"
+
+  /// Puts back what an interrupted re-offload moved aside but hadn't linked yet: anything in the
+  /// trash whose place in its package is empty. Entries already linked stay linked (their copy
+  /// in the store is complete).
+  static func restoreAside(in trash: URL, local: URL) {
+    let fm = FileManager.default
+    for name in (try? fm.contentsOfDirectory(atPath: trash.path)) ?? []
+    where name.hasSuffix(asideOwnerSuffix) {
+      guard
+        let path = try? String(contentsOf: trash.appendingPathComponent(name), encoding: .utf8),
+        path.hasPrefix(local.path + "/")
+      else { continue }
+      let package = URL(fileURLWithPath: path)
+      let aside = trash.appendingPathComponent(String(name.dropLast(asideOwnerSuffix.count)))
+      for entry in (try? fm.contentsOfDirectory(atPath: aside.path)) ?? [] {
+        let original = package.appendingPathComponent(entry)
+        var st = stat()
+        if lstat(original.path, &st) != 0 {
+          try? fm.moveItem(at: aside.appendingPathComponent(entry), to: original)
+        }
+      }
+    }
+  }
+
   func recoverPackages(_ entry: Entry, store mine: URL) {
     let fm = FileManager.default
     let local = URL(fileURLWithPath: entry.local)
     for name in (try? fm.contentsOfDirectory(atPath: local.path)) ?? []
     where name.hasPrefix(".stowaway-trash-") {
-      try? Copier.remove(local.appendingPathComponent(name))
+      let trash = local.appendingPathComponent(name)
+      Self.restoreAside(in: trash, local: local)
+      try? Copier.remove(trash)
     }
     // An interrupted release leaves `.<name>.stowaway-releasing-…` copies in package folders:
     // one whose original is gone goes back in its place; the rest are deleted.

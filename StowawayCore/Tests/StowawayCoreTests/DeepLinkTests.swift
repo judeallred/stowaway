@@ -210,4 +210,35 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertTrue(isSymlink(b.appendingPathComponent("package.json").path))
     XCTAssertTrue(isSymlink(lockfile.path))
   }
+
+  /// A re-offload interrupted after moving a package's files aside, before linking them: the
+  /// next launch puts them back rather than deleting them with the trash.
+  func testAnInterruptedSwapLosesNoFiles() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    // As a crash would leave it: package a's entries moved aside, not yet linked.
+    let package = nm.appendingPathComponent("a")
+    let trash = nm.appendingPathComponent(".stowaway-trash-test")
+    let aside = trash.appendingPathComponent("0")
+    try FileManager.default.createDirectory(at: aside, withIntermediateDirectories: true)
+    try Data(package.path.utf8).write(
+      to: trash.appendingPathComponent("0" + Engine.asideOwnerSuffix))
+    for name in ["index.js", "package.json"] {
+      let link = package.appendingPathComponent(name)
+      let contents = try Data(contentsOf: link)
+      try FileManager.default.removeItem(at: link)
+      try contents.write(to: aside.appendingPathComponent(name))
+    }
+
+    engine.recover()
+
+    XCTAssertEqual(
+      try String(contentsOf: package.appendingPathComponent("index.js"), encoding: .utf8),
+      "module.exports = require('b')")
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: package.appendingPathComponent("package.json").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: trash.path))
+  }
 }
