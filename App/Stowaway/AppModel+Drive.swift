@@ -230,8 +230,15 @@ extension AppModel {
     let center = NSWorkspace.shared.notificationCenter
     for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
       watchers.append(
-        center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-          Task { @MainActor in self?.queueReconcile() }
+        center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+          // macOS mounts and unmounts volumes all the time (Time Machine snapshots, disk
+          // images); only the drive's own matter.
+          let volume = (note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL)?.path
+          Task { @MainActor in
+            guard let self, self.driveName != nil else { return }
+            if let drive = self.lastDrivePath, let volume, !drive.isWithin(volume) { return }
+            self.queueReconcile()
+          }
         })
     }
   }

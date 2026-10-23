@@ -705,15 +705,16 @@ public final class Engine: @unchecked Sendable {
   /// A link that doesn't lead to the entry's copy (the drive mounted under another name, or the
   /// copy is gone): point it at the copy, or switch to a local folder if there's none.
   private func checkLink(_ entry: Entry, store: URL) {
-    guard let remote = try? storePath(entry.remote, in: store),
-      (try? checkContained(remote, in: store)) != nil
-    else { return }
+    guard let remote = try? storePath(entry.remote, in: store) else { return }
+    // The usual case, checked cheaply: the link leads to its copy and the copy is there.
+    let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: entry.local)
+    if destination == remote.path, isRealDirectory(remote.path) { return }
+    guard (try? checkContained(remote, in: store)) != nil else { return }
     guard isRealDirectory(remote.path) else {
       note("\(entry.local)'s copy on the drive is missing; using a local folder")
       goOffline(entry)
       return
     }
-    let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: entry.local)
     if destination != remote.path {
       try? FileManager.default.removeItem(atPath: entry.local)
       relink(entry, store: store)

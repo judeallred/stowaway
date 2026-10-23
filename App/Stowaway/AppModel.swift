@@ -49,7 +49,14 @@ final class AppModel {
     }
   }
   var roots: [String] = []
-  var drivePath: String?
+  var drivePath: String? {
+    didSet { if let drivePath { lastDrivePath = drivePath } }
+  }
+  /// Where the drive was last seen, kept while it's unplugged and across launches (so its mount
+  /// is recognised among the others).
+  var lastDrivePath: String? = UserDefaults.standard.string(forKey: "lastDrivePath") {
+    didSet { UserDefaults.standard.set(lastDrivePath, forKey: "lastDrivePath") }
+  }
   /// The drive's name, known even while it's unplugged.
   var driveName: String?
   var driveConnected = false
