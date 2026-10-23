@@ -393,6 +393,24 @@ extension Engine {
   /// The newest modification time of anything under `root`, not following links.
   /// The newest change at node_modules' top level: the folder, its entries (the hidden lockfile
   /// among them) and its scoped folders' entries. Cheap: no package is opened.
+  /// When node_modules last changed as a whole: its own date and npm's hidden lockfile (which
+  /// npm rewrites on every install, and other package managers' installs add or remove
+  /// entries, which dates the folder). Two lstat calls, cheap enough for every reconcile.
+  static func installChange(_ local: URL) -> Date {
+    var newest = Date.distantPast
+    for path in [local.path, local.appendingPathComponent(hiddenLockfile).path] {
+      var st = stat()
+      if lstat(path, &st) == 0 {
+        newest = max(
+          newest,
+          Date(
+            timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec)
+              + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9))
+      }
+    }
+    return newest
+  }
+
   static func topLevelChange(_ local: URL) -> Date {
     var newest = Date.distantPast
     let fm = FileManager.default
@@ -501,7 +519,7 @@ extension Engine {
     }
     // npm can only have changed the tree by changing its top level (it rewrites the hidden
     // lockfile on every install), so a settled project whose top level hasn't moved is skipped.
-    let before = Self.topLevelChange(local)
+    let before = Self.installChange(local)
     if entry.online, settledChange(of: entry.id) == before { return }
     var st = stat()
     let lockfile = local.appendingPathComponent(Self.hiddenLockfile).path
@@ -526,7 +544,7 @@ extension Engine {
     }
     if isQuiet(local) {
       pruneStore(local: local, store: store)
-      setSettledChange(Self.topLevelChange(local), of: entry.id)
+      setSettledChange(Self.installChange(local), of: entry.id)
     }
   }
 

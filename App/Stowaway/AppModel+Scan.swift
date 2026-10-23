@@ -74,17 +74,35 @@ extension AppModel {
     watcher?.watch(Scanner.walkable(roots))
   }
 
-  /// Folders that changed: rescan if any is where a project or a new folder could appear.
-  /// Changes inside folders Stowaway manages (a build writing into target, npm into
-  /// node_modules) don't need a scan: those folders are already known.
+  /// Folders that changed: rescan only if a folder Stowaway manages appeared there or went away.
+  /// Editors, git and builds change files in project folders all the time; anything else needs
+  /// no scan (and rescanning on every change kept the app busy while idle).
   private func foldersChanged(_ changed: [String]) {
     let inside: Set<Substring> = [
       "node_modules", "target", ".next", ".venv", ".git", "DerivedData",
     ]
-    let relevant = changed.contains { path in
-      !path.split(separator: "/").contains { inside.contains($0) }
+    let names = Kind.allCases.compactMap { $0.projectRule?.folderName }
+    let known = Set(rows.map(\.path))
+    for path in changed where !path.split(separator: "/").contains(where: { inside.contains($0) }) {
+      // A managed folder appeared here, or one Stowaway knew of went away.
+      for name in names {
+        let folder = path.hasSuffix("/") ? path + name : path + "/" + name
+        var st = stat()
+        if (lstat(folder, &st) == 0) != known.contains(folder) {
+          requestScan()
+          return
+        }
+      }
+      // A folder holding known ones was removed or renamed.
+      let prefix = path.hasSuffix("/") ? path : path + "/"
+      if known.contains(where: { row in
+        var st = stat()
+        return row.hasPrefix(prefix) && lstat(row, &st) != 0
+      }) {
+        requestScan()
+        return
+      }
     }
-    if relevant { requestScan() }
   }
 
   /// Scans now, or as soon as a minute has passed since the last one.

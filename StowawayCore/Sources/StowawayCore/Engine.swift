@@ -809,7 +809,7 @@ public final class Engine: @unchecked Sendable {
         if entry.mode == .packages, let store {
           // A project unchanged since it was last settled wasn't interrupted: skip the walk.
           let local = URL(fileURLWithPath: entry.local)
-          if settledChange(of: entry.id) == Self.topLevelChange(local) { continue }
+          if settledChange(of: entry.id) == Self.installChange(local) { continue }
           recoverPackages(entry, store: store)
         } else if let store, let remote = try? storePath(entry.remote, in: store) {
           recoverReplacement(remote)

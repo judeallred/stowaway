@@ -201,7 +201,9 @@ final class AppModel {
 
   /// How long things take or wait.
   enum Timing {
-    static let reconcileEvery: TimeInterval = 30
+    /// Mounts and unmounts reconcile at once; this catches the rest (a tool replacing a link,
+    /// npm reinstalling packages).
+    static let reconcileEvery: TimeInterval = 120
     /// Scans happen when watched folders change; this is the safety net (and how caches outside
     /// the project folders are noticed growing).
     static let scanEvery: TimeInterval = 900
