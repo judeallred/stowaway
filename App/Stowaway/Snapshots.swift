@@ -108,6 +108,9 @@
           height: 460, in: folder)
       }
       render(
+        OnboardingView(model: model, step: .caches, explainingHomeFolder: true),
+        "onboarding-2-home-folder", width: 560, height: 460, in: folder)
+      render(
         SupportView(model: model, store: model.store), "support", width: 560, height: 720,
         in: folder)
       render(SettingsView(model: model), "settings", width: 520, height: 380, in: folder)

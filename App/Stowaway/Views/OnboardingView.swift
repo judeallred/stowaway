@@ -10,14 +10,17 @@ struct OnboardingView: View {
   /// Checked by default, and applied only when the user clicks Done, so nothing runs at login
   /// without their say-so.
   @State private var openAtLogin = true
+  /// On the caches step: what "Allow All" is about to ask, shown before the open panel.
+  @State private var explainingHomeFolder: Bool
 
   enum Step: Int, CaseIterable {
     case welcome, projects, caches, finish
   }
 
-  init(model: AppModel, step: Step = .welcome) {
+  init(model: AppModel, step: Step = .welcome, explainingHomeFolder: Bool = false) {
     self.model = model
     _step = State(initialValue: step)
+    _explainingHomeFolder = State(initialValue: explainingHomeFolder)
   }
 
   var body: some View {
@@ -25,11 +28,19 @@ struct OnboardingView: View {
       switch step {
       case .welcome: welcome
       case .projects: projects
-      case .caches: caches
+      case .caches:
+        if explainingHomeFolder {
+          HomeFolderExplainer(
+            openPanel: { model.allowHomeFolder() }, back: { explainingHomeFolder = false }
+          )
+          .frame(maxHeight: .infinity)
+        } else {
+          caches
+        }
       case .finish: finish
       }
       Spacer(minLength: 0)
-      footer
+      if !explainingHomeFolder { footer }
     }
     .padding(24)
     .frame(width: 560)
@@ -94,7 +105,7 @@ struct OnboardingView: View {
       .foregroundStyle(.secondary)
       let pending = model.ungrantedCaches
       if !pending.isEmpty {
-        Button("Allow All…") { model.allowHomeFolder() }
+        Button("Allow All…") { explainingHomeFolder = true }
           .buttonStyle(.borderedProminent)
           .help("Lets Stowaway see your home folder, which covers every cache below.")
       }
@@ -156,7 +167,7 @@ struct OnboardingView: View {
               Button("Use \(volume.lastPathComponent)") { model.chooseDrive(volume) }
             }
             Button(model.externalVolumes.isEmpty ? "Choose a Location…" : "Somewhere Else…") {
-              model.chooseDrive()
+              model.chooseDrive(anywhere: true)
             }
           }
           Text(
@@ -262,5 +273,141 @@ extension Kind {
     case .npx: "often 1–5 GB"
     default: ""
     }
+  }
+}
+
+/// Shown before the open panel that grants the home folder. Choosing a folder that's already
+/// open, rather than one inside it, is unusual, so this says what the window will look like and
+/// that the only thing to do there is click Choose.
+struct HomeFolderExplainer: View {
+  /// Opens the panel. Returns false if the user cancelled it.
+  let openPanel: () -> Bool
+  let back: () -> Void
+
+  private var homeName: String { realHomeDirectory.lastPathComponent }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text("Allow your home folder").font(.title2.weight(.semibold))
+      Text(
+        "macOS only lets Stowaway see a folder after you point to it. Your home folder holds all of the shared caches, so allowing it covers them in one step."
+      )
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+      HStack(alignment: .top, spacing: 20) {
+        VStack(alignment: .leading, spacing: 10) {
+          step(1, "A window opens, already showing your home folder, “\(homeName)”.")
+          step(2, "Don’t open or select anything in it.")
+          step(3, "Just click **Choose**.")
+        }
+        .frame(maxWidth: 190, alignment: .leading)
+        ChoosePanelIllustration(folderName: homeName)
+      }
+      Text("Stowaway reads folder names and sizes, never what’s inside your files.")
+        .font(.caption).foregroundStyle(.secondary)
+      Spacer(minLength: 0)
+      HStack {
+        Button("Back", action: back)
+        Spacer()
+        Button("Open the Window…") {
+          if openPanel() { back() }
+        }
+        .buttonStyle(.borderedProminent)
+        .keyboardShortcut(.defaultAction)
+      }
+    }
+  }
+
+  private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Text("\(number)")
+        .font(.callout.weight(.semibold).monospacedDigit())
+        .foregroundStyle(.white)
+        .frame(width: 20, height: 20)
+        .background(Circle().fill(Color.accentColor))
+      Text(text).fixedSize(horizontal: false, vertical: true)
+    }
+  }
+}
+
+/// A sketch of the open panel as it will appear: the home folder already open, and the Choose
+/// button called out. Drawn rather than a screenshot, so it follows light and dark mode and shows
+/// none of anyone's files.
+private struct ChoosePanelIllustration: View {
+  let folderName: String
+
+  var body: some View {
+    VStack(spacing: 0) {
+      // The panel's message, as Stowaway sets it.
+      Text("Click Choose to let Stowaway look through your home folder…")
+        .font(.system(size: 8)).foregroundStyle(.secondary)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+        .background(.quaternary.opacity(0.5))
+      HStack(spacing: 0) {
+        // Sidebar.
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(0..<5, id: \.self) { i in
+            placeholder(width: [44, 36, 48, 30, 40][i])
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(8)
+        .frame(width: 70)
+        .background(.quaternary.opacity(0.3))
+        // The open folder.
+        VStack(alignment: .leading, spacing: 6) {
+          Label(folderName, systemImage: "house.fill")
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Capsule().fill(.quaternary))
+          ForEach(0..<4, id: \.self) { i in
+            HStack(spacing: 5) {
+              Image(systemName: "folder.fill").font(.system(size: 9)).foregroundStyle(.blue)
+              placeholder(width: [60, 46, 70, 38][i])
+            }
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      Divider()
+      HStack(spacing: 6) {
+        Spacer()
+        Text("Cancel")
+          .font(.system(size: 10))
+          .padding(.horizontal, 8).padding(.vertical, 3)
+          .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+        Text("Choose")
+          .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+          .padding(.horizontal, 8).padding(.vertical, 3)
+          .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor))
+          .padding(3)
+          .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.orange, lineWidth: 2))
+      }
+      .padding(6)
+    }
+    .frame(width: 280, height: 170)
+    .background(RoundedRectangle(cornerRadius: 8).fill(.background))
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
+    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+    .overlay(alignment: .bottomTrailing) {
+      Label("Click Choose", systemImage: "arrow.down.right")
+        .labelStyle(.titleAndIcon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.orange)
+        .offset(x: -4, y: -34)
+    }
+    .accessibilityElement()
+    .accessibilityLabel(
+      "Picture of the window: your home folder is open, and the Choose button is highlighted.")
+  }
+
+  private func placeholder(width: CGFloat) -> some View {
+    RoundedRectangle(cornerRadius: 2).fill(.quaternary).frame(width: width, height: 6)
   }
 }

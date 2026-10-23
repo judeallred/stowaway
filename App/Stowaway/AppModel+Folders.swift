@@ -81,19 +81,22 @@ extension AppModel {
   }
 
   /// Asks for the home folder in one go, which covers projects and every cache. macOS can give
-  /// back something narrower; then the per-folder buttons are the way.
-  func allowHomeFolder() {
+  /// back something narrower; then the per-folder buttons are the way. False if the user
+  /// cancelled.
+  @discardableResult
+  func allowHomeFolder() -> Bool {
     guard
       let url = Panels.chooseFolder(
         "Click Choose to let Stowaway look through your home folder: your projects and every cache, in one step. It reads folder names and sizes, never your files' contents.",
         at: realHomeDirectory)
-    else { return }
+    else { return false }
     guard url.standardizedFileURL.path == realHomeDirectory.standardizedFileURL.path else {
       message =
         "macOS gave Stowaway \(Format.path(url.path)) rather than your home folder. Allow each cache instead."
-      return
+      return true
     }
     grant(url, as: .root, failure: "Couldn't remember your home folder")
+    return true
   }
 
   /// Machine-wide caches that exist on this Mac but that Stowaway can't reach yet, with the folder
