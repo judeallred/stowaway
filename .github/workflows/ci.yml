@@ -36,6 +36,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The committed Xcode project must be what App/project.yml generates (with the XcodeGen
+      # version it was generated with).
+      - run: |
+          curl -sSLo "$RUNNER_TEMP/xcodegen.zip" \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" \
+            | shasum -a 256 -c
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" generate --quiet --spec App/project.yml
+          git diff --exit-code App/Stowaway.xcodeproj
       # An unsigned Release build of the App Store app, then the checks App Review cares about
       # that the source can't show (no test hooks in the binary, exact entitlements, privacy
       # manifest).
@@ -55,5 +65,5 @@ jobs:
       - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: actionlint
-      - run: zizmor --format=github .github/workflows
+      - run: zizmor --format=github .
       - run: shellcheck install.sh App/scripts/*.sh .githooks/*

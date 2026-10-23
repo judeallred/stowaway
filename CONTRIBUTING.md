@@ -28,6 +28,8 @@ a file counts):
 xcodegen generate --spec App/project.yml
 ```
 
+CI checks that the committed project matches, generated with XcodeGen 2.46.0.
+
 Running the app from Xcode uses `App/Stowaway/Resources/Products.storekit`, so purchases work
 locally without App Store Connect.
 

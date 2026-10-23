@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # New releases wait a week, so a compromised one is likely caught before it's proposed.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
