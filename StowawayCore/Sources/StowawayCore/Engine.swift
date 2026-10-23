@@ -210,10 +210,27 @@ public final class Engine: @unchecked Sendable {
     }
   }
 
-  /// Forgets a root. Folders already offloaded from it stay managed.
-  public func revokeRoot(_ path: String) {
+  /// Forgets roots. Refused while a stowed folder is inside one and no other root covers it:
+  /// access to a folder comes only from its root's grant, so after a relaunch Stowaway couldn't
+  /// swap its link for a local folder when the drive goes, or bring it back.
+  public func revokeRoots(_ paths: [String]) throws {
+    let within = { (path: String, base: String) in
+      path == base || path.hasPrefix(base.hasSuffix("/") ? base : base + "/")
+    }
+    let remaining = rootPaths.filter { !paths.contains($0) }
+    let stranded = entries().filter { entry in
+      paths.contains { within(entry.local, $0) } && !remaining.contains { within(entry.local, $0) }
+    }
+    guard stranded.isEmpty else {
+      throw StowawayError.refusal(
+        stranded.count == 1
+          ? "1 folder in it is stowed. Bring it back first."
+          : "\(stranded.count) folders in it are stowed. Bring them back first.")
+    }
     lock.withLock {
-      defaults.set(rootBookmarks().filter { resolvePath($0) != path }, forKey: "roots")
+      defaults.set(
+        rootBookmarks().filter { resolvePath($0).map { !paths.contains($0) } ?? true },
+        forKey: "roots")
     }
   }
 

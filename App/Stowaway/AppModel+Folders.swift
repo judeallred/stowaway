@@ -72,10 +72,16 @@ extension AppModel {
       .map { top in (top, sorted.filter { nested($0, top) }) }
   }
 
-  /// Stops looking in a folder, and in any chosen folders inside it.
+  /// Stops looking in a folder, and in any chosen folders inside it. Refused while folders in it
+  /// are stowed (see `Engine.revokeRoots`).
   func removeRoot(_ path: String) {
     let nested = rootGroups.first { $0.root == path }?.nested ?? []
-    for root in [path] + nested { engine.revokeRoot(root) }
+    do {
+      try engine.revokeRoots([path] + nested)
+    } catch {
+      Panels.tell("Stowaway still needs \(Format.path(path))", error.localizedDescription)
+      return
+    }
     refreshSettings()
     Task { await scan() }
   }

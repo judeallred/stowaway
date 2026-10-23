@@ -174,6 +174,25 @@ final class EngineTests: XCTestCase {
     XCTAssertNil(engine.entries().first?.kind)
   }
 
+  /// A folder with stowed folders in it can't be removed (they'd be out of reach after a
+  /// relaunch), unless another chosen folder covers them; once they're back, it can.
+  func testARootHoldingStowedFoldersStays() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/page.js", "x")
+    let next = code.appendingPathComponent("app/.next").path
+    try engine.adopt(next, kind: .next)
+
+    XCTAssertThrowsError(try engine.revokeRoots([code.path]))
+    XCTAssertEqual(engine.rootPaths, [code.path])
+    try engine.grant(code.appendingPathComponent("app"), as: .root)
+    XCTAssertNoThrow(try engine.revokeRoots([code.path]))
+    try engine.release(next)
+    XCTAssertNoThrow(try engine.revokeRoots([code.appendingPathComponent("app").path]))
+    XCTAssertEqual(engine.rootPaths, [])
+  }
+
   func testTheFreeLimitStopsNewOffloadsOnly() throws {
     let s = try Scratch()
     let (engine, code, _) = try makeEngine(s)

@@ -61,7 +61,7 @@ struct FoldersSettings: View {
         Text("Stowaway looks in these folders")
       } footer: {
         Text(
-          "Removing a folder doesn't touch anything in it, and folders already stowed stay on the drive. To skip a folder inside one of these, put a file named .stowaway-ignore in it."
+          "Removing a folder doesn't touch anything in it. One with stowed folders in it can be removed once they're brought back. To skip a folder inside one of these, put a file named .stowaway-ignore in it."
         )
         .font(.caption).foregroundStyle(.secondary)
       }
