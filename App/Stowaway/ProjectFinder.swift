@@ -61,9 +61,12 @@ enum ProjectFinder {
     }
     // A folder that's a project itself (a repository, or a monorepo) is one project, however
     // many manifests it holds. The sandbox allows checking that `.git` exists, not reading it.
+    // Not inside Desktop, Documents or Downloads, though: macOS asks before an app looks there.
+    let guarded = ["Desktop", "Documents", "Downloads"]
     for folder in counts.keys
     where projects.contains(folder)
-      || FileManager.default.fileExists(atPath: "\(home)/\(folder)/.git")
+      || (!guarded.contains(where: { folder.hasPrefix($0 + "/") })
+        && FileManager.default.fileExists(atPath: "\(home)/\(folder)/.git"))
     {
       counts[folder] = 1
     }

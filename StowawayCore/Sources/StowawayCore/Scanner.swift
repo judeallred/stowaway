@@ -36,8 +36,13 @@ public struct Scanner: Sendable {
   public var maxDepth = 6
   /// Folders in the home folder that never hold projects but take minutes to walk. The caches
   /// inside Library are found at their known locations instead (`caches(roots:)`).
-  static let homeSkips: Set<String> = [
-    "Library", "Pictures", "Music", "Movies", "Applications", "Public",
+  ///
+  /// Desktop, Documents and Downloads are skipped too: macOS asks the user before an app reads
+  /// them, even inside an allowed home folder, so walking in meant a prompt for each. A project
+  /// kept there is added by choosing it, which counts as consent.
+  public static let homeSkips: Set<String> = [
+    "Library", "Pictures", "Music", "Movies", "Applications", "Public", "Desktop", "Documents",
+    "Downloads",
   ]
   /// Packages that look like folders but are documents or apps.
   static let packageExtensions: Set<String> = [
@@ -71,6 +76,12 @@ public struct Scanner: Sendable {
     else { return [] }
     let parts = folder.dropFirst(root.count).split(separator: "/").map(String.init)
     guard parts.count <= maxDepth else { return [] }
+    // Folders the full scan skips in the home folder (Desktop, Documents…) aren't scanned here.
+    if root == realHomeDirectory.standardizedFileURL.path, let first = parts.first,
+      Self.homeSkips.contains(first)
+    {
+      return []
+    }
     let inCheckout = folder.contains("/" + Self.checkoutFolders[0] + "/")
     if parts.contains(where: { $0 == "node_modules" || $0 == ".git" })
       || (parts.contains(where: { $0.hasPrefix(".") }) && !inCheckout)

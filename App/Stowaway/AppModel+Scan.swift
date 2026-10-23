@@ -94,7 +94,9 @@ extension AppModel {
     let names = Kind.allCases.compactMap { $0.projectRule?.folderName }
     let known = Set(rows.map(\.path))
     for path in Set(changed)
-    where !path.split(separator: "/").contains(where: { inside.contains($0) }) {
+    where !path.split(separator: "/").contains(where: { inside.contains($0) })
+      && !guardedByMacOS(path)
+    {
       // A managed folder appeared here, or one Stowaway knew of went away.
       for name in names {
         let folder = path.hasSuffix("/") ? path + name : path + "/" + name
@@ -119,6 +121,17 @@ extension AppModel {
   }
 
   static let scanLog = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "scan")
+
+  /// Whether `path` is in a home folder the scan skips (Desktop, Documents…) and the user didn't
+  /// choose: looking there would make macOS ask for permission.
+  func guardedByMacOS(_ path: String) -> Bool {
+    let home = realHomeDirectory.standardizedFileURL.path
+    guard path.isWithin(home), path != home else { return false }
+    let first = String(path.dropFirst(home.count + 1).prefix { $0 != "/" })
+    guard Scanner.homeSkips.contains(first) else { return false }
+    let guarded = home + "/" + first
+    return !roots.contains { path.isWithin($0) && $0.isWithin(guarded) }
+  }
 
   /// Gathers a folder to scan again on its own, a few seconds from now.
   private func rescanSoon(_ folder: String) {

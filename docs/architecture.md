@@ -28,7 +28,9 @@ quarantining the files Stowaway copies; without it, binaries on the drive wouldn
 
 `Scanner` walks each root up to 6 levels deep, without following symlinks or crossing into other
 volumes. It skips hidden folders, `.git`, the inside of `node_modules`, and anything under a
-`.stowaway-ignore` file. Claude Code's `.claude/worktrees` checkouts are scanned as separate
+`.stowaway-ignore` file. In the home folder it skips Desktop, Documents and Downloads
+(`Scanner.homeSkips`): macOS asks the user before an app reads each of them, so a project kept
+there is added by choosing it. Claude Code's `.claude/worktrees` checkouts are scanned as separate
 projects. A folder counts when it sits next to its kind's manifest (`Kind.projectRule`):
 
 | Kind | Folder | Next to | Also requires |
