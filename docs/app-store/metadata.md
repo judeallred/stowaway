@@ -14,7 +14,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 | Secondary category | Utilities | |
 | Content rights | Doesn't contain third-party content | |
 | Age rating | 4+ (answer "None" to every question) | |
-| Copyright | 2026 Jude Allred | |
+| Copyright | 2026 Brooklyn Spaceport | |
 | Support URL | https://brooklynspaceport.com/stowaway/support | Must load before you submit |
 | Marketing URL | https://brooklynspaceport.com/stowaway | |
 | Privacy Policy URL | https://brooklynspaceport.com/stowaway/privacy | Must load before you submit; text in `privacy-policy.md` |

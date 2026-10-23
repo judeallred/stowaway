@@ -26,10 +26,8 @@ Connect, the website). Work top to bottom.
 ## Needs you
 
 1. **Apple Developer Program** membership (paid, individual or organization).
-   - If you want "Brooklyn Spaceport" as the seller name, enroll as an organization; that needs
-     a D-U-N-S number.
-   - The app's copyright currently reads "© 2026 Jude Allred" (`App/project.yml`); change it if
-     the seller is a company.
+   - The seller is Brooklyn Spaceport, so enroll as an organization; that needs a D-U-N-S
+     number.
 2. **Agreements, Tax and Banking** in App Store Connect: the Paid Apps agreement is required for
    in-app purchases.
 3. **App Store Small Business Program:** enroll for the 15% commission.

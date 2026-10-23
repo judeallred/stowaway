@@ -12,4 +12,4 @@ using it personally.
 **The source code** in this repository is available under the
 [Prosperity Public License 3.0.0](LICENSE): free for personal and noncommercial use, with a
 30-day trial for commercial use. To use the source commercially beyond that (to build and run
-your own copy at a company, for example), contact the maintainer listed in [LICENSE](LICENSE).
+your own copy at a company, for example), contact stowaway@brooklynspaceport.com.

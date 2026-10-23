@@ -4,7 +4,7 @@
 
 **Last updated:** [date of publication]
 
-Stowaway is a Mac app made by Jude Allred ("we"). This policy explains what Stowaway does with
+Stowaway is a Mac app made by Brooklyn Spaceport ("we"). This policy explains what Stowaway does with
 information.
 
 ## The short version
@@ -51,4 +51,4 @@ If this policy changes, we'll update this page and the date above.
 
 ## Contact
 
-[contact email]
+stowaway@brooklynspaceport.com

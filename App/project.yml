@@ -35,7 +35,7 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         # A menu bar app: no Dock icon. The library window opens from the menu.
         LSUIElement: true
-        NSHumanReadableCopyright: © 2026 Jude Allred
+        NSHumanReadableCopyright: © 2026 Brooklyn Spaceport
         # Only Apple's own encryption (HTTPS through system frameworks): exempt.
         ITSAppUsesNonExemptEncryption: false
         # Folders and drives can be dropped on the app or opened with it.
