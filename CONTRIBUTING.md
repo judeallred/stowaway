@@ -38,7 +38,10 @@ To use your build day to day, install it:
 ```
 
 It builds a Release signed to run on this Mac only (no developer team needed), quits any running
-copy, replaces `/Applications/Stowaway.app` and opens it.
+copy, replaces `/Applications/Stowaway.app` and opens it. It won't replace a copy from the App
+Store. A build installed this way can't make purchases (no App Store receipt, and only Xcode runs
+use the StoreKit test configuration), so stowing stops at the free limit; try purchases from
+Xcode.
 
 ## Checks
 

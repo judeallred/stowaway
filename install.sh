@@ -2,12 +2,23 @@
 # Builds a Release of the app, signed to run on this Mac only (no developer team needed), and
 # installs it in /Applications, replacing and relaunching any copy that's running. App Store
 # builds are signed and uploaded from Xcode instead (Product > Archive).
+#
+# A build installed this way can't make purchases (it has no App Store receipt, and only Xcode
+# runs use the StoreKit test configuration), so stowing stops at the free limit. Try purchases
+# from Xcode (Product > Run).
 set -eu
 
 root=$(cd "$(dirname "$0")" && pwd)
 app="$root/App"
 built="$app/build/DerivedData/Build/Products/Release/Stowaway.app"
 installed=/Applications/Stowaway.app
+staging=/Applications/.Stowaway.app.installing
+
+# A copy from the App Store carries its purchases; don't replace it by accident.
+if [ -d "$installed/Contents/_MASReceipt" ]; then
+  echo "install.sh: $installed came from the App Store. Delete it yourself first if you mean to replace it." >&2
+  exit 1
+fi
 
 if command -v xcodegen >/dev/null 2>&1; then
   xcodegen generate --quiet --spec "$app/project.yml"
@@ -31,7 +42,10 @@ if pgrep -xq Stowaway; then
   done
 fi
 
+# Copied in beside the old one first, so a failed copy never leaves no app at all.
+rm -rf "$staging"
+ditto "$built" "$staging"
 rm -rf "$installed"
-ditto "$built" "$installed"
+mv "$staging" "$installed"
 open "$installed"
 echo "Installed $installed ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$installed/Contents/Info.plist"))"
