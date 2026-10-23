@@ -204,7 +204,17 @@ extension AppModel {
       autoOffloadMinutes == AutoStow.immediately
       ? Timing.immediateQuiet : Double(autoOffloadMinutes) * 60
     let dueAt = rows.filter(isPending)
-      .compactMap { row in row.lastActivity.map { (row.path, $0.addingTimeInterval(window)) } }
+      .compactMap { row -> (String, Date)? in
+        guard let activity = row.lastActivity else { return nil }
+        var due = activity.addingTimeInterval(window)
+        // Waiting to retry after a failure, or in use when last looked at (a Cargo build, an
+        // IDE): due again then, not at the next hourly scan.
+        if let retry = retryAfter[row.path] { due = max(due, retry) }
+        if problems[row.path] == .waiting(Self.cargoInUse) || ideIsUsing(row) {
+          due = max(due, Date.now.addingTimeInterval(Timing.recheckInUse))
+        }
+        return (row.path, due)
+      }
       .filter { $0.1 > .now }
     guard let next = dueAt.map(\.1).min() else { return }
     let wake = max(next, Date.now.addingTimeInterval(Timing.minScanGap))

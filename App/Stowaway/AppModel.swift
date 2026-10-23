@@ -248,6 +248,8 @@ final class AppModel {
     static let measuredAtOnce = 4
     /// After a stow fails (not a refusal), automatic stowing waits this long to try again.
     static let retryFailedAfter: TimeInterval = 1800
+    /// A folder a tool was using (a Cargo build, an IDE) is looked at again this soon.
+    static let recheckInUse: TimeInterval = 120
   }
 
   /// The choices for stowing automatically.
