@@ -44,6 +44,15 @@ struct StowawayApp: App {
 /// macOS grants access to them the same way as choosing them in an open panel.
 final class AppDelegate: NSObject, NSApplicationDelegate {
   @MainActor static var model: AppModel?
+  /// Folders that arrived before the model started (dropping on the icon also launches the
+  /// app), opened once it has.
+  @MainActor static var pending: [URL] = []
+
+  @MainActor static func openPending() {
+    guard let model, !pending.isEmpty else { return }
+    model.open(pending)
+    pending = []
+  }
 
   /// `MenuBarExtra` opens only on a left click; a right click on the icon does the same. The
   /// monitor sees only this app's events, and the menu bar icon is its only status bar window.
@@ -61,7 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func application(_ application: NSApplication, open urls: [URL]) {
     MainActor.assumeIsolated {
-      Self.model?.open(urls)
+      if let model = Self.model, model.started {
+        model.open(urls)
+      } else {
+        Self.pending += urls
+      }
     }
   }
 
@@ -97,6 +110,7 @@ private struct MenuBarLabel: View {
           }
         #endif
         model.start()
+        AppDelegate.openPending()
         if model.showingOnboarding {
           openWindow(id: WindowID.library)
           NSApp.activate()
