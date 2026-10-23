@@ -118,6 +118,9 @@ struct Invoice {
 
 struct InvoiceView: View {
   let model: AppModel
+  /// The invoice for the latest purchase, or (false) a preview of a business tier, even when
+  /// something was bought before.
+  var paid = false
   @Environment(\.dismiss) private var dismiss
   @AppStorage("invoiceBillTo") private var billTo = ""
   @State private var tier = 0
@@ -166,7 +169,7 @@ struct InvoiceView: View {
 
   private var current: Invoice {
     let to = billTo.isEmpty ? "Your name and company" : billTo
-    if let purchase = model.store.latestPurchase {
+    if paid, let purchase = model.store.latestPurchase {
       let name = model.store.displayName(of: purchase.productID) ?? "License"
       return Invoice(
         status: .paid,

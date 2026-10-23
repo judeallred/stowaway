@@ -174,6 +174,8 @@ struct OffloadSettings: View {
 
 private struct GeneralSettings: View {
   let model: AppModel
+  /// What the last Restore Purchases found.
+  @State private var restoreResult: String?
 
   var body: some View {
     Form {
@@ -186,7 +188,15 @@ private struct GeneralSettings: View {
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("Purchases") {
-        Button("Restore Purchases") { Task { await model.store.restore() } }
+        HStack {
+          Button("Restore Purchases") {
+            restoreResult = nil
+            Task { restoreResult = await model.store.restore() }
+          }
+          if let restoreResult {
+            Text(restoreResult).font(.caption).foregroundStyle(.secondary)
+          }
+        }
       }
       Section("About") {
         LabeledContent("Version", value: Bundle.main.versionString)

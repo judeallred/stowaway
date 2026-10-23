@@ -171,7 +171,10 @@ final class Store {
     for await entitlement in Transaction.currentEntitlements {
       if case .verified(let transaction) = entitlement, transaction.revocationDate == nil {
         ids.insert(transaction.productID)
-        if let price = transaction.price, latest.map({ $0.date < transaction.purchaseDate }) ?? true
+        // The paid invoice is for purchases this Apple Account made, not ones shared with it
+        // through Family Sharing (which still unlock stowing).
+        if transaction.ownershipType == .purchased, let price = transaction.price,
+          latest.map({ $0.date < transaction.purchaseDate }) ?? true
         {
           latest = PurchaseRecord(
             productID: transaction.productID, price: price,
@@ -214,13 +217,19 @@ final class Store {
     }
   }
 
-  /// Restores purchases made on another Mac or before a reinstall.
-  func restore() async {
+  /// Restores purchases made on another Mac or before a reinstall. Returns what happened, to
+  /// show the user.
+  @discardableResult
+  func restore() async -> String {
     do {
       try await AppStore.sync()
     } catch {
       loadError = error.localizedDescription
+      return "Couldn't restore purchases: \(error.localizedDescription)"
     }
     await refreshEntitlements()
+    return hasPurchased
+      ? "Purchases restored: stowing is unlimited."
+      : "No purchases found for this Apple Account."
   }
 }

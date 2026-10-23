@@ -17,6 +17,7 @@ struct SupportView: View {
   @State private var audience: Store.Audience
   @State private var showingLetter = false
   @State private var showingInvoice = false
+  @State private var invoicePaid = false
   @State private var redeeming = false
   /// After a purchase, whether the prices show again (to buy another tier).
   @State private var supportingAgain = false
@@ -48,7 +49,10 @@ struct SupportView: View {
               .font(.callout)
             HStack {
               Button("Letter to Your Boss…") { showingLetter = true }
-              Button("Preview Invoice…") { showingInvoice = true }
+              Button("Preview Invoice…") {
+                invoicePaid = false
+                showingInvoice = true
+              }
             }
           }
         }
@@ -84,7 +88,7 @@ struct SupportView: View {
     .frame(width: 560)
     .task { if store.products.isEmpty { await store.loadProducts() } }
     .sheet(isPresented: $showingLetter) { BossLetterView(model: model) }
-    .sheet(isPresented: $showingInvoice) { InvoiceView(model: model) }
+    .sheet(isPresented: $showingInvoice) { InvoiceView(model: model, paid: invoicePaid) }
   }
 
   private var pitch: some View {
@@ -187,7 +191,10 @@ struct SupportView: View {
       }
       HStack {
         if store.latestPurchase != nil {
-          Button("Paid Invoice…") { showingInvoice = true }
+          Button("Paid Invoice…") {
+            invoicePaid = true
+            showingInvoice = true
+          }
         }
         Button("Support Us Again…") { supportingAgain = true }
       }
