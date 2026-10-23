@@ -89,8 +89,10 @@ struct OffloadSettings: View {
           }
           Spacer()
           Button(model.driveName == nil ? "Choose…" : "Change…") { model.chooseDrive() }
+            .disabled(model.stoppingDrive)
           if model.driveName != nil {
             Button("Stop Using…") { model.stopUsingDrive() }
+              .disabled(model.stoppingDrive)
           }
         }
         if model.driveConnected, let free = model.driveFreeBytes {

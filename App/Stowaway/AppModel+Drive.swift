@@ -68,7 +68,9 @@ extension AppModel {
   /// Ejects the drive: stowed folders switch to local ones first, as when it's unplugged. If
   /// macOS can't eject it (something's using it), they link up again.
   func ejectDrive() {
-    guard let path = drivePath, let name = driveName else { return }
+    guard let path = drivePath, let name = driveName, !ejecting, !refusedWhileStopping() else {
+      return
+    }
     let drive = URL(fileURLWithPath: path)
     let volume = (try? drive.resourceValues(forKeys: [.volumeURLKey]).volume) ?? drive
     let engine = engine
@@ -97,6 +99,7 @@ extension AppModel {
   /// it, notably while the drive is still mounting and the list shifts. Changing drives, or
   /// `anywhere` (for "Somewhere Else…" beside a button for the drive), opens on /Volumes.
   func chooseDrive(anywhere: Bool = false) {
+    guard !refusedWhileStopping() else { return }
     if !anywhere, driveName == nil, externalVolumes.count == 1, let volume = externalVolumes.first {
       chooseDrive(volume)
       return
@@ -105,6 +108,14 @@ extension AppModel {
     let url = Panels.chooseFolder(
       "Choose where stowed folders go: an external drive, or a folder on one.", at: volumes)
     grantDrive(url, openedAt: volumes)
+  }
+
+  /// While Stowaway is bringing everything back or deleting it to stop using the drive, a second
+  /// choice would override the first: says so, and true.
+  private func refusedWhileStopping() -> Bool {
+    guard stoppingDrive else { return false }
+    message = "Stowaway is still finishing with \(driveName ?? "the drive")."
+    return true
   }
 
   /// Uses a mounted volume (the panel opens on it; the user confirms).
@@ -244,7 +255,7 @@ extension AppModel {
   /// Stops using the drive, after asking how: with folders stowed on it, bring them all back or
   /// delete them; with the drive away, forget it and leave its copies there.
   func stopUsingDrive() {
-    guard let name = driveName else { return }
+    guard let name = driveName, !refusedWhileStopping() else { return }
     let stowed = rows.filter { !$0.entryPaths.isEmpty }
     let title = "Stop using \(name)?"
     if stowed.isEmpty {

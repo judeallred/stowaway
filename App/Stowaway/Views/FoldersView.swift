@@ -376,6 +376,7 @@ private struct DriveButton: View {
         } label: {
           Image(systemName: "ellipsis")
         }
+        .disabled(model.stoppingDrive)
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Drive options")
