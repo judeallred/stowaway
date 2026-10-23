@@ -216,8 +216,11 @@ extension AppModel {
   /// with several, failures are skipped. Reaching the free limit stops the run and offers the
   /// upgrade.
   private func bulk(_ rows: [Row], _ op: Operation, _ work: @escaping Work) async {
-    // Rows another operation is already working on are left to it.
-    let rows = rows.filter { !busy.contains($0.path) }
+    // Rows another operation is already working on, or an automatic pass has queued to stow,
+    // are left to it.
+    let rows = rows.filter {
+      !busy.contains($0.path) && !(op == .stowing && queued.contains($0.path))
+    }
     guard !rows.isEmpty else { return }
     // Only stowing depends on purchases (the free limit); bringing back and deleting never wait.
     if op == .stowing { await store.waitUntilLoaded() }
@@ -256,8 +259,27 @@ extension AppModel {
   /// caches while an IDE that runs Gradle does), folders the user brought back, and ones that
   /// couldn't be stowed and haven't changed since.
   func autoOffload() async {
+    guard !autoStowing else {
+      autoStowAgain = true
+      return
+    }
+    autoStowing = true
+    defer { autoStowing = false }
+    repeat {
+      autoStowAgain = false
+      await autoStowPass()
+    } while autoStowAgain
+  }
+
+  /// Whether automatic stowing may go on: checked before each folder, so Pause, Never, Stop
+  /// Using and the drive going away take effect at once, not after the pass.
+  private var mayAutoStow: Bool {
+    autoOffloadMinutes != AutoStow.never && driveConnected && !stoppingDrive && !paused
+  }
+
+  private func autoStowPass() async {
     let minutes = autoOffloadMinutes
-    guard minutes != AutoStow.never, driveConnected, !stoppingDrive, !paused else { return }
+    guard minutes != AutoStow.never, mayAutoStow else { return }
     await store.waitUntilLoaded()
     // Until purchases are read, the free limit could hold back a paying user's folders.
     guard store.loaded else { return }
@@ -272,8 +294,16 @@ extension AppModel {
     // Shown as queued in the library until their turn.
     queued.formUnion(due.map(\.path))
     defer { queued.subtract(due.map(\.path)) }
-    for (i, row) in due.enumerated() {
-      guard !stoppingDrive else { break }
+    for (i, picked) in due.enumerated() {
+      guard mayAutoStow else { break }
+      // As the folder is now: the user may have kept it on this Mac, or stowed or deleted it,
+      // since the pass began.
+      guard let row = rows.first(where: { $0.path == picked.path }), row.place == .mac,
+        !busy.contains(row.path), !isHeldOnMac(row), !isRefused(row)
+      else {
+        queued.remove(picked.path)
+        continue
+      }
       if Measure.isBusy(row.candidate) {
         queued.remove(row.path)
         problems[row.path] = .waiting(Self.cargoInUse)

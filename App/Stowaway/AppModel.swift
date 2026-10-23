@@ -138,6 +138,10 @@ final class AppModel {
   var measured: [String: (bytes: Int64, activity: Date)] = [:]
   /// A reconcile is waiting or running (they're coalesced, never stacked).
   var reconcilePending = false
+  /// An automatic stowing pass is running; one asked for meanwhile runs once it's done, so two
+  /// never pick the same folder.
+  var autoStowing = false
+  var autoStowAgain = false
   /// When stowed folders were last re-measured on the drive.
   var lastRecount = Date.distantPast
   var detectedProjectFolders: [ProjectFinder.Suggestion] = []
