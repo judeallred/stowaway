@@ -88,6 +88,20 @@ public final class Engine: @unchecked Sendable {
   /// Folders being accessed, by path. Access is started once and kept for the life of the
   /// process: stopping it while another thread is mid-operation would make that operation fail.
   private var scoped: [String: URL] = [:]
+  /// Bookmarks already resolved, reused while their folder is still there: resolving every
+  /// bookmark for every scan and reconcile was a good part of the app's idle work.
+  private var resolved: [Data: URL] = [:]
+  private let resolvedLock = NSLock()
+
+  private func cachedURL(for data: Data) -> URL? {
+    guard let url = resolvedLock.withLock({ resolved[data] }) else { return nil }
+    var st = stat()
+    return lstat(url.path, &st) == 0 ? url : nil
+  }
+
+  private func remember(_ url: URL, for data: Data) {
+    resolvedLock.withLock { resolved[data] = url }
+  }
   /// For npm entries that are settled (everything on the drive, quiet), the top-level change
   /// time then. Reconcile skips them until it changes: walking every package of every project
   /// each time took minutes with many projects, holding the lock stowing needs.
@@ -273,12 +287,16 @@ public final class Engine: @unchecked Sendable {
   private func rootBookmarks() -> [Data] { defaults.array(forKey: "roots") as? [Data] ?? [] }
 
   private func resolvePath(_ data: Data) -> String? {
+    if let url = cachedURL(for: data) { return url.standardizedFileURL.path }
     var stale = false
-    return
-      (try? URL(
+    guard
+      let url = try? URL(
         resolvingBookmarkData: data, options: [.withSecurityScope, .withoutMounting, .withoutUI],
         relativeTo: nil,
-        bookmarkDataIsStale: &stale))?.standardizedFileURL.path
+        bookmarkDataIsStale: &stale)
+    else { return nil }
+    if !stale { remember(url, for: data) }
+    return url.standardizedFileURL.path
   }
 
   /// Starts accessing every granted folder. Returns this Mac's store on the offload location if
@@ -306,6 +324,9 @@ public final class Engine: @unchecked Sendable {
 
   /// Resolves and starts accessing a bookmark, re-creating it if it went stale.
   private func access(_ data: Data) -> (URL, Data)? {
+    if let url = cachedURL(for: data), scoped[url.standardizedFileURL.path] != nil {
+      return (url, data)
+    }
     var stale = false
     // Never try to mount or ask the user: when the drive has just gone, resolving must fail fast.
     guard
@@ -316,6 +337,7 @@ public final class Engine: @unchecked Sendable {
       scoped[url.standardizedFileURL.path] != nil || url.startAccessingSecurityScopedResource()
     else { return nil }
     scoped[url.standardizedFileURL.path] = url
+    if !stale { remember(url, for: data) }
     if stale,
       let fresh = try? url.bookmarkData(
         options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)

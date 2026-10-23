@@ -1,5 +1,6 @@
 import Foundation
 import StowawayCore
+import os
 
 /// Finding re-creatable folders and measuring them.
 extension AppModel {
@@ -44,6 +45,15 @@ extension AppModel {
       return Scanner().scan(roots: roots)
     }.value
     rows = merge(candidates: candidates, entries: engine.entries())
+    // Folders that asked for this scan but aren't rows don't ask again.
+    let listed = Set(rows.map(\.path))
+    setAside.formUnion(triggers.subtracting(listed))
+    triggers = []
+    present = Set(
+      listed.filter { path in
+        var st = stat()
+        return lstat(path, &st) == 0
+      })
     unstowable = await Task.detached {
       var found: [String: String] = [:]
       for c in candidates where c.kind == .node {
@@ -89,21 +99,66 @@ extension AppModel {
       for name in names {
         let folder = path.hasSuffix("/") ? path + name : path + "/" + name
         var st = stat()
-        if (lstat(folder, &st) == 0) != known.contains(folder) {
-          requestScan()
-          return
+        let exists = lstat(folder, &st) == 0
+        // A new one: scan this folder again (it's small). One that went away is handled below.
+        if exists, !known.contains(folder), !setAside.contains(folder) {
+          triggers.insert(folder)
+          rescanSoon(path)
         }
       }
-      // A folder holding known ones was removed or renamed.
-      let prefix = path.hasSuffix("/") ? path : path + "/"
-      if known.contains(where: { row in
+      // Folders that went away just leave the list: no scan needed.
+      let gone = present.filter { row in
         var st = stat()
-        return row.hasPrefix(prefix) && lstat(row, &st) != 0
-      }) {
-        requestScan()
-        return
+        return row.isWithin(path) && lstat(row, &st) != 0
+      }
+      if !gone.isEmpty {
+        present.subtract(gone)
+        rows.removeAll { gone.contains($0.path) && $0.entryPaths.isEmpty }
       }
     }
+  }
+
+  static let scanLog = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "scan")
+
+  /// Gathers a folder to scan again on its own, a few seconds from now.
+  private func rescanSoon(_ folder: String) {
+    dirtyFolders.insert(folder)
+    guard !rescanScheduled else { return }
+    rescanScheduled = true
+    Task {
+      try? await Task.sleep(for: .seconds(5))
+      rescanScheduled = false
+      await rescan()
+    }
+  }
+
+  /// Scans just the folders that changed (not every root), updates their rows, and stows what's
+  /// due. A full scan running meanwhile covers them instead.
+  func rescan() async {
+    let folders = dirtyFolders
+    dirtyFolders = []
+    guard !folders.isEmpty else { return }
+    guard !scanning else {
+      scanRequested = true
+      return
+    }
+    let roots = engine.rootPaths
+    let found = await Task.detached {
+      folders.flatMap { Scanner().scan(folder: $0, roots: roots) }
+    }.value
+    Self.scanLog.notice("rescanned \(folders.count) changed folders, found \(found.count)")
+    // Rows on this Mac inside these folders are replaced by what was found there now.
+    let kept = rows.filter { row in
+      !(row.entryPaths.isEmpty && folders.contains { row.path.isWithin($0) })
+    }
+    rows = merge(candidates: kept.map(\.candidate) + found, entries: engine.entries())
+    let listed = Set(rows.map(\.path))
+    setAside.formUnion(triggers.subtracting(listed))
+    triggers = []
+    present.formUnion(found.map(\.path))
+    await measure(only: Set(found.map(\.path)))
+    await autoOffload()
+    scheduleDueCheck()
   }
 
   /// Scans now, or as soon as a minute has passed since the last one.
@@ -127,30 +182,33 @@ extension AppModel {
   }
 
   /// Wakes when the next pending folder becomes due for automatic stowing (it's been unchanged
-  /// long enough), checks what changed, and stows what's due: no full scan needed.
+  /// long enough), re-checks just the folders due by then, and stows them: no full scan. A
+  /// folder that keeps changing keeps moving its time on, so wakes are at least a minute apart.
   func scheduleDueCheck() {
     dueCheck?.cancel()
     guard autoOffloadMinutes != AutoStow.never, driveConnected, !paused else { return }
     let window =
       autoOffloadMinutes == AutoStow.immediately
       ? Timing.immediateQuiet : Double(autoOffloadMinutes) * 60
-    let next = rows.filter { $0.place == .mac && !isRefused($0) && !isHeldOnMac($0) }
-      .compactMap { $0.lastActivity?.addingTimeInterval(window) }
-      .filter { $0 > .now }
-      .min()
-    guard let next else { return }
+    let dueAt = rows.filter { $0.place == .mac && !isRefused($0) && !isHeldOnMac($0) }
+      .compactMap { row in row.lastActivity.map { (row.path, $0.addingTimeInterval(window)) } }
+      .filter { $0.1 > .now }
+    guard let next = dueAt.map(\.1).min() else { return }
+    let wake = max(next, Date.now.addingTimeInterval(Timing.minScanGap))
+    let paths = Set(dueAt.filter { $0.1 <= wake }.map(\.0))
     dueCheck = Task {
-      try? await Task.sleep(for: .seconds(next.timeIntervalSinceNow + 2))
+      try? await Task.sleep(for: .seconds(wake.timeIntervalSinceNow + 2))
       guard !Task.isCancelled, !scanning else { return }
-      await checkActivity()
+      await checkActivity(of: paths)
       await autoOffload()
       scheduleDueCheck()
     }
   }
 
   /// Updates when each folder on this Mac last changed (cheap: it looks two levels deep).
-  func checkActivity() async {
-    let candidates = rows.filter { $0.place == .mac }.map(\.candidate)
+  func checkActivity(of paths: Set<String>? = nil) async {
+    let candidates = rows.filter { $0.place == .mac && (paths?.contains($0.path) ?? true) }
+      .map(\.candidate)
     let dates = await Task.detached {
       var dates: [String: Date] = [:]
       for candidate in candidates { dates[candidate.path] = Measure.lastActivity(of: candidate) }
@@ -216,8 +274,9 @@ extension AppModel {
   }
 
   /// Measures sizes and recency in the background, a few folders at a time.
-  func measure() async {
-    let pending = rows.map { ($0.path, $0.candidate, measured[$0.path]) }
+  func measure(only paths: Set<String>? = nil) async {
+    let pending = rows.filter { paths?.contains($0.path) ?? true }
+      .map { ($0.path, $0.candidate, measured[$0.path]) }
     await withTaskGroup(of: (String, Int64, Date).self) { group in
       var iterator = pending.makeIterator()
       func next() -> Bool {

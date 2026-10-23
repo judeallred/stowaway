@@ -60,6 +60,48 @@ public struct Scanner: Sendable {
     return found.filter { seen.insert($0.path).inserted }
   }
 
+  /// Scans one folder inside a root again (after a change there), seeing it as the full scan
+  /// would: depth counts from the root, and a project with node_modules above it makes this
+  /// one's node_modules part of that project's. Empty if the full scan wouldn't look there.
+  public func scan(folder: String, roots: [String]) -> [Candidate] {
+    guard
+      let root = Self.walkable(roots).first(where: {
+        folder == $0 || folder.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/")
+      })
+    else { return [] }
+    let parts = folder.dropFirst(root.count).split(separator: "/").map(String.init)
+    guard parts.count <= maxDepth else { return [] }
+    let inCheckout = folder.contains("/" + Self.checkoutFolders[0] + "/")
+    if parts.contains(where: { $0 == "node_modules" || $0 == ".git" })
+      || (parts.contains(where: { $0.hasPrefix(".") }) && !inCheckout)
+    {
+      return []
+    }
+    // Walk down from the root to the folder's parent, as visit would, to learn whether a
+    // node_modules project lies above it (a checkout starts afresh).
+    var nodeAncestor = false
+    var dir = URL(fileURLWithPath: root)
+    for part in parts.dropLast() {
+      if let rule = Kind.node.projectRule,
+        FileManager.default.fileExists(atPath: dir.appendingPathComponent(rule.manifest).path),
+        isRealDirectory(dir.appendingPathComponent(rule.folderName).path)
+      {
+        nodeAncestor = true
+      }
+      dir = dir.appendingPathComponent(part)
+      if dir.deletingLastPathComponent().path.hasSuffix("/" + Self.checkoutFolders[0]) {
+        nodeAncestor = false
+      }
+    }
+    var st = stat()
+    guard lstat(folder, &st) == 0, st.st_mode & S_IFMT == S_IFDIR else { return [] }
+    var found: [Candidate] = []
+    visit(
+      URL(fileURLWithPath: folder), device: st.st_dev, depth: parts.count,
+      nodeAncestor: nodeAncestor, into: &found)
+    return found
+  }
+
   /// The roots worth walking for projects. Cache folders granted for their caches (anything in
   /// ~/Library, or a hidden folder in the home folder such as ~/.cargo) hold no projects and are
   /// huge, so they're only searched for caches; a root inside another root is walked with it.

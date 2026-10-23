@@ -210,3 +210,37 @@ final class WalkableRootTests: XCTestCase {
     XCTAssertEqual(Scanner.walkable(roots), ["\(home)/code", "/Volumes/Work/src"])
   }
 }
+
+final class PartialScanTests: XCTestCase {
+  /// Scanning one changed folder finds what the full scan would there, and nothing it wouldn't.
+  func testAChangedFolderScansLikeTheFullScan() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "partial-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    func make(_ rel: String) throws {
+      try FileManager.default.createDirectory(
+        at: root.appendingPathComponent(rel), withIntermediateDirectories: true)
+    }
+    func file(_ rel: String) throws {
+      try make((rel as NSString).deletingLastPathComponent)
+      try "{}".write(to: root.appendingPathComponent(rel), atomically: true, encoding: .utf8)
+    }
+    // A monorepo: its packages' own node_modules belong to the project's.
+    try file("mono/package.json")
+    try make("mono/node_modules/a")
+    try file("mono/packages/web/package.json")
+    try make("mono/packages/web/node_modules/b")
+    // A new standalone project.
+    try file("fresh/package.json")
+    try make("fresh/node_modules/c")
+    let roots = [root.path]
+    let full = Set(Scanner().scan(roots: roots).map(\.path))
+    let web = root.appendingPathComponent("mono/packages/web").path
+    let fresh = root.appendingPathComponent("fresh").path
+    XCTAssertEqual(Scanner().scan(folder: web, roots: roots).map(\.path), [])
+    XCTAssertEqual(
+      Scanner().scan(folder: fresh, roots: roots).map(\.path), [fresh + "/node_modules"])
+    XCTAssertTrue(full.contains(fresh + "/node_modules"))
+    XCTAssertFalse(full.contains(web + "/node_modules"))
+  }
+}

@@ -131,6 +131,16 @@ final class AppModel {
   /// Watches the project folders, so a new project or install is noticed without polling.
   var watcher: FolderWatcher?
   var lastScan = Date.distantPast
+  /// Managed-looking folders a scan looked at and didn't list (a monorepo package's own
+  /// node_modules, say): changes there don't call for another scan.
+  var setAside: Set<String> = []
+  /// Rows whose folder was there at the last scan: only these going away calls for a scan.
+  var present: Set<String> = []
+  /// Folders whose change asked for the scan that's coming; whatever it doesn't list is set aside.
+  var triggers: Set<String> = []
+  /// Folders to scan again on their own (a change there), gathered until the rescan runs.
+  var dirtyFolders: Set<String> = []
+  var rescanScheduled = false
   /// A change arrived while a scan was running or too soon after one: scan again when allowed.
   var scanRequested = false
   var scanScheduled = false
@@ -206,7 +216,7 @@ final class AppModel {
     static let reconcileEvery: TimeInterval = 120
     /// Scans happen when watched folders change; this is the safety net (and how caches outside
     /// the project folders are noticed growing).
-    static let scanEvery: TimeInterval = 900
+    static let scanEvery: TimeInterval = 3600
     /// At most one scan a minute, however busy the folders are.
     static let minScanGap: TimeInterval = 60
     static let recountEvery: TimeInterval = 600
