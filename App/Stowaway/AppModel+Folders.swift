@@ -45,24 +45,6 @@ extension AppModel {
     }
   }
 
-  /// Creates the sample workspace in a folder the user picks and starts looking in it.
-  func createSampleProject() {
-    guard
-      let parent = Panels.chooseFolder(
-        "Choose where to put the sample. Stowaway creates a folder named “\(SampleProject.folderName)” there.",
-        at: realHomeDirectory.appendingPathComponent("Documents"))
-    else { return }
-    do {
-      let root = try SampleProject.create(in: parent)
-      grant(root, as: .root, failure: "Couldn't add the sample") { [weak self] in
-        self?.info =
-          "Created a sample in \(Format.path(root.path)). Try stowing, bringing back or deleting it."
-      }
-    } catch {
-      message = "Couldn't create the sample: \(error.localizedDescription)"
-    }
-  }
-
   /// The chosen folders with any chosen inside another folded under it: the outer one already
   /// covers them. (Their grants are kept, so removing the outer one leaves them working.)
   var rootGroups: [(root: String, nested: [String])] {

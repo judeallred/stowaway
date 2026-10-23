@@ -6,25 +6,12 @@ struct EmptyState: View {
   let title: String
   let detail: String
   let button: String
-  var link: (title: String, action: () -> Void)?
   let action: () -> Void
 
-  init(
-    title: String, detail: String, button: String,
-    link: (title: String, action: () -> Void)? = nil, action: @escaping () -> Void
-  ) {
-    self.title = title
-    self.detail = detail
-    self.button = button
-    self.link = link
-    self.action = action
-  }
-
-  /// Before any folder is chosen: choose one, or try the sample.
+  /// Before any folder is chosen.
   static func noFolders(_ model: AppModel, detail: String) -> EmptyState {
     EmptyState(
-      title: "Choose the folders Stowaway looks in", detail: detail, button: "Choose a Folder…",
-      link: ("Or Create a Sample Project to Try It…", { model.createSampleProject() })
+      title: "Choose the folders Stowaway looks in", detail: detail, button: "Choose a Folder…"
     ) { model.addRoot() }
   }
 
@@ -35,16 +22,13 @@ struct EmptyState: View {
       Text(title).font(.title3.weight(.semibold))
       Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
       Button(button, action: action).controlSize(.large)
-      if let link {
-        Button(link.title, action: link.action).buttonStyle(.link)
-      }
       Spacer()
     }
     .frame(maxWidth: .infinity)
   }
 }
 
-/// The latest problem (`message`) or good news (`info`), for a window's bottom bar.
+/// The latest problem (`message`), for a window's bottom bar.
 struct MessageLine: View {
   let model: AppModel
 
@@ -52,9 +36,6 @@ struct MessageLine: View {
     if let message = model.message {
       Label(message, systemImage: "exclamationmark.triangle")
         .font(.callout).foregroundStyle(.orange).lineLimit(2)
-    } else if let info = model.info {
-      Label(info, systemImage: "checkmark.circle")
-        .font(.callout).foregroundStyle(.secondary).lineLimit(2)
     }
   }
 }

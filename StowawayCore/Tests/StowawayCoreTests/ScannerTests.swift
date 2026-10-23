@@ -123,14 +123,25 @@ final class ScannerTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: s.path("web/package.json")))
   }
 
-  func testTheSampleProjectIsFoundAndSafeToTry() throws {
+  /// The project App Review creates with docs/app-store/review-project.sh (its commands are in
+  /// the review notes) has a node_modules and Cargo build files for Stowaway to find.
+  func testTheReviewProjectIsFound() throws {
     let s = try Scratch()
-    let root = try SampleProject.create(in: s.root)
-    let found = Scanner().scan(roots: [root.path]).map { ($0.kind, $0.url.lastPathComponent) }
-    XCTAssertEqual(found.map(\.0).sorted { $0.rawValue < $1.rawValue }, [.cargoTarget, .node])
+    let script = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().appendingPathComponent("docs/app-store/review-project.sh")
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = [script.path]
+    process.environment = ["HOME": s.root.path, "PATH": "/usr/bin:/bin"]
+    try process.run()
+    process.waitUntilExit()
+    XCTAssertEqual(process.terminationStatus, 0)
+    let root = s.root.appendingPathComponent("Stowaway Review")
+    let found = Scanner().scan(roots: [root.path]).map(\.kind)
+    XCTAssertEqual(found.sorted { $0.rawValue < $1.rawValue }, [.cargoTarget, .node])
     XCTAssertGreaterThan(
       Measure.allocatedSize(root.appendingPathComponent("web-app/node_modules").path), 10_000_000)
-    XCTAssertThrowsError(try SampleProject.create(in: s.root), "won't overwrite")
   }
 
   func testARunningCargoBuildIsBusy() throws {

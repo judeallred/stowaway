@@ -11,12 +11,31 @@ chooses, and can delete them or keep them on an external drive.
 
 HOW TO TRY IT (no external drive needed)
 
-1. On first launch the Stowaway window opens with a short welcome. Click "Set Up Later" to go
-   straight to the main window, then click "Or Create a Sample Project to Try It…" and choose
-   any folder, such as Documents. Stowaway creates a small sample (a web project with
-   node_modules and a Rust project with build files) and adds it to the folders it looks in.
-   (Or go through the welcome steps and choose any folder of your own that holds code; each
-   step is optional.)
+1. Create a small sample project to try it on: open Terminal, paste the commands below and
+   press Return. They make a folder named "Stowaway Review" in your home folder, holding a web
+   project with node_modules and a Rust project with build files (about 25 MB; nothing in it
+   runs). Delete the folder when you're done.
+
+   cd ~ && mkdir "Stowaway Review" && cd "Stowaway Review" &&
+   mkdir -p web-app rust-tool/src rust-tool/target/debug &&
+   printf '{ "name": "web-app", "private": true }\n' > web-app/package.json &&
+   for i in $(seq 1 40); do
+     p=web-app/node_modules/package-$i && mkdir -p "$p/lib" &&
+     printf '{ "name": "package-%s", "version": "1.0.0" }\n' "$i" > "$p/package.json" &&
+     for f in $(seq 1 12); do head -c 24000 /dev/urandom | base64 > "$p/lib/module-$f.js"; done
+   done &&
+   printf '[package]\nname = "rust-tool"\nversion = "0.1.0"\nedition = "2021"\n' > rust-tool/Cargo.toml &&
+   echo 'fn main() {}' > rust-tool/src/main.rs &&
+   echo 'Signature: 8a477f597d28d172789f06886806bc55' > rust-tool/target/CACHEDIR.TAG &&
+   for d in deps incremental build; do
+     mkdir -p "rust-tool/target/debug/$d" &&
+     for f in $(seq 1 10); do head -c 300000 /dev/urandom > "rust-tool/target/debug/$d/file-$f.rlib"; done
+   done &&
+   echo 'Created "Stowaway Review" in your home folder.'
+
+   Then open Stowaway. Its window opens with a short welcome: click "Set Up Later", then
+   "Choose a Folder…" and choose "Stowaway Review" in your home folder. (Or go through the
+   welcome steps and choose it there; each step is optional.)
 2. The main window shows what Stowaway found, by kind, and what it's doing. Click "Folders…"
    (bottom right) to see each folder with its size.
 3. Click "Choose a Drive…" (top right of the main window) and pick any folder, for
