@@ -2,7 +2,7 @@
 
 > **Draft — pending legal review before the public release.**
 
-Thank you for contributing to Stowaway ("the Project"), maintained by Jude Allred ("the Maintainer").
+Thank you for contributing to Stowaway ("the Project"), maintained by Brooklyn Spaceport ("the Maintainer").
 Stowaway is source-available under the Prosperity Public License 3.0.0 and is also sold under
 commercial licenses. This agreement lets the Maintainer offer your contributions under both.
 
