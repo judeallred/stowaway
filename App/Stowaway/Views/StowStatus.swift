@@ -9,13 +9,20 @@ struct StowedHeadline: View {
     VStack(alignment: .leading, spacing: 2) {
       Text("\(Format.bytes(model.offloadedBytes)) stowed")
         .font(.title2.weight(.semibold)).monospacedDigit()
-      Text(
-        model.pendingBytes > 0
-          ? "\(Format.bytes(model.pendingBytes)) more on this Mac to stow"
-          : "Nothing left on this Mac to stow"
-      )
-      .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+      Text(toStow)
+        .font(.callout).foregroundStyle(.secondary).monospacedDigit()
     }
+  }
+
+  /// What's left on this Mac. Sizes come after a scan's first stows, so until every folder is
+  /// measured it counts folders rather than showing a partial (or zero) total.
+  private var toStow: String {
+    let pending = model.pendingRows
+    if pending.isEmpty { return "Nothing left on this Mac to stow" }
+    if pending.contains(where: { $0.localBytes == nil }) {
+      return "\(Format.count(pending.count, "folder")) on this Mac to stow"
+    }
+    return "\(Format.bytes(model.pendingBytes)) more on this Mac to stow"
   }
 }
 
@@ -49,7 +56,7 @@ struct StowStatus: View {
       Label("Choose a drive to stow folders on", systemImage: "info.circle")
     } else if model.autoOffloadMinutes == AppModel.AutoStow.never {
       Label("Automatic stowing is off", systemImage: "pause.circle")
-    } else if model.pendingBytes > 0 {
+    } else if !model.pendingRows.isEmpty {
       Label(
         model.waitingSummary ?? AppModel.AutoStow.status(model.autoOffloadMinutes),
         systemImage: "clock")

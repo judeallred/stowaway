@@ -420,8 +420,11 @@ final class AppModel {
     row.place == .mac && !isRefused(row) && !isHeldOnMac(row)
   }
 
-  /// Bytes on this Mac still to be stowed (see `isPending`). Stowed plus pending is
-  /// `eligibleBytes`.
+  /// Folders on this Mac still to be stowed (see `isPending`), measured or not.
+  var pendingRows: [Row] { rows.filter(isPending) }
+
+  /// Bytes on this Mac still to be stowed (see `isPending`), counting only folders measured so
+  /// far: a scan stows what's due before it measures. Stowed plus pending is `eligibleBytes`.
   var pendingBytes: Int64 {
     rows.filter(isPending).compactMap(\.localBytes).reduce(0, +)
   }
@@ -506,7 +509,7 @@ final class AppModel {
     {
       return true
     }
-    return freeStowageFull && pendingBytes > 0 && autoOffloadMinutes != AutoStow.never
+    return freeStowageFull && !pendingRows.isEmpty && autoOffloadMinutes != AutoStow.never
   }
 }
 
