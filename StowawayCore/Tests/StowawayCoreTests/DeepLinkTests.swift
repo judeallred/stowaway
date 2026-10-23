@@ -336,19 +336,59 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertFalse(isSymlink(nm.appendingPathComponent("a/package.json").path))
   }
 
-  /// Turbopack refuses files outside the project, so its projects are refused unless the user
-  /// allows it (having set `turbopack.root`).
-  func testTurbopackProjectsAreRefusedUnlessAllowed() throws {
+  /// Any node_modules with Next.js in it is refused, however Turbopack is turned on: Turbopack
+  /// can't read a package.json that's a link. In a workspace Next is hoisted to the root's
+  /// node_modules, whose package.json doesn't mention it.
+  func testNextProjectsKeepTheirNodeModules() throws {
     let s = try Scratch()
-    let next16 = try s.dir("next16/node_modules")
-    try s.file("next16/package.json", #"{ "dependencies": { "next": "^16.0.1" } }"#)
-    let flag = try s.dir("flag/node_modules")
-    try s.file("flag/package.json", #"{ "scripts": { "dev": "next dev --turbopack" } }"#)
-    let plain = try s.dir("plain/node_modules")
-    try s.file("plain/package.json", #"{ "dependencies": { "next": "15.2.0" } }"#)
-    XCTAssertNotNil(Engine.packagesRefusal(next16, allowTurbopack: false))
-    XCTAssertNotNil(Engine.packagesRefusal(flag, allowTurbopack: false))
-    XCTAssertNil(Engine.packagesRefusal(next16, allowTurbopack: true))
-    XCTAssertNil(Engine.packagesRefusal(plain, allowTurbopack: false))
+    try s.file("mono/package.json", #"{ "workspaces": ["packages/*"] }"#)
+    try s.file("mono/node_modules/next/package.json", #"{ "name": "next" }"#)
+    try s.file("mono/packages/client/package.json", #"{ "scripts": { "dev": "next dev" } }"#)
+    try s.file("plain/package.json", #"{ "dependencies": { "react": "19.0.0" } }"#)
+    try s.file("plain/node_modules/react/package.json", #"{ "name": "react" }"#)
+    XCTAssertNotNil(
+      Engine.refusal(forNodeModules: s.root.appendingPathComponent("mono/node_modules")))
+    XCTAssertNil(
+      Engine.refusal(forNodeModules: s.root.appendingPathComponent("plain/node_modules")))
+  }
+
+  /// A .next in a workspace stays: its packages are split between its package's node_modules and
+  /// the workspace root's. A standalone project's can be stowed.
+  func testWorkspaceBuildOutputStays() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    try s.file("code/mono/package.json", #"{ "workspaces": ["packages/*"] }"#)
+    try s.file("code/mono/packages/client/package.json", "{}")
+    try s.file("code/mono/packages/client/.next/page.js", "x")
+    try s.file("code/pnpm/pnpm-workspace.yaml", "packages: ['apps/*']")
+    try s.file("code/pnpm/apps/web/package.json", "{}")
+    try s.file("code/pnpm/apps/web/.next/page.js", "x")
+    try s.file("code/solo/package.json", "{}")
+    try s.file("code/solo/.next/page.js", "x")
+    for project in ["mono/packages/client", "pnpm/apps/web"] {
+      let next = code.appendingPathComponent("\(project)/.next")
+      XCTAssertNotNil(Engine.refusal(forBuildOutput: next), project)
+      XCTAssertThrowsError(try engine.adopt(next.path, kind: .next), project) {
+        XCTAssertEqual(($0 as? StowawayError)?.isRefusal, true)
+      }
+      XCTAssertTrue(isRealDirectory(next.path), project)
+    }
+    let solo = code.appendingPathComponent("solo/.next")
+    XCTAssertNil(Engine.refusal(forBuildOutput: solo))
+    XCTAssertNoThrow(try engine.adopt(solo.path, kind: .next))
+  }
+
+  /// A project stowed before it would have been refused (Next.js added later, or an older
+  /// version): what an install adds stays on this Mac.
+  func testARefusedProjectIsntReoffloaded() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    try s.file("code/app/node_modules/next/package.json", #"{ "name": "next" }"#)
+    engine.reconcile()
+    XCTAssertFalse(isSymlink(nm.appendingPathComponent("next/package.json").path))
+    XCTAssertTrue(
+      isSymlink(nm.appendingPathComponent("a/package.json").path), "the rest still works")
   }
 }

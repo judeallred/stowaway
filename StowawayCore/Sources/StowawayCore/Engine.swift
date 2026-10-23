@@ -451,23 +451,24 @@ public final class Engine: @unchecked Sendable {
   /// is part of, when it's one of several (a Cargo `target/`'s build folders).
   @discardableResult
   public func adopt(
-    _ path: String, kind: Kind? = nil, container: String? = nil, limit: Int64? = nil,
-    allowTurbopack: Bool = false
+    _ path: String, kind: Kind? = nil, container: String? = nil, limit: Int64? = nil
   ) throws -> CopyStats {
     try exclusively {
-      try adoptUnlocked(
-        path, kind: kind, container: container, limit: limit, allowTurbopack: allowTurbopack)
+      try adoptUnlocked(path, kind: kind, container: container, limit: limit)
     }
   }
 
   private func adoptUnlocked(
-    _ path: String, kind: Kind?, container: String?, limit: Int64?, allowTurbopack: Bool
+    _ path: String, kind: Kind?, container: String?, limit: Int64?
   ) throws -> CopyStats {
     let local = URL(fileURLWithPath: path).standardizedFileURL
     guard let store = enterGrants() else {
       throw StowawayError("the drive isn't connected")
     }
     try validateAdoptable(local, store: store)
+    if let refusal = Self.refusal(forBuildOutput: local) {
+      throw StowawayError.refusal(refusal)
+    }
     if let limit {
       let needed = Measure.allocatedSize(local.path)
       let used = offloadedBytes
@@ -476,7 +477,7 @@ public final class Engine: @unchecked Sendable {
       }
     }
     if local.lastPathComponent == "node_modules" {
-      return try adoptPackages(local, store: store, allowTurbopack: allowTurbopack)
+      return try adoptPackages(local, store: store)
     }
     let fm = FileManager.default
     let id = String(UUID().uuidString.prefix(8).lowercased())

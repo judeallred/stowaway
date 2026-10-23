@@ -29,18 +29,13 @@ extension Engine {
 
   // MARK: Guards
 
-  /// Why a project's node_modules can't be stowed (a pnpm project, a Turbopack build without
-  /// `turbopack.root`), found without trying: cheap enough to ask while scanning.
+  /// Why a project's node_modules can't be stowed (a pnpm project, a Next.js project), found
+  /// without trying: cheap enough to ask while scanning.
   public static func refusal(forNodeModules nodeModules: URL) -> String? {
-    packagesRefusal(nodeModules, allowTurbopack: false)
-  }
-
-  static func packagesRefusal(_ nodeModules: URL, allowTurbopack: Bool) -> String? {
     let fm = FileManager.default
     let project = nodeModules.deletingLastPathComponent()
     guard nodeModules.lastPathComponent == "node_modules",
-      let data = fm.contents(atPath: project.appendingPathComponent("package.json").path),
-      let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+      fm.fileExists(atPath: project.appendingPathComponent("package.json").path)
     else { return "only a project's node_modules (next to package.json) can be stowed this way" }
     if fm.fileExists(atPath: nodeModules.appendingPathComponent(".pnpm").path)
       || fm.fileExists(atPath: project.appendingPathComponent("pnpm-lock.yaml").path)
@@ -48,37 +43,49 @@ extension Engine {
       return
         "this is a pnpm project: stow pnpm's store instead (with enableGlobalVirtualStore, node_modules is only links)"
     }
-    if !allowTurbopack, usesTurbopack(manifest) {
+    // Next's bundler, Turbopack, won't read a package.json that's a link, and deep links make
+    // every package's package.json one; no setting changes that. Whether a project uses
+    // Turbopack can't be told reliably (a flag typed by hand, Next 16's default, a workspace
+    // package's script), so any node_modules with Next in it stays.
+    if fm.fileExists(atPath: nodeModules.appendingPathComponent("next/package.json").path) {
       return
-        "this project builds with Turbopack, which refuses packages outside the project. Set `turbopack.root` in next.config (for example to \"/\"), then stow it with Turbopack allowed"
+        "this project uses Next.js, whose bundler (Turbopack) can't read packages linked to the drive, so its node_modules stays on this Mac"
     }
     return nil
   }
 
-  private static func usesTurbopack(_ manifest: [String: Any]) -> Bool {
-    let scripts = (manifest["scripts"] as? [String: String] ?? [:]).values.joined(separator: " ")
-    if scripts.contains("--turbopack") || scripts.contains("--turbo ")
-      || scripts.hasSuffix("--turbo")
-    {
-      return true
+  /// Why a build folder can't be stowed, found without trying. A stowed `.next` finds the
+  /// project's packages through one link from the drive back to the project's node_modules. In
+  /// a workspace (npm, Yarn or pnpm) they're split between the package's node_modules and the
+  /// workspace root's, which one link can't cover, so it stays.
+  public static func refusal(forBuildOutput folder: URL) -> String? {
+    guard folder.lastPathComponent == ".next" else { return nil }
+    let fm = FileManager.default
+    var dir = folder.deletingLastPathComponent().deletingLastPathComponent()
+    while dir.path != "/" {
+      if fm.fileExists(atPath: dir.appendingPathComponent("pnpm-workspace.yaml").path) {
+        return workspaceRefusal
+      }
+      if let data = fm.contents(atPath: dir.appendingPathComponent("package.json").path),
+        let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+        manifest["workspaces"] != nil
+      {
+        return workspaceRefusal
+      }
+      dir = dir.deletingLastPathComponent()
     }
-    let deps = (manifest["dependencies"] as? [String: String] ?? [:])
-      .merging(manifest["devDependencies"] as? [String: String] ?? [:]) { a, _ in a }
-    // Next.js 16 builds and serves with Turbopack by default.
-    if let next = deps["next"], let major = Int(next.drop { !$0.isNumber }.prefix { $0.isNumber }),
-      major >= 16
-    {
-      return true
-    }
-    return false
+    return nil
   }
+
+  private static let workspaceRefusal =
+    "this project is part of a workspace, whose packages a stowed .next couldn't find, so it stays on this Mac"
 
   // MARK: Adopting
 
   /// Offloads an npm-style node_modules package by package. Callers hold the engine's lock and
   /// have validated `local`.
-  func adoptPackages(_ local: URL, store: URL, allowTurbopack: Bool) throws -> CopyStats {
-    if let refusal = Self.packagesRefusal(local, allowTurbopack: allowTurbopack) {
+  func adoptPackages(_ local: URL, store: URL) throws -> CopyStats {
+    if let refusal = Self.refusal(forNodeModules: local) {
       throw StowawayError.refusal(refusal)
     }
     let id = String(UUID().uuidString.prefix(8).lowercased())
@@ -558,6 +565,12 @@ extension Engine {
       .filter { !Self.contents(of: $0.path).isEmpty && !Self.isOffloaded($0.path, store: store) }
     if !pending.isEmpty || lockfileIsLocal {
       guard isQuiet(local) else { return }  // an install may still be running
+      // Stowed before it would have been refused (a Next.js project, say): what the install
+      // added stays on this Mac until the project is brought back.
+      if let refusal = Self.refusal(forNodeModules: local) {
+        note("not re-offloading \(entry.local): \(refusal)")
+        return
+      }
       do {
         let stats = try offloadPackages(local: local, store: store)
         if !pending.isEmpty {

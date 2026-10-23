@@ -127,9 +127,14 @@ parent package's `node_modules` first.)
   `node_modules` has been quiet for 20 seconds, `reconcile` moves them to the store, reusing any
   identical copy already there.
 
-Projects that build with Turbopack (Next.js 16 by default) are refused unless they set
-`turbopack.root`, because Turbopack rejects files outside the project. pnpm projects are refused
-too: stowing pnpm's store covers them.
+A `node_modules` with Next.js in it is refused: Next's bundler, Turbopack, won't read a
+`package.json` that's a link, and deep links make every package's one. No setting gets around
+it, and whether a project uses Turbopack can't be told reliably (a flag typed by hand, Next 16's
+default, a script in a workspace package), so any project with Next keeps its `node_modules`.
+Its `.next` can still be stowed, except in a workspace (npm, Yarn or pnpm): there its packages
+are split between the package's `node_modules` and the workspace root's, and the one link back
+from the drive can't cover both. pnpm projects are refused too: stowing pnpm's store covers
+them.
 
 ## The drive coming and going
 

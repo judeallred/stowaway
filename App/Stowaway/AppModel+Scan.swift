@@ -59,8 +59,10 @@ extension AppModel {
       })
     unstowable = await Task.detached {
       var found: [String: String] = [:]
-      for c in candidates where c.kind == .node {
-        if let reason = Engine.refusal(forNodeModules: c.url) {
+      for c in candidates where c.kind == .node || c.kind == .next {
+        if let reason = c.kind == .node
+          ? Engine.refusal(forNodeModules: c.url) : Engine.refusal(forBuildOutput: c.url)
+        {
           found[c.path] = reason.prefix(1).uppercased() + reason.dropFirst() + "."
         }
       }
