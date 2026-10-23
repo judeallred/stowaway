@@ -4,5 +4,3 @@ build/
 DerivedData/
 xcuserdata/
 *.xcuserstate
-# Left over from the retired Rust engine.
-/target

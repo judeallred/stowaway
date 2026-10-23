@@ -1,8 +1,31 @@
 # How Stowaway works
 
 Stowaway is one sandboxed process: a SwiftUI menu bar app with the engine
-([`StowawayCore`](../StowawayCore)) running inside it. [WHITEPAPER.md](WHITEPAPER.md) explains
-why it's built this way; this page describes what it does.
+([`StowawayCore`](../StowawayCore)) running inside it.
+
+## Why it works this way
+
+Every Mac App Store app runs in the App Sandbox, and that rules out the obvious design: mounting
+a disk image from the drive at each folder's own path. The sandbox allows mounts only inside the
+app's container, and no documented entitlement lifts that. What the sandbox does allow is folders
+the user grants, symlinks, ordinary copies and volume notifications, so Stowaway is built from
+those:
+
+- **A folder moves to the drive and a symlink takes its place.** Tools follow the link and run
+  at the drive's speed: in testing on an external NVMe SSD, Cargo builds, pnpm installs, module
+  resolution and `tsc` ran as fast as from a mounted image, and often faster than the internal
+  disk while Spotlight was indexing it.
+- **npm gets "deep links" instead** (below): npm treats a symlinked package as a `link:`
+  dependency and reinstalls everything on every run. With real package folders and linked
+  contents, `npm install` with nothing to change takes about 0.3 s.
+- **Unplugging swaps each link for a local folder,** which is quicker than reattaching images
+  (under a second for 20 folders) and costs nothing per folder. The tradeoff is that the app has
+  to be running: quit while the drive is away, links dangle until it starts again.
+- **There's no true in-use check.** The sandbox hides other processes (`lsof`, `ps`), so
+  Stowaway uses heuristics: a running Cargo build's lock, an editor with the project open, and
+  recent changes.
+- **`files.user-selected.executable`** is the one unusual entitlement, and App Review looks at it
+  closely; see the [review notes](app-store/review-notes.md).
 
 ## Access
 

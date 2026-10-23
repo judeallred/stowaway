@@ -37,13 +37,9 @@ folder git tracks. To exclude a folder, put a file named `.stowaway-ignore` in i
 |---|---|
 | [`StowawayCore/`](StowawayCore) | The engine: scanning, offloading, npm deep links, the cleaner, a git index reader. A Swift package with its tests. |
 | [`App/`](App) | The sandboxed menu bar app (SwiftUI, StoreKit 2). The Xcode project is generated from `App/project.yml`. |
-| [`docs/architecture.md`](docs/architecture.md) | How it works. |
-| [`docs/WHITEPAPER.md`](docs/WHITEPAPER.md) | Why it works this way: the original disk-image design compared with this one. |
+| [`install.sh`](install.sh) | Builds the app and installs it in `/Applications`. |
+| [`docs/architecture.md`](docs/architecture.md) | How it works, and why. |
 | [`docs/app-store/`](docs/app-store) | App Store listing, review notes, pricing, privacy policy draft, release checklist. |
-| [`research/`](research) | The sandbox experiments and benchmarks behind the design. |
-
-The original design (a Rust engine that mounted disk images in place, distributed outside the
-App Store) is preserved at the `rust-core-final` tag.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers building and testing. Report security issues as
 described in [SECURITY.md](SECURITY.md).

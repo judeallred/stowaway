@@ -31,6 +31,15 @@ xcodegen generate --spec App/project.yml
 Running the app from Xcode uses `App/Stowaway/Resources/Products.storekit`, so purchases work
 locally without App Store Connect.
 
+To use your build day to day, install it:
+
+```sh
+./install.sh
+```
+
+It builds a Release signed to run on this Mac only (no developer team needed), quits any running
+copy, replaces `/Applications/Stowaway.app` and opens it.
+
 ## Checks
 
 These are what CI runs:
