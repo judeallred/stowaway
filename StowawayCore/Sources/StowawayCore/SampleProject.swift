@@ -18,7 +18,7 @@ public enum SampleProject {
     try write(
       root.appendingPathComponent("README.txt"),
       """
-      A sample created by Stowaway, for trying it out. It's safe to offload, bring back or delete
+      A sample created by Stowaway, for trying it out. It's safe to stow, bring back or delete
       anything in here, or to delete this whole folder.
       """)
 

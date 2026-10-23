@@ -11,8 +11,13 @@ extension AppModel {
   /// Stows each folder in turn. With several, folders Stowaway can't stow (a pnpm project, say)
   /// are skipped rather than stopping the rest.
   func offload(_ rows: [Row]) async {
-    guard drivePath != nil else {
+    // The drive's path is unknown while it's unplugged, so check its name and connection.
+    guard let name = driveName else {
       message = "Choose where to stow first."
+      return
+    }
+    guard driveConnected else {
+      message = "Connect \(name) to stow."
       return
     }
     // Stowing by hand undoes "keep on this Mac".
@@ -141,12 +146,12 @@ extension AppModel {
 
   static let cargoInUse = "A Cargo build or check is using it. Stowaway stows it once that's done."
 
-  /// Records why a folder wasn't stowed. A refusal keeps automatic stowing away until the folder
-  /// changes; any other failure leaves it pending, retried after `Timing.retryFailedAfter`
-  /// rather than at every scan (a copy that fails partway is costly to repeat).
   /// A folder with nothing left to stow (a Cargo target whose build folders are all stowed).
   struct NothingToStow: Error {}
 
+  /// Records why a folder wasn't stowed. A refusal keeps automatic stowing away until the folder
+  /// changes; any other failure leaves it pending, retried after `Timing.retryFailedAfter`
+  /// rather than at every scan (a copy that fails partway is costly to repeat).
   private func noteFailure(_ failure: any Error, for row: Row) {
     // Not a problem: it's left out of pending until it changes.
     if failure is NothingToStow {
@@ -214,7 +219,8 @@ extension AppModel {
     // Rows another operation is already working on are left to it.
     let rows = rows.filter { !busy.contains($0.path) }
     guard !rows.isEmpty else { return }
-    await store.waitUntilLoaded()
+    // Only stowing depends on purchases (the free limit); bringing back and deleting never wait.
+    if op == .stowing { await store.waitUntilLoaded() }
     if op == .stowing { queued.formUnion(rows.map(\.path)) }
     defer { queued.subtract(rows.map(\.path)) }
     var failures: [any Error] = []
@@ -279,7 +285,7 @@ extension AppModel {
         retryAfter[row.path] = nil
       }
       if failure is OffloadLimitReached { break }
-      if let failure, !(failure is OffloadLimitReached) { noteFailure(failure, for: row) }
+      if let failure { noteFailure(failure, for: row) }
     }
   }
 }

@@ -20,6 +20,8 @@ struct OnboardingView: View {
   init(model: AppModel, step: Step = .welcome, explainingHomeFolder: Bool = false) {
     self.model = model
     _step = State(initialValue: step)
+    // Shown again from Help, it starts from the current setting rather than turning it back on.
+    _openAtLogin = State(initialValue: model.didOnboard ? model.loginItemEnabled : true)
     _explainingHomeFolder = State(initialValue: explainingHomeFolder)
   }
 
@@ -157,10 +159,14 @@ struct OnboardingView: View {
         Text("Stow on an external drive (optional)").font(.headline)
         if let name = model.driveName {
           Label(name, systemImage: "externaldrive.fill")
-          Text(
-            "Folders move there automatically \(AppModel.AutoStow.describe(model.autoOffloadMinutes)), up to \(Format.bytes(Store.freeOffloadLimit)) free. You can change this in Settings."
-          )
-          .font(.callout).foregroundStyle(.secondary)
+          let when =
+            model.autoOffloadMinutes == AppModel.AutoStow.never
+            ? "Folders move there when you stow them"
+            : "Folders move there automatically \(AppModel.AutoStow.describe(model.autoOffloadMinutes))"
+          let limit =
+            model.store.hasPurchased ? "" : ", up to \(Format.bytes(Store.freeOffloadLimit)) free"
+          Text("\(when)\(limit). You can change this in Settings.")
+            .font(.callout).foregroundStyle(.secondary)
         } else {
           HStack {
             ForEach(Array(model.externalVolumes.prefix(3)), id: \.self) { volume in
@@ -213,11 +219,12 @@ struct OnboardingView: View {
     if model.scanning {
       Label("Looking…", systemImage: "magnifyingglass").foregroundStyle(.secondary)
     } else if !model.roots.isEmpty {
-      let count = model.rows.filter { !$0.kind.isGlobal }.count
+      let found = model.rows.filter { $0.place == .mac && !$0.kind.isGlobal }
+      let bytes = found.compactMap(\.localBytes).reduce(0, +)
       Label(
-        count == 0
+        found.isEmpty
           ? "Nothing to tidy up there yet."
-          : "Found \(Format.count(count, "folder")) you can reclaim, \(Format.bytes(model.reclaimableBytes)) in all.",
+          : "Found \(Format.count(found.count, "folder")) you can reclaim, \(Format.bytes(bytes)) in all.",
         systemImage: "sparkles"
       )
       .font(.headline)
@@ -228,7 +235,7 @@ struct OnboardingView: View {
   private var allowedCaches: [(kind: Kind, bytes: Int64?)] {
     Dictionary(grouping: model.rows.filter(\.kind.isGlobal), by: \.kind)
       .map { kind, rows in
-        let sizes = rows.map { $0.place == .drive ? $0.driveBytes : $0.localBytes }
+        let sizes = rows.map { $0.place == .mac ? $0.localBytes : $0.driveBytes }
         return (kind, sizes.contains(nil) ? nil : sizes.compactMap { $0 }.reduce(0, +))
       }
       .sorted { $0.kind.label < $1.kind.label }

@@ -72,17 +72,25 @@ enum MakeIcon {
         let name = "icon_\(points)x\(points)\(scale == 2 ? "@2x" : "").png"
         guard let png = render(size: CGFloat(pixels)).representation(using: .png, properties: [:])
         else { continue }
-        try? png.write(to: folder.appendingPathComponent(name))
+        do {
+          try png.write(to: folder.appendingPathComponent(name))
+        } catch {
+          print("couldn't write \(name): \(error)")
+          exit(1)
+        }
         images.append([
           "idiom": "mac", "size": "\(points)x\(points)", "scale": "\(scale)x", "filename": name,
         ])
       }
     }
     let contents: [String: Any] = ["images": images, "info": ["author": "xcode", "version": 1]]
-    if let data = try? JSONSerialization.data(
-      withJSONObject: contents, options: [.prettyPrinted, .sortedKeys])
-    {
-      try? data.write(to: folder.appendingPathComponent("Contents.json"))
+    do {
+      let data = try JSONSerialization.data(
+        withJSONObject: contents, options: [.prettyPrinted, .sortedKeys])
+      try data.write(to: folder.appendingPathComponent("Contents.json"))
+    } catch {
+      print("couldn't write Contents.json: \(error)")
+      exit(1)
     }
     print("wrote \(images.count) icons to \(folder.path)")
   }

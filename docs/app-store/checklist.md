@@ -38,7 +38,7 @@ Connect, the website). Work top to bottom.
 5. **Signing:** set `DEVELOPMENT_TEAM` in `App/project.yml` (or in Xcode's Signing &
    Capabilities), keep automatic signing, and regenerate the project if you edit the YAML.
 6. **App record** in App Store Connect: create the macOS app and fill in `metadata.md`.
-7. **In-app purchases:** create the seven non-consumables in `metadata.md`, set prices
+7. **In-app purchases:** create the thirteen non-consumables (seven personal, six business) in `metadata.md`, set prices
    (`pricing.md`), set Family Sharing on for personal and off for business, and attach a review
    screenshot to each.
 8. **Website:** publish brooklynspaceport.com/stowaway, `/support` and `/privacy`

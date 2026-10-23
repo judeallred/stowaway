@@ -76,6 +76,7 @@ struct DashboardView: View {
             segments: [(item.stowed, .accentColor), (item.onMac, Color.gray.opacity(0.55))],
             total: max(largest, 1)
           )
+          .accessibilityHidden(true)  // the text beside it says the same
           Text(
             [
               item.stowed > 0 ? "\(Format.bytes(item.stowed)) stowed" : nil,

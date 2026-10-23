@@ -40,7 +40,8 @@ struct FoldersView: View {
   /// What the row being worked on shows in the Where column.
   private var working: String { "\((model.operation ?? .stowing).verb)…" }
 
-  private var selected: [Row] { model.rows.filter { selection.contains($0.id) } }
+  /// Selected rows the filter and search still show: hidden ones are never acted on.
+  private var selected: [Row] { visible.filter { selection.contains($0.id) } }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -197,7 +198,7 @@ struct FoldersView: View {
           .font(.callout).foregroundStyle(.orange).lineLimit(2)
       }
       Spacer()
-      // Scanning runs on its own every couple of minutes; ⌘R looks again now.
+      // Scans run when watched folders change (and hourly); ⌘R looks again now.
       Button("Scan Again") { Task { await model.scan() } }
         .keyboardShortcut("r", modifiers: .command)
         .disabled(model.scanning)
@@ -241,7 +242,7 @@ struct FoldersView: View {
   ) -> some View {
     VStack(spacing: 12) {
       Spacer()
-      Image(nsImage: Logo.image(size: 48)).opacity(0.6)
+      Image(nsImage: Logo.image(size: 48)).opacity(0.6).accessibilityHidden(true)
       Text(title).font(.title3.weight(.semibold))
       Text(detail).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
       Button(button, action: action).controlSize(.large)
@@ -275,6 +276,9 @@ struct SummaryHeader: View {
           .frame(width: 160)
           .padding(.top, 8)
           .accessibilityLabel("Free stowage used")
+          .accessibilityValue(
+            "\(Format.bytes(Store.freeOffloadLimit - left)) of \(Format.bytes(Store.freeOffloadLimit))"
+          )
           Text(
             model.freeStowageFull
               ? "Free stowage is full" : "\(Format.bytes(left)) of free stowage left"
@@ -408,7 +412,7 @@ private struct DriveStats: View {
       VStack(alignment: .trailing, spacing: 3) {
         DriveSpaceBar(model: model, free: free, total: total)
         Text(
-          "Stowing \(Format.bytes(model.offloadedBytes)) – \(Format.bytes(free)) free of \(Format.bytes(total))"
+          "\(Format.bytes(model.offloadedBytes)) stowed · \(Format.bytes(free)) free of \(Format.bytes(total))"
         )
         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
       }
@@ -479,7 +483,7 @@ private struct PlaceLabel: View {
   var body: some View {
     switch place {
     case .mac where kept:
-      Label("Kept on Mac", systemImage: "pin")
+      Label("Kept on This Mac", systemImage: "pin")
         .foregroundStyle(.secondary)
         .help(
           "You chose to keep this on your Mac, so it isn't stowed automatically. Stow it, or choose Allow Automatic Stowing, to undo that."

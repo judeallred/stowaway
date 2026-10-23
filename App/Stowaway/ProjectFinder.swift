@@ -19,7 +19,8 @@ enum ProjectFinder {
   ]
 
   /// Folders directly in the home folder (or in Documents or Desktop) that hold projects, most
-  /// projects first. Empty if Spotlight is off or finds nothing within a few seconds.
+  /// projects first. Empty if Spotlight is off or finds nothing; what it has so far if it's still
+  /// searching after a few seconds.
   static func suggestions() async -> [Suggestion] {
     let query = NSMetadataQuery()
     query.predicate = NSCompoundPredicate(

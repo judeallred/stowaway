@@ -17,7 +17,7 @@ public struct Entry: Codable, Sendable, Identifiable, Equatable {
   public var bytes: Int64 = 0
   /// The folder this entry is part of, when it's one of several (a Cargo `target/`'s build
   /// folders, DerivedData's intermediates); the folder itself otherwise. Recorded when offloaded,
-  /// so it's never guessed from the path.
+  /// so it's never guessed from the path; nil for npm entries and ones stowed before it was.
   public var container: String?
 
   public enum Mode: String, Codable, Sendable {
@@ -431,7 +431,14 @@ public final class Engine: @unchecked Sendable {
     let remoteRel = "\(slot)/\(local.lastPathComponent)"
     let remote = store.appendingPathComponent(remoteRel)
     try checkContained(remote, in: store)
-    let stats = try Copier.copyContents(of: local, into: remote)
+    let stats: CopyStats
+    do {
+      stats = try Copier.copyContents(of: local, into: remote)
+    } catch {
+      // A partial copy (the drive filled or went away) is never recorded, so clear it now.
+      try? Copier.remove(store.appendingPathComponent(slot))
+      throw error
+    }
     // Build output in a JavaScript project (Next.js's .next) requires the project's packages at
     // run time, and Node looks for them from the file's real path on the drive: put a
     // node_modules link next to it that leads back to the project's.
@@ -451,7 +458,14 @@ public final class Engine: @unchecked Sendable {
         bytes: stats.bytes, container: container ?? local.path))
     save(all)
     let old = Self.leftoverName(for: local)
-    try fm.moveItem(at: local, to: old)
+    do {
+      try fm.moveItem(at: local, to: old)
+    } catch {
+      // Still in place: forget the entry, or a reconcile would stow it after all.
+      save(entries().filter { $0.id != id })
+      try? Copier.remove(store.appendingPathComponent(slot))
+      throw error
+    }
     do {
       try fm.createSymbolicLink(at: local, withDestinationURL: remote)
     } catch {
@@ -638,7 +652,8 @@ public final class Engine: @unchecked Sendable {
   }
 
   /// Before ejecting the drive: every stowed folder becomes a local one, as when it's unplugged,
-  /// so nothing on the Mac points at the drive while it unmounts. (Pause the engine meanwhile,
+  /// so nothing on the Mac points at the drive while it unmounts (npm deep links are left
+  /// pointing at it; the next install repairs them). (Pause the engine meanwhile,
   /// or a reconcile would link them again while the drive is still there.)
   public func prepareForEject() {
     _ = try? exclusively {
@@ -859,8 +874,6 @@ public final class Engine: @unchecked Sendable {
     }
   }
 
-  /// Deletes a folder: in the background when this engine runs in a long-lived process (the
-  /// links are already in place, so nothing waits on it), otherwise right away.
   /// Deletes `url` without waiting: renames it aside (instant: same folder, same disk) and
   /// erases it in the background. Erases still pending are recorded, so `recover` finishes them
   /// after a quit or crash. Symlinks aren't followed.
@@ -878,7 +891,8 @@ public final class Engine: @unchecked Sendable {
       defaults.set((defaults.stringArray(forKey: "trash") ?? []) + [aside.path], forKey: "trash")
     }
     let erase: @Sendable () -> Void = { [self] in
-      try? Copier.remove(aside)
+      // A failed erase stays pending, so `recover` tries again rather than leaving it hidden.
+      guard (try? Copier.remove(aside)) != nil else { return }
       lock.withLock {
         defaults.set(
           (defaults.stringArray(forKey: "trash") ?? []).filter { $0 != aside.path }, forKey: "trash"
@@ -895,12 +909,23 @@ public final class Engine: @unchecked Sendable {
   /// Finishes erasing what `trash` set aside before a quit or crash.
   private func finishTrash() {
     let pending = lock.withLock { defaults.stringArray(forKey: "trash") ?? [] }
-    for path in pending where path.contains(".stowaway-trash-") {
+    let left = pending.filter { path in
+      guard path.contains(".stowaway-trash-") else { return false }
       try? Copier.remove(URL(fileURLWithPath: path))
+      var st = stat()
+      return lstat(path, &st) == 0
     }
-    lock.withLock { defaults.removeObject(forKey: "trash") }
+    lock.withLock {
+      if left.isEmpty {
+        defaults.removeObject(forKey: "trash")
+      } else {
+        defaults.set(left, forKey: "trash")
+      }
+    }
   }
 
+  /// Deletes a folder: in the background when this engine runs in a long-lived process (the
+  /// links are already in place, so nothing waits on it), otherwise right away.
   func deleteSoon(_ url: URL) {
     if cleanupInBackground {
       DispatchQueue.global(qos: .utility).async { try? Copier.remove(url) }

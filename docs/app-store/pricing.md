@@ -11,8 +11,8 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 
 | Group | Product IDs | Family Sharing | Message |
 |---|---|---|---|
-| Personal, pay what you want | `com.brooklynspaceport.stowaway.personal.1` … `.7` | **On** | "Share the love… your purchase means everything to us." |
-| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.6` | **Off** | "At work and able to expense it?… keep prices low for everyone using it personally." |
+| Personal, pay what you want | `com.brooklynspaceport.stowaway.personal.1` … `.7` | **On** | "Share the love": asks people who use it personally to pay what they can. |
+| Business, pay what you will | `com.brooklynspaceport.stowaway.business.1` … `.6` | **Off** | Thanks people using it at work and asks them to pay in proportion to the value. |
 
 - **Prices aren't in the code.** Product IDs name a slot, not a price, and the app shows whatever
   you set in App Store Connect, sorted low to high. You can reprice without an app update.
@@ -45,7 +45,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 | Lever | Possible? | Notes |
 |---|---|---|
 | Self-declared personal vs business | **Yes**, honor system | Apple can't verify it, and neither can you. Keep the product names and descriptions honest ("Business: for use at work"), and never imply a personal purchase is illegitimate at work. Reviewers do read the descriptions. |
-| Pay what you want (several price points for the same unlock) | **Yes** | Common "tip jar"-style unlock. Every price must deliver the stated value; here, unlimited offloading. |
+| Pay what you want (several price points for the same unlock) | **Yes** | Common "tip jar"-style unlock. Every price must deliver the stated value; here, unlimited stowing. |
 | Real differences between tiers | **Yes**, and recommended for business | Strengthens the business tier and protects it in review. Ideas: Family Sharing off (done), priority email support, a named thank-you on the website, or a future feature such as managing several drives. |
 | Geography | **Yes** | Per-storefront prices. |
 | Volume licensing for companies (Apple Business Manager) | **No** for in-app purchases | Apple's volume purchasing doesn't cover in-app purchases. ([forum][abm], [Jamf][jamf]) Options: each employee buys and expenses it; a paid **custom app** for one company through Apple Business Manager (a separate build sold privately); or offer codes for a team. |
@@ -69,8 +69,8 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 
 ## Copy
 
-The upgrade sheet uses your words, lightly edited for clarity ("gobs of money" became "paying
-for a bigger internal drive"). It's in
+The upgrade sheet uses your words, lightly edited for clarity ("gobs of money" became "an
+expensive storage upgrade"). It's in
 `App/Stowaway/Views/SupportView.swift`; change it freely. Product display names and
 descriptions live in App Store Connect; suggested text is in `metadata.md`.
 

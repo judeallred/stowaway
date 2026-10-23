@@ -23,7 +23,7 @@ enum BugReport {
 
       ---
       Stowaway \(Bundle.main.versionString) on macOS \(os)
-      Drive chosen: \(model.drivePath == nil ? "no" : "yes"), connected: \(model.driveConnected ? "yes" : "no")
+      Drive chosen: \(model.driveName == nil ? "no" : "yes"), connected: \(model.driveConnected ? "yes" : "no")
       Folders found: \(kinds.joined(separator: ", "))
       """
     if let drive = model.drivePath {

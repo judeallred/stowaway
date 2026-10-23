@@ -37,7 +37,7 @@ public struct Cleaner: Sendable {
 
   /// Deletes a project folder outright. For a machine-wide cache, empties it but keeps the folder,
   /// so the permission the user granted for it stays valid. `remove` does the deleting (the
-  /// engine's sets folders aside and erases them in the background).
+  /// engine's `trash` sets folders aside and erases them in the background).
   public func delete(
     _ candidate: Candidate, roots: [String], offloaded: [Entry],
     remove: (URL) throws -> Void = { try Copier.remove($0) }
@@ -54,5 +54,4 @@ public struct Cleaner: Sendable {
       try remove(candidate.url)
     }
   }
-
 }

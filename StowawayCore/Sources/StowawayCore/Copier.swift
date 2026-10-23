@@ -19,7 +19,7 @@ public struct CopyStats: Sendable, CustomStringConvertible {
   }
 }
 
-/// Copies trees with a pool of workers, like the core engine's `fsutil::copy_tree`: one pass
+/// Copies trees with a pool of workers: one pass
 /// creates directories in order, then regular files and symlinks are copied in parallel (per-file
 /// latency dominates for node_modules-style trees), then directory metadata is applied deepest
 /// first so read-only directories don't block their own contents.
@@ -98,6 +98,8 @@ public enum Copier {
       }
       if st.st_mode & S_IFMT == S_IFLNK || st.st_mode & S_IFMT == S_IFREG {
         guard unlink(path) == 0 else { throw StowawayError.posix("replacing", path) }
+      } else {
+        throw StowawayError("replacing \(path): not a folder")
       }
     }
     if mkdir(path, 0o700) != 0 && errno != EEXIST { throw StowawayError.posix("creating", path) }
@@ -139,7 +141,13 @@ public enum Copier {
         raw.bindMemory(to: CChar.self).baseAddress.map { String(cString: $0) } ?? ""
       }
       if child.isEmpty || child == "." || child == ".." { continue }
-      children.append((child, Int32(entry.pointee.d_type) == DT_DIR))
+      var isDir = Int32(entry.pointee.d_type) == DT_DIR
+      // Some file systems (network, FUSE) don't fill in the type.
+      if Int32(entry.pointee.d_type) == DT_UNKNOWN {
+        var st = stat()
+        isDir = fstatat(fd, child, &st, AT_SYMLINK_NOFOLLOW) == 0 && st.st_mode & S_IFMT == S_IFDIR
+      }
+      children.append((child, isDir))
     }
     defer { closedir(dir) }  // also closes fd
     for (child, isDir) in children {

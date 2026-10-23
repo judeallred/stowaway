@@ -13,7 +13,7 @@ You'll get a reply within a week.
 ## What's in scope
 
 - Stowaway deleting, overwriting or exposing data outside the folders it manages.
-- Anything on an offload drive (which may be shared) that makes Stowaway act outside its store.
+- Anything on the drive Stowaway stows folders on (which may be shared) that makes Stowaway act outside its store.
 - Ways around the App Sandbox or the purchase checks.
 
 ## Design

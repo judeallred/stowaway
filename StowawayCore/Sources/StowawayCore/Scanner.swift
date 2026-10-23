@@ -21,8 +21,7 @@ public struct Candidate: Identifiable, Hashable, Sendable {
   }
 }
 
-/// Finds re-creatable folders under the folders the user granted, following the same rules as
-/// the original engine: a kind's folder must sit next to its manifest, Cargo's `target/` must
+/// Finds re-creatable folders under the folders the user granted: a kind's folder must sit next to its manifest, Cargo's `target/` must
 /// carry `CACHEDIR.TAG` and not be redirected, a `node_modules` inside another project's tree is
 /// left to the outer one, and nothing on another volume, behind a symlink or under a
 /// `.stowaway-ignore` marker is touched.
@@ -89,10 +88,15 @@ public struct Scanner: Sendable {
       return []
     }
     // Walk down from the root to the folder's parent, as visit would, to learn whether a
-    // node_modules project lies above it (a checkout starts afresh).
+    // node_modules project lies above it (a checkout starts afresh) and to honor an ignore marker
+    // anywhere above it.
     var nodeAncestor = false
     var dir = URL(fileURLWithPath: root)
-    for part in parts.dropLast() {
+    for part in parts {
+      if FileManager.default.fileExists(atPath: dir.appendingPathComponent(Self.ignoreMarker).path)
+      {
+        return []
+      }
       if let rule = Kind.node.projectRule,
         FileManager.default.fileExists(atPath: dir.appendingPathComponent(rule.manifest).path),
         isRealDirectory(dir.appendingPathComponent(rule.folderName).path)
@@ -214,7 +218,7 @@ public struct Scanner: Sendable {
       for name in ["config.toml", "config"] {
         let file = current.appendingPathComponent(".cargo").appendingPathComponent(name)
         if let text = try? String(contentsOf: file, encoding: .utf8),
-          text.split(separator: "\n").contains(where: {
+          text.split(whereSeparator: \.isNewline).contains(where: {
             $0.trimmingCharacters(in: .whitespaces).hasPrefix("target-dir")
           })
         {

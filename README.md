@@ -35,7 +35,7 @@ folder git tracks. To exclude a folder, put a file named `.stowaway-ignore` in i
 
 | Path | What |
 |---|---|
-| [`StowawayCore/`](StowawayCore) | The engine: scanning, offloading, npm deep links, the cleaner, a git index reader. A Swift package with its tests. |
+| [`StowawayCore/`](StowawayCore) | The engine: scanning, stowing, npm deep links, the cleaner, a git index reader. A Swift package with its tests. |
 | [`App/`](App) | The sandboxed menu bar app (SwiftUI, StoreKit 2). The Xcode project is generated from `App/project.yml`. |
 | [`install.sh`](install.sh) | Builds the app and installs it in `/Applications`. |
 | [`docs/architecture.md`](docs/architecture.md) | How it works, and why. |

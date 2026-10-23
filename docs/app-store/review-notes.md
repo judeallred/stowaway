@@ -71,5 +71,6 @@ Stowaway collects no data and makes no network requests of its own. During onboa
 Spotlight where project files such as package.json are, to suggest folders like ~/code; it reads
 only the paths Spotlight returns, on the Mac, and still asks the user to choose the folder. "Report a Bug…" opens a
 prefilled GitHub issue in the browser for the user to review, edit and submit; it contains
-version numbers, counts and the last few problems, with paths, file names and the drive's name
-redacted.
+version numbers, counts, what kind of location the drive is and the last few drive choices
+(described, never as paths), and the last few problems, with paths, file names and the drive's
+name redacted.

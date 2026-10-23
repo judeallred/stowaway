@@ -59,9 +59,11 @@ public enum GitIndex {
         }
         // A worktree or submodule: `.git` is a file saying `gitdir: <path>`.
         if let text = try? String(contentsOf: git, encoding: .utf8),
-          let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") })
+          let line = text.split(whereSeparator: \.isNewline).first(where: {
+            $0.hasPrefix("gitdir:")
+          })
         {
-          let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+          let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
           let gitdir =
             path.hasPrefix("/") ? URL(fileURLWithPath: path) : dir.appendingPathComponent(path)
           return (dir, gitdir.appendingPathComponent("index"))
@@ -86,7 +88,8 @@ public enum GitIndex {
     let count = u32(8)
     guard (2...4).contains(version) else { return nil }
     var paths: [String] = []
-    paths.reserveCapacity(count)
+    // A corrupt header can claim billions of entries; each takes at least 62 bytes.
+    paths.reserveCapacity(min(count, bytes.count / 62))
     var offset = 12
     var previous: [UInt8] = []
     for _ in 0..<count {

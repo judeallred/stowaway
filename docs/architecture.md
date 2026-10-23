@@ -131,7 +131,7 @@ too: offloading pnpm's store covers them.
 ## The drive coming and going
 
 `Engine.reconcile` runs at launch, on every volume mount and unmount (bursts are coalesced), and
-every 30 seconds:
+every 2 minutes:
 
 - **Drive gone:** each link becomes an empty local folder, and tools rebuild into it. npm deep
   links are left dangling. npm can't read its lockfile then, so the next install repairs them.
@@ -155,7 +155,8 @@ offers Open at Login.
 
 ## Stowing automatically
 
-Once a drive is chosen, the app rescans every 2 minutes and stows every folder,
+Once a drive is chosen, the app rescans when watched folders change (at most once a minute, and
+hourly regardless) and stows every folder,
 caches included, that hasn't changed for the window set in Settings (5 minutes by default; it can
 be turned off). "Immediately" stows anything that's been quiet for 30 seconds, so a folder is
 never copied mid-write. "Changed" looks two levels into the folder, so a build writing into

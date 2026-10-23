@@ -104,7 +104,6 @@ final class DeepLinkTests: XCTestCase {
   func testAManifestOnTheDriveCantPointOutside() throws {
     let s = try Scratch()
     let (engine, _, _) = try makeEngine(s)
-    engine.quietPeriod = -1
     let nm = try project(s)
     try engine.adopt(nm.path)
     let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(

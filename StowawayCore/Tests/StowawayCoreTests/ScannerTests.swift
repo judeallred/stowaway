@@ -44,9 +44,8 @@ final class ScannerTests: XCTestCase {
       found(s),
       [
         "web/node_modules": .node, "rs/target": .cargoTarget, "py/.venv": .venv,
-        "next/node_modules": .node,
         "next/.next": .next,
-      ].filter { $0.key != "next/node_modules" })
+      ])
   }
 
   func testSymlinkedFoldersAreLeftToTheEngine() throws {
@@ -230,14 +229,27 @@ final class PartialScanTests: XCTestCase {
     try make("mono/node_modules/a")
     try file("mono/packages/web/package.json")
     try make("mono/packages/web/node_modules/b")
+    // A workspace directly under its project: the parent is the node project.
+    try file("mono/web/package.json")
+    try make("mono/web/node_modules/d")
     // A new standalone project.
     try file("fresh/package.json")
     try make("fresh/node_modules/c")
+    // A project under a folder marked to be left alone.
+    try file("ignored/.stowaway-ignore")
+    try file("ignored/app/package.json")
+    try make("ignored/app/node_modules/e")
     let roots = [root.path]
     let full = Set(Scanner().scan(roots: roots).map(\.path))
     let web = root.appendingPathComponent("mono/packages/web").path
     let fresh = root.appendingPathComponent("fresh").path
     XCTAssertEqual(Scanner().scan(folder: web, roots: roots).map(\.path), [])
+    let direct = root.appendingPathComponent("mono/web").path
+    XCTAssertEqual(Scanner().scan(folder: direct, roots: roots).map(\.path), [])
+    XCTAssertFalse(full.contains(direct + "/node_modules"))
+    let ignored = root.appendingPathComponent("ignored/app").path
+    XCTAssertEqual(Scanner().scan(folder: ignored, roots: roots).map(\.path), [])
+    XCTAssertFalse(full.contains(ignored + "/node_modules"))
     XCTAssertEqual(
       Scanner().scan(folder: fresh, roots: roots).map(\.path), [fresh + "/node_modules"])
     XCTAssertTrue(full.contains(fresh + "/node_modules"))

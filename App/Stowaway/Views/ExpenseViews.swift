@@ -212,7 +212,7 @@ struct InvoicePage: View {
     VStack(alignment: .leading, spacing: 28) {
       HStack(alignment: .top) {
         HStack(spacing: 10) {
-          Image(nsImage: Logo.image(size: 36))
+          Image(nsImage: Logo.image(size: 36)).accessibilityHidden(true)
           VStack(alignment: .leading, spacing: 2) {
             Text("Brooklyn Spaceport").font(.system(size: 16, weight: .semibold))
             Text(Links.website.absoluteString).font(.system(size: 10)).foregroundStyle(.gray)

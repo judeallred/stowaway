@@ -40,7 +40,7 @@ struct StowStatus: View {
         intent == .quickDrop
           ? "Dropping \(name)…"
           : model.driveConnected
-            ? "Stopping using \(name): \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")"
+            ? "Stopping use of \(name): \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")"
             : "Connect \(name) to finish \(intent == .bringBack ? "bringing folders back" : "deleting stowed folders")",
         systemImage: "externaldrive.badge.minus")
     } else if model.driveName != nil && !model.driveConnected {

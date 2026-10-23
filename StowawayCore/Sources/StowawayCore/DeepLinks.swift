@@ -19,7 +19,7 @@ import Foundation
 /// npm's hidden lockfile (`node_modules/.package-lock.json`) also moves to the drive. While the
 /// drive is here npm reads it and takes its fast path (folder mtimes are preserved so npm trusts
 /// it); when the drive is gone it can't, so `npm install` rescans and repairs every package even
-/// if Lite isn't running.
+/// if Stowaway isn't running.
 extension Engine {
   /// Entries npm and other tools own that stay on the Mac.
   static let keepLocal: Set<String> = [
@@ -29,7 +29,6 @@ extension Engine {
 
   // MARK: Guards
 
-  /// Why a node_modules can't be managed package by package, or nil if it can.
   /// Why a project's node_modules can't be stowed (a pnpm project, a Turbopack build without
   /// `turbopack.root`), found without trying: cheap enough to ask while scanning.
   public static func refusal(forNodeModules nodeModules: URL) -> String? {
@@ -174,8 +173,7 @@ extension Engine {
   /// Whether every entry of a package (but its nested node_modules) already links into `store`.
   static func isOffloaded(_ package: URL, store: URL) -> Bool {
     contents(of: package).allSatisfy { entry in
-      (try? FileManager.default.destinationOfSymbolicLink(
-        atPath: package.appendingPathComponent(entry).path))?.hasPrefix(store.path) == true
+      storeLinkTarget(package.appendingPathComponent(entry), store: store) != nil
     }
   }
 
@@ -330,8 +328,12 @@ extension Engine {
     var dirStat = stat()
     lstat(local.path, &dirStat)
     let remote = store.appendingPathComponent("hidden-lockfile.json")
-    if fm.fileExists(atPath: remote.path) { try fm.removeItem(at: remote) }
-    guard copyfile(lockfile.path, remote.path, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
+    // Not following links: the drive isn't trusted, and one planted there could lead elsewhere.
+    unlink(remote.path)
+    guard
+      copyfile(lockfile.path, remote.path, nil, copyfile_flags_t(COPYFILE_ALL | COPYFILE_NOFOLLOW))
+        == 0
+    else {
       throw StowawayError("copying \(lockfile.path): \(String(cString: strerror(errno)))")
     }
     Self.setTimes(remote, from: st)
@@ -390,9 +392,6 @@ extension Engine {
     return Date().timeIntervalSince(newest) > quietPeriod
   }
 
-  /// The newest modification time of anything under `root`, not following links.
-  /// The newest change at node_modules' top level: the folder, its entries (the hidden lockfile
-  /// among them) and its scoped folders' entries. Cheap: no package is opened.
   /// When node_modules last changed as a whole: its own date and npm's hidden lockfile (which
   /// npm rewrites on every install, and other package managers' installs add or remove
   /// entries, which dates the folder). Two lstat calls, cheap enough for every reconcile.
@@ -411,6 +410,8 @@ extension Engine {
     return newest
   }
 
+  /// The newest change at node_modules' top level: the folder, its entries (the hidden lockfile
+  /// among them) and its scoped folders' entries. Cheap: no package is opened.
   static func topLevelChange(_ local: URL) -> Date {
     var newest = Date.distantPast
     let fm = FileManager.default
@@ -433,6 +434,7 @@ extension Engine {
     return newest
   }
 
+  /// The newest modification time of anything under `root`, not following links.
   static func newestChange(under root: URL) -> Date {
     var newest = Date.distantPast
     var paths: [UnsafeMutablePointer<CChar>?] = [strdup(root.path), nil]
@@ -510,6 +512,11 @@ extension Engine {
         update(entry.id) { $0.online = false }
         note("offline: \(entry.local) will be rebuilt locally by the next npm install")
       }
+      return
+    }
+    // The drive isn't trusted: a store that's been swapped for a link is left alone.
+    guard (try? checkContained(store, in: mine)) != nil else {
+      note("\(store.path) isn't inside Stowaway's store; leaving \(entry.local) alone")
       return
     }
     // Paused: the links work again with the drive back; re-stowing waits.
@@ -597,7 +604,9 @@ extension Engine {
         }
       }
     }
-    guard let store = try? storePath(entry.remote, in: mine) else { return }
+    guard let store = try? storePath(entry.remote, in: mine),
+      (try? checkContained(store, in: mine)) != nil
+    else { return }
     for (rel, target) in Self.readManifest(store) {
       let package = local.appendingPathComponent(rel)
       guard let slot = Self.validated(target, in: store),

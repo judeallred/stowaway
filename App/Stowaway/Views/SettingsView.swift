@@ -50,7 +50,10 @@ struct FoldersSettings: View {
             SuggestedFolders(model: model)
           }
           Button("Remove") {
-            if let selection { model.removeRoot(selection) }
+            if let selection {
+              model.removeRoot(selection)
+              self.selection = nil
+            }
           }
           .disabled(selection == nil)
         }

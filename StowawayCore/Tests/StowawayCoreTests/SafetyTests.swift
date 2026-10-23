@@ -18,7 +18,6 @@ final class SafetyTests: XCTestCase {
   func testPartiallyLinkedPackageSurvivesRelease() throws {
     let s = try Scratch()
     let (engine, _, _) = try makeEngine(s)
-    engine.quietPeriod = -1
     try s.file("code/app/package.json", #"{ "name": "app" }"#)
     try s.file("code/app/node_modules/a/package.json", #"{ "name": "a", "version": "1.0.0" }"#)
     try s.file("code/app/node_modules/a/index.js", "module.exports = 1")

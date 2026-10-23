@@ -31,7 +31,7 @@ struct SupportView: View {
         } else {
           pitch
         }
-        Picker("", selection: $audience) {
+        Picker("Purchase for", selection: $audience) {
           Text("For Me").tag(Store.Audience.personal)
           Text("For Work").tag(Store.Audience.business)
         }
@@ -90,7 +90,8 @@ struct SupportView: View {
   private var pitch: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 10) {
-        Image(systemName: "heart.fill").foregroundStyle(.pink).font(.title2)
+        Image(systemName: "heart.fill").foregroundStyle(.pink).font(.title2).accessibilityHidden(
+          true)
         Text("Share the love").font(.title2.weight(.semibold))
       }
       Text(
@@ -166,7 +167,8 @@ struct SupportView: View {
   private var thanks: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 10) {
-        Image(systemName: "heart.fill").foregroundStyle(.pink).font(.title2)
+        Image(systemName: "heart.fill").foregroundStyle(.pink).font(.title2).accessibilityHidden(
+          true)
         Text("Thank you").font(.title2.weight(.semibold))
       }
       Image(nsImage: Logo.image(size: 72))

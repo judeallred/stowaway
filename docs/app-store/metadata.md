@@ -7,7 +7,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 | Field | Value | Limit |
 |---|---|---|
 | Name | Stowaway | 30. If taken: "Stowaway: Dev Disk Space" |
-| Subtitle | Stow build files and caches | 30 (30) |
+| Subtitle | Stow build files and caches | 30 (27) |
 | Bundle ID | com.brooklynspaceport.stowaway | |
 | SKU | stowaway-mac | |
 | Primary category | Developer Tools | |

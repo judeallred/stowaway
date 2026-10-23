@@ -5,6 +5,9 @@
 set -eu
 
 app=$(cd "$(dirname "$0")/.." && pwd)
+if command -v xcodegen >/dev/null 2>&1; then
+  xcodegen generate --quiet --spec "$app/project.yml"
+fi
 xcodebuild -quiet -project "$app/Stowaway.xcodeproj" -scheme Stowaway -configuration Debug \
   -derivedDataPath "$app/build/DerivedData" -destination 'platform=macOS' \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build

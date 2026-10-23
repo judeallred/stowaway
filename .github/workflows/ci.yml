@@ -56,4 +56,4 @@ jobs:
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: actionlint
       - run: zizmor --format=github .github/workflows
-      - run: shellcheck App/scripts/*.sh .githooks/*
+      - run: shellcheck install.sh App/scripts/*.sh .githooks/*

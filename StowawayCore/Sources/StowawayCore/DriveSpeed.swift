@@ -70,7 +70,11 @@ public struct DriveSpeed: Codable, Sendable, Equatable {
       guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
       defer { close(fd) }
       _ = fcntl(fd, F_NOCACHE, 1)
-      while buffer.withUnsafeMutableBytes({ Darwin.read(fd, $0.baseAddress, $0.count) }) > 0 {}
+      while true {
+        let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+        guard n >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        if n == 0 { break }
+      }
     }
     let small = folder.appendingPathComponent("small")
     try fm.createDirectory(at: small, withIntermediateDirectories: false)
@@ -79,8 +83,9 @@ public struct DriveSpeed: Codable, Sendable, Equatable {
       for i in 0..<smallFiles {
         let fd = open(small.appendingPathComponent("f\(i)").path, O_WRONLY | O_CREAT, 0o600)
         guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
-        _ = block.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
+        let n = block.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
         close(fd)
+        guard n == block.count else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
       }
       let dir = open(small.path, O_RDONLY)
       if dir >= 0 {

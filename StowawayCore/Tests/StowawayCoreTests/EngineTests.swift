@@ -107,6 +107,26 @@ final class EngineTests: XCTestCase {
       code.appendingPathComponent("app/node_modules").path)
   }
 
+  /// A copy that fails partway (here, a file that can't be read) leaves the folder where it was,
+  /// unrecorded, and nothing behind on the drive.
+  func testAFailedCopyLeavesNothingOnTheDrive() throws {
+    let s = try Scratch()
+    let (engine, code, drive) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    let unreadable = try s.file("code/app/.next/secret.js", "x")
+    XCTAssertEqual(chmod(unreadable.path, 0), 0)
+    defer { chmod(unreadable.path, 0o600) }
+    let next = code.appendingPathComponent("app/.next")
+
+    XCTAssertThrowsError(try engine.adopt(next.path, kind: .next))
+    XCTAssertTrue(isRealDirectory(next.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: unreadable.path))
+    XCTAssertTrue(engine.entries().isEmpty)
+    let store = drive.appendingPathComponent(Engine.storeFolderName)
+      .appendingPathComponent(engine.installID)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
+  }
+
   func testTheFreeLimitStopsNewOffloadsOnly() throws {
     let s = try Scratch()
     let (engine, code, _) = try makeEngine(s)
