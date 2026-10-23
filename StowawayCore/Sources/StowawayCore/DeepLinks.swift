@@ -216,7 +216,9 @@ extension Engine {
     }
     let compared = Date()
 
-    let trash = local.appendingPathComponent(".stowaway-trash-\(UUID().uuidString.prefix(8))")
+    // Next to node_modules, not in it: emptying it later would date node_modules after npm's
+    // lockfile, and npm would distrust the lockfile at the next install.
+    let trash = Self.packagesTrash(for: local)
     if !todo.isEmpty { try fm.createDirectory(at: trash, withIntermediateDirectories: false) }
     for (i, package) in todo.enumerated() {
       let rel = Self.relative(package.path, to: local)
@@ -311,6 +313,9 @@ extension Engine {
       let source = package.appendingPathComponent(entry)
       let destination = target.appendingPathComponent(entry)
       if isRealDirectory(source.path) {
+        // Replaced, not merged: files a rebuild removed mustn't come back through the link.
+        var st = stat()
+        if lstat(destination.path, &st) == 0 { try Copier.remove(destination) }
         let stats = try Copier.copyContents(of: source, into: destination)
         total.files += stats.files
         total.directories += stats.directories
@@ -595,6 +600,13 @@ extension Engine {
 
   /// After an interrupted re-offload: deletes the trash (its contents are already on the drive)
   /// and restores links that were set aside but not yet created.
+  /// Where a re-offload sets package files aside: `.node_modules.stowaway-trash-<id>` in the
+  /// project.
+  static func packagesTrash(for local: URL) -> URL {
+    local.deletingLastPathComponent().appendingPathComponent(
+      ".\(local.lastPathComponent).stowaway-trash-\(UUID().uuidString.prefix(8))")
+  }
+
   /// Marks the file naming the package an aside folder's entries came from.
   static let asideOwnerSuffix = ".package"
 
@@ -624,6 +636,8 @@ extension Engine {
   func recoverPackages(_ entry: Entry, store mine: URL) {
     let fm = FileManager.default
     let local = URL(fileURLWithPath: entry.local)
+    // Earlier versions set package files aside inside node_modules (now it's next to it, which
+    // `recover` sweeps).
     for name in (try? fm.contentsOfDirectory(atPath: local.path)) ?? []
     where name.hasPrefix(".stowaway-trash-") {
       let trash = local.appendingPathComponent(name)
@@ -698,6 +712,16 @@ extension Engine {
           }
           continue
         }
+        // A link into this store whose file is gone (deleted on the drive) has nothing to bring
+        // back: drop it, and the next npm install restores the file.
+        var st = stat()
+        if lstat(link, &st) != 0 {
+          try fm.removeItem(at: path)
+          note(
+            "\(path.path) led to a file missing from the drive; npm restores it at the next install"
+          )
+          continue
+        }
         // Follow chains only within the store (an older release could have left one), and refuse
         // anything else: the drive isn't trusted.
         let target = canonicalPath(link)
@@ -743,7 +767,12 @@ extension Engine {
       var dirStat = stat()
       lstat(local.path, &dirStat)
       try fm.removeItem(at: lockfile)
-      _ = copyfile(target, lockfile.path, nil, copyfile_flags_t(COPYFILE_ALL))
+      if copyfile(target, lockfile.path, nil, copyfile_flags_t(COPYFILE_ALL)) != 0 {
+        // npm rebuilds it at the next install; worth knowing, not worth stopping for.
+        note(
+          "couldn't bring back npm's lockfile for \(entry.local): \(String(cString: strerror(errno)))"
+        )
+      }
       Self.setTimes(local, from: dirStat)
     }
     try checkContained(store, in: mine)

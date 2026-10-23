@@ -220,7 +220,8 @@ final class DeepLinkTests: XCTestCase {
     try engine.adopt(nm.path)
     // As a crash would leave it: package a's entries moved aside, not yet linked.
     let package = nm.appendingPathComponent("a")
-    let trash = nm.appendingPathComponent(".stowaway-trash-test")
+    let trash = nm.deletingLastPathComponent().appendingPathComponent(
+      ".node_modules.stowaway-trash-test")
     let aside = trash.appendingPathComponent("0")
     try FileManager.default.createDirectory(at: aside, withIntermediateDirectories: true)
     try Data(package.path.utf8).write(
@@ -260,5 +261,67 @@ final class DeepLinkTests: XCTestCase {
     XCTAssertEqual(
       try String(contentsOf: nm.appendingPathComponent("a/index.js"), encoding: .utf8),
       "module.exports = require('b')")
+  }
+
+  /// A re-offload leaves node_modules dated no later than npm's lockfile, so npm still trusts
+  /// the lockfile at the next install (its trash used to be emptied inside node_modules).
+  func testAReoffloadKeepsNpmsLockfileTrusted() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    // An install: a new package, then npm rewrites its lockfile.
+    try s.file("code/app/node_modules/d/package.json", #"{ "name": "d" }"#)
+    let lockfile = nm.appendingPathComponent(".package-lock.json")
+    try FileManager.default.removeItem(at: lockfile)
+    try s.file("code/app/node_modules/.package-lock.json", "{}")
+    try engine.exclusively {
+      let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(
+        try XCTUnwrap(engine.entries().first).remote)
+      try engine.offloadPackages(local: nm, store: store)
+    }
+    let modified = { (url: URL) throws -> Date in
+      try XCTUnwrap(
+        url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+    }
+    XCTAssertLessThanOrEqual(try modified(nm), try modified(lockfile.resolvingSymlinksInPath()))
+  }
+
+  /// A rebuilt folder in a partly linked package replaces its copy in the store: files the
+  /// rebuild removed don't come back through the link.
+  func testARebuiltFolderReplacesItsCopy() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try s.file("code/app/node_modules/a/build/old.node", "old")
+    try engine.adopt(nm.path)
+    // A native rebuild: build/ is real again, without old.node.
+    let build = nm.appendingPathComponent("a/build")
+    try FileManager.default.removeItem(at: build)
+    try s.file("code/app/node_modules/a/build/new.node", "new")
+    try engine.exclusively {
+      let store = try XCTUnwrap(engine.enterGrants()).appendingPathComponent(
+        try XCTUnwrap(engine.entries().first).remote)
+      try engine.offloadPackages(local: nm, store: store)
+    }
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: build.appendingPathComponent("new.node").path))
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: build.appendingPathComponent("old.node").path))
+  }
+
+  /// A link into the store whose file is gone doesn't stop bringing the project back.
+  func testReleaseDropsLinksToMissingFiles() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let nm = try project(s)
+    try engine.adopt(nm.path)
+    let index = nm.appendingPathComponent("a/index.js")
+    try FileManager.default.removeItem(
+      atPath: try FileManager.default.destinationOfSymbolicLink(atPath: index.path))
+    XCTAssertNoThrow(try engine.release(nm.path))
+    XCTAssertTrue(engine.entries().isEmpty)
+    XCTAssertFalse(isSymlink(index.path))
+    XCTAssertFalse(isSymlink(nm.appendingPathComponent("a/package.json").path))
   }
 }

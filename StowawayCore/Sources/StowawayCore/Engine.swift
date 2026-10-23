@@ -896,11 +896,19 @@ public final class Engine: @unchecked Sendable {
       for entry in entries() {
         let local = URL(fileURLWithPath: entry.local)
         let parent = local.deletingLastPathComponent()
-        for name in (try? fm.contentsOfDirectory(atPath: parent.path)) ?? []
-        where name.hasPrefix(".\(local.lastPathComponent).stowaway-old-")
-          || name.hasPrefix(".\(local.lastPathComponent).stowaway-releasing-")
-        {
-          try? Copier.remove(parent.appendingPathComponent(name))
+        for name in (try? fm.contentsOfDirectory(atPath: parent.path)) ?? [] {
+          let leftover = parent.appendingPathComponent(name)
+          if name.hasPrefix(".\(local.lastPathComponent).stowaway-old-")
+            || name.hasPrefix(".\(local.lastPathComponent).stowaway-releasing-")
+          {
+            try? Copier.remove(leftover)
+          } else if entry.mode == .packages,
+            name.hasPrefix(".\(local.lastPathComponent).stowaway-trash-")
+          {
+            // An npm re-offload's trash: put back what wasn't linked yet, then empty it.
+            Self.restoreAside(in: leftover, local: local)
+            try? Copier.remove(leftover)
+          }
         }
         if entry.mode == .packages, let store {
           // A project unchanged since it was last settled wasn't interrupted: skip the walk.
