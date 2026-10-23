@@ -34,7 +34,7 @@ struct StowStatus: View {
         Text(activity).lineLimit(2).truncationMode(.middle)
       }
     } else if model.paused {
-      Label("Paused: nothing moves to the drive until you resume", systemImage: "pause.circle")
+      Label("Paused: nothing is stowed automatically until you resume", systemImage: "pause.circle")
     } else if let intent = model.stopIntent, let name = model.driveName {
       Label(
         intent == .quickDrop
