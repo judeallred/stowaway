@@ -156,6 +156,10 @@ final class AppModel {
   var autoStowAgain = false
   /// The drive is being ejected: nothing is stowed onto it meanwhile.
   var ejecting = false
+  /// Counts settings reads, so one that finishes after a newer one doesn't overwrite it.
+  var settingsGeneration = 0
+  /// Stows running now (by hand or automatically). Stopping the drive waits for them.
+  var stowsInFlight = 0
   /// When stowed folders were last re-measured on the drive.
   var lastRecount = Date.distantPast
   var detectedProjectFolders: [ProjectFinder.Suggestion] = []

@@ -155,6 +155,17 @@ extension AppModel {
       scanRequested = true
       return
     }
+    // A rescan counts as scanning, so a full scan waits for it (and it for one): two would each
+    // replace the rows with their own view, and the older could win.
+    scanning = true
+    defer {
+      scanning = false
+      scheduleDueCheck()
+      if scanRequested {
+        scanRequested = false
+        requestScan()
+      }
+    }
     let roots = engine.rootPaths
     let found = await Task.detached {
       folders.flatMap { Scanner().scan(folder: $0, roots: roots) }
@@ -171,7 +182,17 @@ extension AppModel {
     present.formUnion(found.map(\.path))
     await measure(only: Set(found.map(\.path)))
     await autoOffload()
-    scheduleDueCheck()
+  }
+
+  /// Brings the rows up to date with the engine right after an operation, instead of at the
+  /// next scan: what was stowed, brought back or deleted shows as such, and a following
+  /// operation sees it.
+  func syncRowsWithEngine() {
+    let candidates = rows.map(\.candidate).filter { c in
+      var st = stat()
+      return lstat(c.path, &st) == 0
+    }
+    rows = merge(candidates: candidates, entries: engine.entries())
   }
 
   /// Scans now, or as soon as a minute has passed since the last one.

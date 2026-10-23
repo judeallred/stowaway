@@ -190,15 +190,22 @@ extension AppModel {
   )
     async -> (any Error)?
   {
-    activity = Self.describe(op, row, index: index, of: count)
+    let doing = Self.describe(op, row, index: index, of: count)
+    activity = doing
     operation = op
     queued.remove(row.path)
     busy.insert(row.path)
     problems[row.path] = nil
+    if op == .stowing { stowsInFlight += 1 }
     defer {
       busy.remove(row.path)
-      activity = nil
-      operation = nil
+      if op == .stowing { stowsInFlight -= 1 }
+      // Cleared only if nothing else has taken the status line since.
+      if activity == doing {
+        activity = nil
+        operation = nil
+      }
+      syncRowsWithEngine()
     }
     let engine = engine
     let limit = store.offloadLimit
@@ -212,6 +219,17 @@ extension AppModel {
     }.value
   }
 
+  /// Whether an operation still makes sense for a folder as it is now.
+  private static func applies(_ op: Operation, to row: Row) -> Bool {
+    switch op {
+    case .stowing:
+      var st = stat()
+      return row.place == .mac && lstat(row.path, &st) == 0
+    case .bringingBack: return !row.entryPaths.isEmpty
+    case .deleting, .scanning, .testing: return true
+    }
+  }
+
   /// Runs `work` for each row, one at a time, then rescans once. One row's failure is shown;
   /// with several, failures are skipped. Reaching the free limit stops the run and offers the
   /// upgrade.
@@ -222,14 +240,28 @@ extension AppModel {
       !busy.contains($0.path) && !(op == .stowing && queued.contains($0.path))
     }
     guard !rows.isEmpty else { return }
+    // Stowing, bringing back and deleting stowed folders touch the drive, which is going away;
+    // deleting folders only on this Mac doesn't.
+    let touchesDrive = op != .deleting || rows.contains { !$0.entryPaths.isEmpty }
+    guard !(ejecting && touchesDrive) else {
+      message = "\(driveName ?? "The drive") is being ejected."
+      return
+    }
     // Only stowing depends on purchases (the free limit); bringing back and deleting never wait.
     if op == .stowing { await store.waitUntilLoaded() }
     if op == .stowing { queued.formUnion(rows.map(\.path)) }
     defer { queued.subtract(rows.map(\.path)) }
     var failures: [any Error] = []
-    for (i, row) in rows.enumerated() {
+    for (i, picked) in rows.enumerated() {
       // The user stopped using the drive: stow nothing more.
       if op == .stowing, stoppingDrive { break }
+      // As the folder is now, not when it was chosen: another operation may have stowed,
+      // brought back or deleted it meanwhile.
+      guard let row = self.rows.first(where: { $0.path == picked.path }), Self.applies(op, to: row)
+      else {
+        queued.remove(picked.path)
+        continue
+      }
       if op == .stowing, Measure.isBusy(row.candidate) {
         queued.remove(row.path)
         problems[row.path] = .waiting(Self.cargoInUse)
@@ -300,7 +332,8 @@ extension AppModel {
       guard mayAutoStow else { break }
       // As the folder is now: the user may have kept it on this Mac, or stowed or deleted it,
       // since the pass began.
-      guard let row = rows.first(where: { $0.path == picked.path }), row.place == .mac,
+      guard let row = rows.first(where: { $0.path == picked.path }),
+        Self.applies(.stowing, to: row),
         !busy.contains(row.path), !isHeldOnMac(row), !isRefused(row)
       else {
         queued.remove(picked.path)

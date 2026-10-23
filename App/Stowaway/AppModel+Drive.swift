@@ -16,6 +16,9 @@ extension AppModel {
     driveName = engine.driveName
     loginItemEnabled = SMAppService.mainApp.status == .enabled
     let engine = engine
+    // Reads can take seconds while the drive is busy: only the newest one's answer is used.
+    settingsGeneration += 1
+    let generation = settingsGeneration
     Task.detached {
       let drivePath = engine.drivePath
       let store = engine.enterGrants()
@@ -30,6 +33,7 @@ extension AppModel {
       let format = values?.volumeLocalizedFormatDescription
       let bytes = engine.offloadedBytes
       await MainActor.run {
+        guard generation == self.settingsGeneration else { return }
         self.drivePath = drivePath
         self.driveConnected = store != nil
         self.driveFreeBytes = free
@@ -44,12 +48,16 @@ extension AppModel {
   func testDriveSpeed() async {
     guard !testingSpeed else { return }
     testingSpeed = true
-    activity = "Testing the drive's speed…"
+    let doing = "Testing the drive's speed…"
+    activity = doing
     operation = .testing
     defer {
       testingSpeed = false
-      activity = nil
-      operation = nil
+      // Cleared only if nothing else has taken the status line since.
+      if activity == doing {
+        activity = nil
+        operation = nil
+      }
       // Stowing waited for the test.
       Task { await autoOffload() }
     }
@@ -78,7 +86,8 @@ extension AppModel {
     let engine = engine
     engine.paused = true
     ejecting = true
-    activity = "Ejecting \(name)…"
+    let doing = "Ejecting \(name)…"
+    activity = doing
     Task {
       await Task.detached { engine.prepareForEject() }.value
       do {
@@ -89,7 +98,7 @@ extension AppModel {
       }
       engine.paused = paused
       ejecting = false
-      activity = nil
+      if activity == doing { activity = nil }
       queueReconcile()
     }
   }
@@ -112,12 +121,18 @@ extension AppModel {
     grantDrive(url, openedAt: volumes)
   }
 
-  /// While Stowaway is bringing everything back or deleting it to stop using the drive, a second
-  /// choice would override the first: says so, and true.
+  /// While Stowaway is bringing everything back or deleting it to stop using the drive, or
+  /// ejecting it, another drive choice would cut across it: says so, and true.
   private func refusedWhileStopping() -> Bool {
-    guard stoppingDrive else { return false }
-    message = "Stowaway is still finishing with \(driveName ?? "the drive")."
-    return true
+    if stoppingDrive {
+      message = "Stowaway is still finishing with \(driveName ?? "the drive")."
+      return true
+    }
+    if ejecting {
+      message = "\(driveName ?? "The drive") is being ejected."
+      return true
+    }
+    return false
   }
 
   /// Uses a mounted volume (the panel opens on it; the user confirms).
@@ -322,6 +337,10 @@ extension AppModel {
       return
     }
     guard driveConnected else { return }  // resumes when the drive is back
+    // A stow under way finishes first (passes stop before their next folder once stopping is
+    // chosen); then everything stowed is known from the engine, not the last scan.
+    while stowsInFlight > 0 { try? await Task.sleep(for: .milliseconds(200)) }
+    syncRowsWithEngine()
     let stowed = rows.filter { !$0.entryPaths.isEmpty }
     if intent == .bringBack { await bringBack(stowed) } else { await delete(stowed) }
     guard engine.entries().isEmpty else {

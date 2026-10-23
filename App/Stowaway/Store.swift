@@ -50,6 +50,8 @@ final class Store {
   /// The most recent purchase, for the paid invoice.
   private(set) var latestPurchase: PurchaseRecord?
   private var updates: Task<Void, Never>?
+  /// Counts entitlement reads, so one that finishes after a newer one doesn't overwrite it.
+  private var entitlementsGeneration = 0
   #if DEBUG
     /// Snapshots only: pretend these were bought.
     func setDemoOwned(_ ids: Set<String>) { owned = ids }
@@ -166,6 +168,10 @@ final class Store {
   }
 
   func refreshEntitlements() async {
+    // Reads overlap (the updates listener, a purchase, a restore): only the newest one's answer
+    // is used.
+    entitlementsGeneration += 1
+    let generation = entitlementsGeneration
     var ids: Set<String> = []
     var latest: PurchaseRecord?
     for await entitlement in Transaction.currentEntitlements {
@@ -183,6 +189,7 @@ final class Store {
         }
       }
     }
+    guard generation == entitlementsGeneration else { return }
     owned = ids
     latestPurchase = latest
     loaded = true
