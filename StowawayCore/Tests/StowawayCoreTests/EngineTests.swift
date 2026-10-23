@@ -127,6 +127,23 @@ final class EngineTests: XCTestCase {
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
   }
 
+  /// A folder that can't be read fails the copy (it used to be skipped silently, and the
+  /// original deleted without it).
+  func testAnUnreadableFolderFailsTheCopy() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/locked/page.js", "x")
+    let locked = code.appendingPathComponent("app/.next/locked")
+    XCTAssertEqual(chmod(locked.path, 0o300), 0)
+    defer { chmod(locked.path, 0o700) }
+    let next = code.appendingPathComponent("app/.next")
+
+    XCTAssertThrowsError(try engine.adopt(next.path, kind: .next))
+    XCTAssertTrue(isRealDirectory(next.path))
+    XCTAssertTrue(engine.entries().isEmpty)
+  }
+
   func testTheFreeLimitStopsNewOffloadsOnly() throws {
     let s = try Scratch()
     let (engine, code, _) = try makeEngine(s)

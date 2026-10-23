@@ -45,15 +45,29 @@ public enum Copier {
     var leaves: [(String, String)] = []
     let srcPath = src.standardizedFileURL.path
     let dstPath = dst.standardizedFileURL.path
-    guard let walker = fm.enumerator(atPath: srcPath) else {
-      throw StowawayError("can't read \(srcPath)")
+    // fts, not FileManager's enumerator: that one skips a folder it can't read without a word,
+    // and the copy would look complete when the original is about to be deleted.
+    var roots: [UnsafeMutablePointer<CChar>?] = [strdup(srcPath), nil]
+    defer { free(roots[0]) }
+    guard let fts = fts_open(&roots, FTS_PHYSICAL | FTS_NOCHDIR, nil) else {
+      throw StowawayError.posix("reading", srcPath)
     }
-    while let rel = walker.nextObject() as? String {
-      let from = srcPath + "/" + rel
-      let to = dstPath + "/" + rel
-      var st = stat()
-      guard lstat(from, &st) == 0 else { throw StowawayError.posix("reading", from) }
-      if st.st_mode & S_IFMT == S_IFDIR {
+    defer { fts_close(fts) }
+    while let entry = fts_read(fts) {
+      let info = Int32(entry.pointee.fts_info)
+      let from = String(cString: entry.pointee.fts_path)
+      switch info {
+      case FTS_DNR, FTS_ERR, FTS_NS:
+        errno = entry.pointee.fts_errno
+        throw StowawayError.posix("reading", from)
+      case FTS_DP:
+        continue  // a folder, after its contents
+      default:
+        break
+      }
+      guard entry.pointee.fts_level > 0, let st = entry.pointee.fts_statp?.pointee else { continue }
+      let to = dstPath + "/" + from.dropFirst(srcPath.count + 1)
+      if info == FTS_D {
         try realDirectory(to)
         dirs.append((from, to))
       } else {
