@@ -418,7 +418,7 @@ extension AppModel {
     lastRecount = .now
     let engine = engine
     await Task.detached { engine.recountStowed() }.value
-    rows = merge(candidates: rows.map(\.candidate), entries: engine.entries())
+    rebuildRows(rows.map(\.candidate))
     refreshSettings()
   }
 }

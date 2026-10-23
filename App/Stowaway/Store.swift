@@ -52,6 +52,7 @@ final class Store {
   private var updates: Task<Void, Never>?
   /// Counts entitlement reads, so one that finishes after a newer one doesn't overwrite it.
   private var entitlementsGeneration = 0
+  private var appliedGeneration = 0
   #if DEBUG
     /// Snapshots only: pretend these were bought.
     func setDemoOwned(_ ids: Set<String>) { owned = ids }
@@ -189,10 +190,16 @@ final class Store {
         }
       }
     }
-    guard generation == entitlementsGeneration else { return }
+    guard generation == entitlementsGeneration else {
+      // A newer read is under way (a restore's own transactions start one): its answer counts,
+      // so callers that look at the result next (Restore Purchases) wait for it.
+      while appliedGeneration < generation { try? await Task.sleep(for: .milliseconds(50)) }
+      return
+    }
     owned = ids
     latestPurchase = latest
     loaded = true
+    appliedGeneration = generation
   }
 
   /// Waits (up to 15 seconds) for the first entitlement check.

@@ -11,6 +11,7 @@ extension AppModel {
     }
     scanning = true
     lastScan = .now
+    let asked = triggers
     // Scanning is housekeeping: shown only while there's nothing else to show yet.
     if activity == nil && rows.isEmpty {
       activity = "Scanning your folders…"
@@ -27,6 +28,7 @@ extension AppModel {
         scanRequested = false
         requestScan()
       }
+      rescanLeftovers()
     }
     let engine = engine
     let roots = engine.rootPaths
@@ -38,17 +40,18 @@ extension AppModel {
     let known = Set(rows.map(\.path))
     let newCaches = caches.filter { !known.contains($0.path) }
     if !newCaches.isEmpty {
-      rows = merge(candidates: rows.map(\.candidate) + newCaches, entries: engine.entries())
+      rebuildRows(rows.map(\.candidate) + newCaches)
     }
     let candidates = await Task.detached {
       engine.enterGrants()
       return Scanner().scan(roots: roots)
     }.value
-    rows = merge(candidates: candidates, entries: engine.entries())
-    // Folders that asked for this scan but aren't rows don't ask again.
+    rebuildRows(candidates)
+    // Folders that asked for this scan but aren't rows don't ask again. Only those that asked
+    // before it began: the walk may have passed one that appeared since.
     let listed = Set(rows.map(\.path))
-    setAside.formUnion(triggers.subtracting(listed))
-    triggers = []
+    setAside.formUnion(asked.subtracting(listed))
+    triggers.subtract(asked)
     present = Set(
       listed.filter { path in
         var st = stat()
@@ -148,13 +151,13 @@ extension AppModel {
   /// Scans just the folders that changed (not every root), updates their rows, and stows what's
   /// due. A full scan running meanwhile covers them instead.
   func rescan() async {
+    guard !dirtyFolders.isEmpty else { return }
+    // A scan under way may have walked these folders before they changed: they're kept, and
+    // rescanned when it ends (`rescanLeftovers`).
+    guard !scanning else { return }
     let folders = dirtyFolders
     dirtyFolders = []
-    guard !folders.isEmpty else { return }
-    guard !scanning else {
-      scanRequested = true
-      return
-    }
+    let asked = triggers
     // A rescan counts as scanning, so a full scan waits for it (and it for one): two would each
     // replace the rows with their own view, and the older could win.
     scanning = true
@@ -165,6 +168,7 @@ extension AppModel {
         scanRequested = false
         requestScan()
       }
+      rescanLeftovers()
     }
     let roots = engine.rootPaths
     let found = await Task.detached {
@@ -175,13 +179,19 @@ extension AppModel {
     let kept = rows.filter { row in
       !(row.entryPaths.isEmpty && folders.contains { row.path.isWithin($0) })
     }
-    rows = merge(candidates: kept.map(\.candidate) + found, entries: engine.entries())
+    rebuildRows(kept.map(\.candidate) + found)
     let listed = Set(rows.map(\.path))
-    setAside.formUnion(triggers.subtracting(listed))
-    triggers = []
+    setAside.formUnion(asked.subtracting(listed))
+    triggers.subtract(asked)
     present.formUnion(found.map(\.path))
     await measure(only: Set(found.map(\.path)))
     await autoOffload()
+  }
+
+  /// Rescans folders that changed while a scan or rescan was running.
+  func rescanLeftovers() {
+    guard !dirtyFolders.isEmpty, !rescanScheduled else { return }
+    Task { await rescan() }
   }
 
   /// Brings the rows up to date with the engine right after an operation, instead of at the
@@ -192,7 +202,24 @@ extension AppModel {
       var st = stat()
       return lstat(c.path, &st) == 0
     }
-    rows = merge(candidates: candidates, entries: engine.entries())
+    rebuildRows(candidates)
+  }
+
+  /// Replaces the rows with these folders and what's stowed. Each row's own size and last
+  /// change carry over: `checkActivity` updates them on the rows only, and going back to
+  /// `measured` would make a folder that just changed look quiet.
+  func rebuildRows(_ candidates: [Candidate]) {
+    let known = Dictionary(
+      rows.map { ($0.path, (bytes: $0.localBytes, activity: $0.lastActivity)) },
+      uniquingKeysWith: { first, _ in first })
+    rows = merge(candidates: candidates, entries: engine.entries()).map { row in
+      var row = row
+      if let known = known[row.path] {
+        row.localBytes = known.bytes ?? row.localBytes
+        row.lastActivity = known.activity ?? row.lastActivity
+      }
+      return row
+    }
   }
 
   /// Scans now, or as soon as a minute has passed since the last one.
