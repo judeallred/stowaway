@@ -28,6 +28,12 @@ final class AppModel {
   var problems: [String: Problem] = [:]
   /// The last few things that went wrong, newest last, for bug reports (kept in memory only).
   var recentFailures: [(date: Date, text: String)] = []
+  /// The last few drive choices, newest last, for bug reports: where the panel opened, what it
+  /// gave back and what came of it. Described, never as paths, and kept across launches so a
+  /// report can follow a relaunch.
+  var driveChoices: [String] = UserDefaults.standard.stringArray(forKey: "driveChoices") ?? [] {
+    didSet { UserDefaults.standard.set(driveChoices, forKey: "driveChoices") }
+  }
   /// Folders whose last stow failed, and when automatic stowing may try again.
   var retryAfter: [String: Date] = [:]
   /// Folders the scan found Stowaway can't stow (pnpm projects…), with the reason.

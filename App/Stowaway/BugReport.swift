@@ -2,9 +2,8 @@ import Foundation
 import StowawayCore
 
 /// A prefilled GitHub issue. Nothing is sent until the user reviews and submits it in their
-/// browser. It carries versions, counts, and the last few failures, whose folder paths are
-/// shortened to `~/…`; the report asks the user to remove names they'd rather not share, since
-/// the issue is public.
+/// browser. It carries versions, counts, and the last few failures, with paths, file names and
+/// the drive's name replaced by `[REDACTED]`, since the issue is public.
 enum BugReport {
   /// How many recent failures the app keeps, and the report includes.
   static let failuresKept = 10
@@ -27,14 +26,31 @@ enum BugReport {
       Drive chosen: \(model.drivePath == nil ? "no" : "yes"), connected: \(model.driveConnected ? "yes" : "no")
       Folders found: \(kinds.joined(separator: ", "))
       """
+    if let drive = model.drivePath {
+      body +=
+        "\nDrive location: \(AppModel.describeLocation(URL(fileURLWithPath: drive), relativeTo: nil))"
+    }
+    if !model.driveChoices.isEmpty {
+      body += """
+
+
+        **Drive choices**
+        ```
+        \(model.driveChoices.joined(separator: "\n"))
+        ```
+        """
+    }
     if !model.recentFailures.isEmpty {
+      let redactor = Redactor(
+        known: [realHomeDirectory.path, model.drivePath, model.lastDrivePath, model.driveName]
+          .compactMap { $0 } + model.roots + model.rows.map(\.path))
       let time = Date.FormatStyle(date: .omitted, time: .shortened)
       body += """
 
 
-        **Recent problems** (this issue is public: remove any folder names you'd rather not share)
+        **Recent problems** (personal details redacted; this issue is public)
         ```
-        \(model.recentFailures.map { "\($0.date.formatted(time))  \(shortened($0.text))" }.joined(separator: "\n"))
+        \(model.recentFailures.map { "\($0.date.formatted(time))  \(shortened(redactor.redact($0.text)))" }.joined(separator: "\n"))
         ```
         """
     }
@@ -43,10 +59,8 @@ enum BugReport {
     return components?.url ?? Links.issues
   }
 
-  /// The home folder as `~`, and long lines cut, so the link stays within GitHub's limits.
+  /// Long lines cut, so the link stays within GitHub's limits.
   static func shortened(_ text: String) -> String {
-    let home = realHomeDirectory.path
-    let short = text.replacingOccurrences(of: home, with: "~")
-    return short.count > 300 ? String(short.prefix(299)) + "…" : short
+    text.count > 300 ? String(text.prefix(299)) + "…" : text
   }
 }

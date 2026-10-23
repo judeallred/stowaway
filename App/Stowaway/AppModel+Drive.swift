@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 import ServiceManagement
 import StowawayCore
 
@@ -87,30 +88,135 @@ extension AppModel {
 
   // MARK: Choosing and forgetting
 
-  func chooseDrive() {
-    guard
-      let url = Panels.chooseFolder(
-        "Choose where stowed folders go: an external drive, or a folder on one.",
-        at: URL(fileURLWithPath: "/Volumes"))
-    else { return }
-    grantDrive(url)
+  /// Choosing the first drive opens inside it when only one is connected: the panel on /Volumes lists
+  /// "Macintosh HD" (a link to /) beside the drives, and a click meant for the drive can land on
+  /// it, notably while the drive is still mounting and the list shifts. Changing drives, or
+  /// `anywhere` (for "Somewhere Else…" beside a button for the drive), opens on /Volumes.
+  func chooseDrive(anywhere: Bool = false) {
+    if !anywhere, driveName == nil, externalVolumes.count == 1, let volume = externalVolumes.first {
+      chooseDrive(volume)
+      return
+    }
+    let volumes = URL(fileURLWithPath: "/Volumes")
+    let url = Panels.chooseFolder(
+      "Choose where stowed folders go: an external drive, or a folder on one.", at: volumes)
+    grantDrive(url, openedAt: volumes)
   }
 
   /// Uses a mounted volume (the panel opens on it; the user confirms).
   func chooseDrive(_ volume: URL) {
-    guard
-      let url = Panels.chooseFolder(
-        "Click Choose to keep stowed folders on \(volume.lastPathComponent).", at: volume)
-    else { return }
-    grantDrive(url)
+    let url = Panels.chooseFolder(
+      "Click Choose to keep stowed folders on \(volume.lastPathComponent).", at: volume)
+    grantDrive(url, openedAt: volume)
   }
 
-  private func grantDrive(_ url: URL) {
+  /// Checks and saves the panel's answer (nil if cancelled), noting the choice for bug reports.
+  private func grantDrive(_ url: URL?, openedAt start: URL) {
+    let opened =
+      start.path == "/Volumes"
+      ? "on /Volumes" : "inside \(Self.describeLocation(start, relativeTo: nil))"
+    let attempt =
+      "Window opened \(opened), with \(Format.count(externalVolumes.count, "external drive")) connected"
+    guard let url else {
+      noteDriveChoice("\(attempt); cancelled")
+      return
+    }
+    let got = "\(attempt); got \(Self.describeLocation(url, relativeTo: start))"
+    if let problem = Self.whyNotADrive(url) {
+      let buttons = problem.canUseAnyway ? ["Choose Another…", "Use Anyway"] : ["Choose Another…"]
+      let choice = Panels.ask(problem.title, problem.detail, buttons: buttons)
+      noteDriveChoice(
+        "\(got); warned, then \(choice == 1 ? "used anyway" : choice == 0 ? "chose again" : "cancelled")"
+      )
+      if choice == 0 { chooseDrive() }
+      guard choice == 1 else { return }  // 1 is Use Anyway
+    } else {
+      noteDriveChoice("\(got); used")
+    }
     grant(url, as: .drive) { [weak self] in
       // A new drive: test its speed, so Settings can say what it's good for.
       self?.driveSpeed = nil
       Task { await self?.testDriveSpeed() }
     }
+  }
+
+  private func noteDriveChoice(_ text: String) {
+    Self.driveLog.info("\(text, privacy: .public)")
+    let time = Date.now.formatted(.dateTime.month(.abbreviated).day().hour().minute().second())
+    driveChoices.append("\(time)  \(text)")
+    if driveChoices.count > 5 { driveChoices.removeFirst(driveChoices.count - 5) }
+  }
+
+  static let driveLog = Logger(subsystem: "com.brooklynspaceport.stowaway", category: "drive")
+
+  /// What kind of place a location is, without naming it: "/", this Mac's own disk, the top of
+  /// an external drive, a folder on one… and whether it's on the volume the panel opened on.
+  static func describeLocation(_ url: URL, relativeTo start: URL?) -> String {
+    let keys: Set<URLResourceKey> = [
+      .volumeURLKey, .volumeIsRootFileSystemKey, .volumeIsInternalKey, .volumeIsReadOnlyKey,
+      .volumeIdentifierKey,
+    ]
+    guard let values = try? url.resourceValues(forKeys: keys) else {
+      return "a location that couldn't be read"
+    }
+    let topLevel = values.volume?.standardizedFileURL.path == url.standardizedFileURL.path
+    var text: String
+    if url.standardizedFileURL.path == "/" {
+      text = "/ (this Mac's own disk)"
+    } else if values.volumeIsRootFileSystem == true {
+      text = topLevel ? "the top of this Mac's own disk" : "a folder on this Mac's own disk"
+    } else if values.volumeIsInternal == true {
+      text = topLevel ? "the top of another internal disk" : "a folder on another internal disk"
+    } else {
+      text = topLevel ? "the top of an external drive" : "a folder on an external drive"
+    }
+    if values.volumeIsReadOnly == true { text += ", read-only" }
+    if let start, start.path != "/Volumes" {
+      let startVolume = try? start.resourceValues(forKeys: [.volumeIdentifierKey])
+      let same =
+        (values.volumeIdentifier as? NSObject).map { $0.isEqual(startVolume?.volumeIdentifier) }
+        ?? false
+      if !same { text += ", not the drive the window opened in" }
+    }
+    return text
+  }
+
+  /// Why a chosen location is a poor place for stowed folders, if it is. This Mac's own disk
+  /// frees nothing (and its system volume is read-only); macOS can hand it back even when the
+  /// user meant a drive, since the panel opens on /Volumes, where "Macintosh HD" (a link to /)
+  /// sits beside the drives. Another internal disk works but frees nothing on a one-disk Mac, so
+  /// it's a warning the user can override.
+  static func whyNotADrive(_ url: URL) -> (title: String, detail: String, canUseAnyway: Bool)? {
+    let keys: Set<URLResourceKey> = [
+      .volumeIsRootFileSystemKey, .volumeIsReadOnlyKey, .volumeIsInternalKey,
+      .volumeIdentifierKey, .volumeLocalizedNameKey,
+    ]
+    guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+    let name = values.volumeLocalizedName ?? url.lastPathComponent
+    let home = try? realHomeDirectory.resourceValues(forKeys: [.volumeIdentifierKey])
+    let onHomeVolume =
+      (values.volumeIdentifier as? NSObject).map { $0.isEqual(home?.volumeIdentifier) } ?? false
+    if values.volumeIsRootFileSystem == true || onHomeVolume {
+      return (
+        "That’s this Mac’s own disk, \(name)",
+        "Stowing frees space by moving folders to another drive, so it can’t use this one. If you meant an external drive, select it under Locations in the window’s sidebar, then click Choose.",
+        false
+      )
+    }
+    if values.volumeIsReadOnly == true {
+      return (
+        "\(name) is read-only", "Stowaway needs a drive it can write to. Choose another drive.",
+        false
+      )
+    }
+    if values.volumeIsInternal == true {
+      return (
+        "\(name) is inside this Mac",
+        "Stowing there frees space only if it’s a different disk from the one your projects are on. An external drive is usually what you want.",
+        true
+      )
+    }
+    return nil
   }
 
   /// External drives that are mounted now, for choosing one in one click. Read-only volumes
