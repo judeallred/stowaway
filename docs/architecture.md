@@ -17,7 +17,10 @@ those:
   disk while Spotlight was indexing it.
 - **npm gets "deep links" instead** (below): npm treats a symlinked package as a `link:`
   dependency and reinstalls everything on every run. With real package folders and linked
-  contents, `npm install` with nothing to change takes about 0.3 s.
+  contents, `npm install` with nothing to change takes about 0.3 s. (The benchmarks and method
+  are in the
+  [sandbox experiments](https://github.com/judeallred/stowaway/blob/b27bbd3/research/sandbox-probe/results/bench.md),
+  since removed from the repository.)
 - **Unplugging swaps each link for a local folder,** which is quicker than reattaching images
   (under a second for 20 folders) and costs nothing per folder. The tradeoff is that the app has
   to be running: quit while the drive is away, links dangle until it starts again.
@@ -35,7 +38,7 @@ as a security-scoped bookmark (`Engine.grant`), in two roles:
 - **Roots:** folders to scan and manage, such as `~/code`, or `~/.npm` for npm's caches. To swap a
   folder for a link, Stowaway needs the folder that *contains* it, so the onboarding and Settings
   ask for the parent of each cache.
-- **The offload location:** an external drive, or any folder. Stowaway keeps everything in
+- **The stow location:** an external drive, or any folder. Stowaway keeps everything in
   `Stowaway.noindex/<install-id>/` there. Spotlight skips `*.noindex` folders, and the random
   install ID keeps two Macs sharing a drive apart.
 
@@ -70,7 +73,7 @@ locations are added by granting them.
 **Sizes** are allocated blocks, measured with `fts`. **"Last changed"** is the newest of the
 folder, its top level, and the project's manifest and lockfiles.
 
-## Offloading a folder
+## Stowing a folder
 
 `Engine.adopt` validates first. The folder must:
 - be a real directory inside a root, not a root itself;
@@ -84,9 +87,9 @@ can't be read, the folder is left alone.
 Then it copies the folder into the store with a parallel copier (`Copier`), swaps the original
 for a symlink, and records an `Entry` in `entries.json` in the app's container. The local copy
 is deleted afterwards, in the background. **Splits:**
-- a Cargo `target/` is offloaded as its `deps`, `incremental` and `build` folders, so built
+- a Cargo `target/` is stowed as its `deps`, `incremental` and `build` folders, so built
   programs stay local;
-- DerivedData is offloaded as its intermediates, indexes and packages, so built apps stay local.
+- DerivedData is stowed as its intermediates, indexes and packages, so built apps stay local.
 
 Build output in a JavaScript project gets a `node_modules` link beside it in the store, leading
 back to the project's. Next.js's compiled server code `require`s packages from its real path on
@@ -126,7 +129,7 @@ parent package's `node_modules` first.)
 
 Projects that build with Turbopack (Next.js 16 by default) are refused unless they set
 `turbopack.root`, because Turbopack rejects files outside the project. pnpm projects are refused
-too: offloading pnpm's store covers them.
+too: stowing pnpm's store covers them.
 
 ## The drive coming and going
 
@@ -175,9 +178,9 @@ after an upgrade, a local folder after it's moved to the drive).
 
 `Cleaner` applies the same guard rails as stowing, and runs under the engine's lock
 (`Engine.delete`), so a delete can't interleave with stowing the same folder. It refuses folders outside the roots,
-folders git tracks, offloaded folders, and folders that no longer match their kind. It deletes
+folders git tracks, stowed folders, and folders that no longer match their kind. It deletes
 project folders outright, but only empties a cache folder, so the user's grant for it stays
-valid. Deleting an offloaded folder (`Engine.discard`) removes the link and its copy on the drive.
+valid. Deleting a stowed folder (`Engine.discard`) removes the link and its copy on the drive.
 
 ## Safety rules
 
@@ -192,7 +195,7 @@ valid. Deleting an offloaded folder (`Engine.discard`) removes the link and its 
   and a stow fails if it can't be. A list that can't be read is never written over: stowing,
   bringing back and deleting stop, and the app says so at launch.
 - **Data is never held hostage.** Bringing folders back and deleting them never require a
-  purchase; the free limit only stops *new* offloads.
+  purchase; the free limit only stops *new* stows.
 
 ## Purchases
 
