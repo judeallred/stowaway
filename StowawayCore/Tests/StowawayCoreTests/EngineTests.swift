@@ -144,6 +144,36 @@ final class EngineTests: XCTestCase {
     XCTAssertTrue(engine.entries().isEmpty)
   }
 
+  /// A list of stowed folders that can't be read is never written over: stowing is refused
+  /// and the file is left as it was.
+  func testAnUnreadableListIsNeverOverwritten() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/page.js", "x")
+    let damaged = Data("[{\"id\": ".utf8)
+    try damaged.write(to: engine.stateURL)
+
+    XCTAssertNotNil(engine.listProblem)
+    XCTAssertThrowsError(try engine.adopt(code.appendingPathComponent("app/.next").path))
+    XCTAssertEqual(try Data(contentsOf: engine.stateURL), damaged)
+    XCTAssertTrue(isRealDirectory(code.appendingPathComponent("app/.next").path))
+  }
+
+  /// An entry of a kind this version doesn't know still loads, so the rest of the list does.
+  func testAnUnknownKindStillLoads() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let json = #"""
+      [{"id": "a", "local": "/x/node_modules", "remote": "x-a", "online": true,
+        "adoptedAt": 0, "kind": "something-new"}]
+      """#
+    try Data(json.utf8).write(to: engine.stateURL)
+    XCTAssertNil(engine.listProblem)
+    XCTAssertEqual(engine.entries().map(\.id), ["a"])
+    XCTAssertNil(engine.entries().first?.kind)
+  }
+
   func testTheFreeLimitStopsNewOffloadsOnly() throws {
     let s = try Scratch()
     let (engine, code, _) = try makeEngine(s)

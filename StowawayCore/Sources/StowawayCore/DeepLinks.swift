@@ -89,7 +89,7 @@ extension Engine {
       Entry(
         id: id, local: local.path, remote: remoteRel, online: true, adoptedAt: Date(),
         mode: .packages, kind: .node))
-    save(all)
+    try save(all)
     let stats = try offloadPackages(local: local, store: store.appendingPathComponent(remoteRel))
     update(id) { $0.bytes = stats.bytes }
     note("offloaded \(local.path) package by package: \(stats)")

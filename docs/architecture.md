@@ -188,6 +188,9 @@ valid. Deleting an offloaded folder (`Engine.discard`) removes the link and its 
 - **The drive isn't trusted.** It may be shared or modified. Paths read from it (entries, the
   deep-link manifest) are rejected if they escape the store (`Engine.storePath`,
   `Engine.validated`).
+- **The list of stowed folders is never guessed.** It's saved before a local folder is touched,
+  and a stow fails if it can't be. A list that can't be read is never written over: stowing,
+  bringing back and deleting stop, and the app says so at launch.
 - **Data is never held hostage.** Bringing folders back and deleting them never require a
   purchase; the free limit only stops *new* offloads.
 

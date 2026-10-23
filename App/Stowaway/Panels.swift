@@ -17,6 +17,16 @@ enum Panels {
     return panel.runModal() == .OK ? panel.url : nil
   }
 
+  /// A warning with only an OK button.
+  static func tell(_ title: String, _ detail: String) {
+    let alert = NSAlert()
+    alert.alertStyle = .critical
+    alert.messageText = title
+    alert.informativeText = detail
+    NSApp.activate()
+    alert.runModal()
+  }
+
   /// A warning with buttons (the last is Cancel). Returns the index of the button clicked, or
   /// nil for Cancel. `destructive` marks buttons that delete or forget something.
   static func ask(

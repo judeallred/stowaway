@@ -55,7 +55,9 @@ public struct Entry: Codable, Sendable, Identifiable, Equatable {
     online = try c.decode(Bool.self, forKey: .online)
     adoptedAt = try c.decode(Date.self, forKey: .adoptedAt)
     mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? .folder
-    kind = try c.decodeIfPresent(Kind.self, forKey: .kind)
+    // A kind this version doesn't know (written by a newer one) reads as unknown rather than
+    // making the whole list unreadable.
+    kind = (try? c.decodeIfPresent(Kind.self, forKey: .kind)) ?? nil
     bytes = try c.decodeIfPresent(Int64.self, forKey: .bytes) ?? 0
     container = try c.decodeIfPresent(String.self, forKey: .container)
   }
@@ -254,7 +256,7 @@ public final class Engine: @unchecked Sendable {
           try? fm.createDirectory(atPath: entry.local, withIntermediateDirectories: false)
         }
       }
-      save([])
+      try save([])
       lock.withLock {
         defaults.removeObject(forKey: "drive")
         defaults.removeObject(forKey: "driveName")
@@ -369,19 +371,44 @@ public final class Engine: @unchecked Sendable {
 
   // MARK: State
 
-  public func entries() -> [Entry] {
-    guard let data = try? Data(contentsOf: stateURL) else { return [] }
-    return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
+  /// The stowed folders. Empty if none were stowed yet, and also if the list can't be read
+  /// (`listProblem` says why); then nothing is written over it.
+  public func entries() -> [Entry] { (try? loadEntries()) ?? [] }
+
+  /// Why the list of stowed folders can't be read (damaged, or written by a newer version), if
+  /// it can't. Stowing, bringing back and deleting are refused until it's sorted out, since
+  /// writing a new list would forget every folder on the old one.
+  public var listProblem: String? {
+    do {
+      _ = try loadEntries()
+      return nil
+    } catch {
+      return
+        "Stowaway couldn't read its list of stowed folders (\(stateURL.path)): \(error.localizedDescription)"
+    }
   }
 
-  func save(_ entries: [Entry]) {
-    try? JSONEncoder().encode(entries).write(to: stateURL, options: .atomic)
+  private func loadEntries() throws -> [Entry] {
+    guard FileManager.default.fileExists(atPath: stateURL.path) else { return [] }
+    return try JSONDecoder().decode([Entry].self, from: Data(contentsOf: stateURL))
+  }
+
+  /// Writes the list. Refuses to replace a list that can't be read, and reports a failed write:
+  /// a stow must not go ahead unrecorded.
+  func save(_ entries: [Entry]) throws {
+    if let problem = listProblem { throw StowawayError(problem) }
+    try JSONEncoder().encode(entries).write(to: stateURL, options: .atomic)
   }
 
   func update(_ id: String, _ change: (inout Entry) -> Void) {
     var all = entries()
-    if let i = all.firstIndex(where: { $0.id == id }) { change(&all[i]) }
-    save(all)
+    guard let i = all.firstIndex(where: { $0.id == id }) else { return }
+    change(&all[i])
+    do {
+      try save(all)
+    } catch {
+      note("couldn't update \(all[i].local): \(error.localizedDescription)")
+    }
   }
 
   /// Total bytes on the drive.
@@ -456,13 +483,18 @@ public final class Engine: @unchecked Sendable {
         id: id, local: local.path, remote: remoteRel, online: true, adoptedAt: Date(),
         kind: kind ?? Kind.forFolderName(local.lastPathComponent),
         bytes: stats.bytes, container: container ?? local.path))
-    save(all)
+    do {
+      try save(all)
+    } catch {
+      try? Copier.remove(store.appendingPathComponent(slot))
+      throw error
+    }
     let old = Self.leftoverName(for: local)
     do {
       try fm.moveItem(at: local, to: old)
     } catch {
       // Still in place: forget the entry, or a reconcile would stow it after all.
-      save(entries().filter { $0.id != id })
+      try? save(entries().filter { $0.id != id })
       try? Copier.remove(store.appendingPathComponent(slot))
       throw error
     }
@@ -470,7 +502,7 @@ public final class Engine: @unchecked Sendable {
       try fm.createSymbolicLink(at: local, withDestinationURL: remote)
     } catch {
       try? fm.moveItem(at: old, to: local)
-      save(entries().filter { $0.id != id })
+      try? save(entries().filter { $0.id != id })
       throw error
     }
     deleteSoon(old)
@@ -532,7 +564,7 @@ public final class Engine: @unchecked Sendable {
     }
     if entry.mode == .packages {
       try releasePackages(entry, store: store)
-      save(entries().filter { $0.id != entry.id })
+      try save(entries().filter { $0.id != entry.id })
       return
     }
     guard let store else {
@@ -559,7 +591,7 @@ public final class Engine: @unchecked Sendable {
       try trash(remote.deletingLastPathComponent())
       note("brought back \(path): \(stats)")
     }
-    save(entries().filter { $0.id != entry.id })
+    try save(entries().filter { $0.id != entry.id })
   }
 
   /// A unique hidden name next to `url` for a copy being set aside (`old`) or put in place
@@ -612,7 +644,7 @@ public final class Engine: @unchecked Sendable {
       if entry.kind?.isGlobal == true {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false)
       }
-      save(entries().filter { $0.id != entry.id })
+      try save(entries().filter { $0.id != entry.id })
       note("deleted \(path) and its copy on the drive")
     }
   }
@@ -647,7 +679,7 @@ public final class Engine: @unchecked Sendable {
       for i in all.indices where all[i].online {
         if let bytes = sizes[all[i].id] { all[i].bytes = bytes }
       }
-      save(all)
+      try save(all)
     }
   }
 

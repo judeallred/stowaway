@@ -294,6 +294,13 @@ final class AppModel {
     let cache = ScanCache.load()
     for folder in cache.folders { measured[folder.path] = (folder.bytes, folder.activity) }
     rows = merge(candidates: cache.candidates, entries: engine.entries())
+    if let problem = engine.listProblem {
+      // Nothing is stowed, brought back or deleted until this is sorted out; say so at once.
+      Panels.tell(
+        "Stowaway can’t read its list of stowed folders",
+        "\(problem)\n\nStowaway won’t stow, bring back or delete anything until it can, so the list isn’t lost. If you updated Stowaway recently, install the latest version; otherwise, report a bug."
+      )
+    }
     showingOnboarding = !didOnboard && roots.isEmpty
     if !roots.isEmpty { didOnboard = true }
     watchVolumes()
