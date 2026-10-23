@@ -334,9 +334,18 @@ public final class Engine: @unchecked Sendable {
       }
       if fresh != data { defaults.set(fresh, forKey: "drive") }
       guard FileManager.default.fileExists(atPath: drive.path) else { return nil }
-      let store = drive.appendingPathComponent(Self.storeFolderName).appendingPathComponent(
-        installID)
-      try? FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+      let top = drive.appendingPathComponent(Self.storeFolderName)
+      let store = top.appendingPathComponent(installID)
+      // The drive isn't trusted: each level must be a real folder, never a link someone left
+      // there to send copies and deletes elsewhere. Without a store the drive counts as away.
+      for level in [top, store] {
+        mkdir(level.path, 0o755)
+        var st = stat()
+        guard lstat(level.path, &st) == 0, st.st_mode & S_IFMT == S_IFDIR else {
+          logger.error("\(level.path, privacy: .private) isn't a real folder; not using the drive")
+          return nil
+        }
+      }
       return store
     }
   }

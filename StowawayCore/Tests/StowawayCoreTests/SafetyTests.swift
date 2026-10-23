@@ -177,6 +177,21 @@ final class SafetyTests: XCTestCase {
     XCTAssertNotNil(Cleaner().refusal(candidate, roots: [code.path], offloaded: []))
   }
 
+  /// A store folder on the drive that's been swapped for a link isn't used: nothing is copied
+  /// or deleted through it.
+  func testAStoreThatIsALinkIsNotUsed() throws {
+    let s = try Scratch()
+    let (engine, code, drive) = try makeEngine(s)
+    let elsewhere = try s.dir("elsewhere")
+    try FileManager.default.createSymbolicLink(
+      at: drive.appendingPathComponent(Engine.storeFolderName), withDestinationURL: elsewhere)
+    XCTAssertNil(engine.enterGrants())
+    try s.file("code/app/package.json", "{}")
+    try s.file("code/app/.next/page.js", "x")
+    XCTAssertThrowsError(try engine.adopt(code.appendingPathComponent("app/.next").path))
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path), [])
+  }
+
   func testSplitAndSparseIndexesFailClosed() throws {
     let s = try Scratch()
     try shell("/usr/bin/git", ["init", "-q"], in: s.root)
