@@ -281,8 +281,14 @@ extension AppModel {
     }
     let current = Set(candidates.map(\.path))
     measured = measured.filter { current.contains($0.key) }
-    keptOnMac = keptOnMac.filter { current.contains($0) }
-    broughtBack = broughtBack.filter { current.contains($0.key) }
+    // The user's choices are forgotten only once the folder is really gone: a scan can miss a
+    // folder that's still there (a chosen folder that couldn't be read this time).
+    let stillThere = { (path: String) -> Bool in
+      var st = stat()
+      return current.contains(path) || lstat(path, &st) == 0
+    }
+    keptOnMac = keptOnMac.filter(stillThere)
+    broughtBack = broughtBack.filter { stillThere($0.key) }
     ScanCache(folders: folders).save()
   }
 
