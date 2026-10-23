@@ -238,7 +238,7 @@ extension AppModel {
       let failure = await runOne(row, op, index: i, of: rows.count, work)
       if failure is OffloadLimitReached {
         if store.loaded {
-          showingSupport = true
+          showSupport()
         } else {
           message = "Stowaway is still checking your purchases. Try again in a moment."
         }

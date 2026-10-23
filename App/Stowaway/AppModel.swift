@@ -126,6 +126,7 @@ final class AppModel {
       }
     }
   }
+  /// Shows the upgrade sheet. Use `showSupport()`: the sheet belongs to the main window.
   var showingSupport = false
   var showingOnboarding = false
   var started = false
@@ -347,6 +348,14 @@ final class AppModel {
       message = "Couldn't change Open at Login: \(error.localizedDescription)"
     }
     loginItemEnabled = SMAppService.mainApp.status == .enabled
+  }
+
+  /// Shows the upgrade sheet from anywhere: it's attached to the main window, so that opens
+  /// first (from Settings or the Folders window it might be closed).
+  func showSupport() {
+    openLibrary?()
+    NSApp.activate()
+    showingSupport = true
   }
 
   /// Finishes onboarding. Open at Login is applied only here, from the toggle the user saw.

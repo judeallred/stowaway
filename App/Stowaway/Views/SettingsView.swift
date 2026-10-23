@@ -164,7 +164,7 @@ struct OffloadSettings: View {
           if let left = model.freeAllowanceLeft {
             LabeledContent("Free stowage left", value: Format.bytes(left))
           }
-          Button("Make It Unlimited…") { model.showingSupport = true }
+          Button("Go Unlimited…") { model.showSupport() }
         }
       }
     }
