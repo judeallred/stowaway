@@ -45,6 +45,20 @@ struct StowawayApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   @MainActor static var model: AppModel?
 
+  /// `MenuBarExtra` opens only on a left click; a right click on the icon does the same. The
+  /// monitor sees only this app's events, and the menu bar icon is its only status bar window.
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .rightMouseUp]) { event in
+      guard event.window?.className == "NSStatusBarWindow" else { return event }
+      return NSEvent.mouseEvent(
+        with: event.type == .rightMouseDown ? .leftMouseDown : .leftMouseUp,
+        location: event.locationInWindow, modifierFlags: event.modifierFlags,
+        timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
+        eventNumber: event.eventNumber, clickCount: event.clickCount, pressure: event.pressure)
+        ?? event
+    }
+  }
+
   func application(_ application: NSApplication, open urls: [URL]) {
     MainActor.assumeIsolated {
       Self.model?.open(urls)
