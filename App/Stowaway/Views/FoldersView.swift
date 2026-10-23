@@ -1,10 +1,10 @@
 import StowawayCore
 import SwiftUI
 
-/// The Folders window: every folder Stowaway manages, where it is and how big it is, for the
-/// occasional hand: stowing a few now, bringing some back, deleting. (Stowing is automatic; the
-/// main window is the dashboard.) Folders Stowaway can't stow, such as pnpm projects, aren't
-/// listed.
+/// The Folders window: the folders Stowaway looks in (the sidebar, with suggestions), and every
+/// folder it found there, where it is and how big it is, for the occasional hand: stowing a few
+/// now, bringing some back, deleting. (Stowing is automatic; the main window is the dashboard.)
+/// Folders Stowaway can't stow, such as pnpm projects, aren't listed.
 struct FoldersView: View {
   @Bindable var model: AppModel
   @State private var selection: Set<Row.ID> = []
@@ -12,6 +12,8 @@ struct FoldersView: View {
   @State private var sortOrder = [KeyPathComparator(\Row.sortSize, order: .reverse)]
   @State private var confirmingDelete: [Row] = []
   @State private var search = ""
+  /// All folders, or those in one watched folder (chosen in the sidebar).
+  @State private var scope: FolderScope? = .all
 
   enum Filter: String, CaseIterable, Identifiable {
     case all = "All"
@@ -23,6 +25,10 @@ struct FoldersView: View {
   private var visible: [Row] {
     model.rows
       .filter { !model.cantStow($0) }
+      .filter {
+        guard case .root(let root) = scope else { return true }
+        return $0.path.isWithin(root)
+      }
       .filter {
         switch filter {
         case .all: true
@@ -44,6 +50,15 @@ struct FoldersView: View {
   private var selected: [Row] { visible.filter { selection.contains($0.id) } }
 
   var body: some View {
+    NavigationSplitView {
+      FoldersSidebar(model: model, scope: $scope)
+        .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 340)
+    } detail: {
+      detail
+    }
+  }
+
+  private var detail: some View {
     VStack(spacing: 0) {
       if model.roots.isEmpty {
         EmptyState.noFolders(

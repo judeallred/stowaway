@@ -55,6 +55,14 @@ final class AppModel {
     }
   }
   var roots: [String] = []
+  /// Suggested folders the user said not to suggest again. Kept across launches.
+  var dismissedSuggestions: Set<String> = Set(
+    UserDefaults.standard.stringArray(forKey: "dismissedSuggestions") ?? [])
+  {
+    didSet {
+      UserDefaults.standard.set(Array(dismissedSuggestions), forKey: "dismissedSuggestions")
+    }
+  }
   var drivePath: String? {
     didSet { if let drivePath { lastDrivePath = drivePath } }
   }
@@ -323,9 +331,13 @@ final class AppModel {
         [weak self] _ in
         Task { @MainActor in self?.queueReconcile() }
       },
-      // Changes are watched (watchFolders); this full scan is the safety net.
+      // Changes are watched (watchFolders); this full scan is the safety net. Suggestions are
+      // looked for again too, so new project folders show up.
       Timer.scheduledTimer(withTimeInterval: Timing.scanEvery, repeats: true) { [weak self] _ in
-        Task { @MainActor in await self?.scan() }
+        Task { @MainActor in
+          await self?.scan()
+          await self?.detectProjectFolders()
+        }
       },
     ]
     let engine = engine
@@ -340,6 +352,8 @@ final class AppModel {
       await scan()
       // A stop the user chose before quitting carries on.
       await continueStopping()
+      // Folders to suggest, so the main window can say some aren't included.
+      await detectProjectFolders()
     }
   }
 

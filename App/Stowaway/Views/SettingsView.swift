@@ -6,68 +6,12 @@ struct SettingsView: View {
 
   var body: some View {
     TabView {
-      FoldersSettings(model: model)
-        .tabItem { Label("Folders", systemImage: "folder") }
       OffloadSettings(model: model)
         .tabItem { Label("Stow", systemImage: "externaldrive") }
       GeneralSettings(model: model)
         .tabItem { Label("General", systemImage: "gearshape") }
     }
     .frame(width: 520, height: 380)
-  }
-}
-
-struct FoldersSettings: View {
-  let model: AppModel
-  @State private var selection: String?
-  @State private var suggesting = false
-
-  var body: some View {
-    Form {
-      Section {
-        List(model.rootGroups, id: \.root, selection: $selection) { group in
-          Label {
-            VStack(alignment: .leading, spacing: 1) {
-              Text(Format.path(group.root))
-              if !group.nested.isEmpty {
-                Text("Includes \(group.nested.map(Format.path).joined(separator: ", "))")
-                  .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                  .truncationMode(.middle)
-              }
-            }
-          } icon: {
-            Image(systemName: "folder.fill")
-          }
-        }
-        .frame(minHeight: 120)
-        HStack {
-          Button("Add Folder…") { model.addRoot(startingAt: realHomeDirectory) }
-          let count = model.suggestionCount
-          Button(count > 0 ? "Suggested Folders (\(count))…" : "Suggested Folders…") {
-            suggesting = true
-          }
-          .popover(isPresented: $suggesting, arrowEdge: .bottom) {
-            SuggestedFolders(model: model)
-          }
-          Button("Remove") {
-            if let selection {
-              model.removeRoot(selection)
-              self.selection = nil
-            }
-          }
-          .disabled(selection == nil)
-        }
-      } header: {
-        Text("Stowaway looks in these folders")
-      } footer: {
-        Text(
-          "Removing a folder doesn't touch anything in it. One with stowed folders in it can be removed once they're brought back. To skip a folder inside one of these, put a file named .stowaway-ignore in it."
-        )
-        .font(.caption).foregroundStyle(.secondary)
-      }
-    }
-    .formStyle(.grouped)
-    .task { await model.detectProjectFolders() }
   }
 }
 
@@ -238,54 +182,3 @@ extension DriveSpeed {
 
 /// Folders Stowaway could look in but can't yet: where Spotlight finds projects, and shared
 /// caches outside the chosen folders.
-struct SuggestedFolders: View {
-  let model: AppModel
-
-  var body: some View {
-    let projects = model.suggestedProjectFolders.filter { $0.projects > 0 }
-    let caches = model.ungrantedCaches
-    VStack(alignment: .leading, spacing: 10) {
-      Text("Suggested folders").font(.headline)
-      if projects.isEmpty && caches.isEmpty {
-        Text("Stowaway can already see every folder it would suggest.")
-          .foregroundStyle(.secondary)
-      }
-      if !projects.isEmpty {
-        Text("Projects").font(.subheadline).foregroundStyle(.secondary)
-        ForEach(projects, id: \.self) { suggestion in
-          row(
-            Format.path(suggestion.folder.path),
-            Format.count(suggestion.projects, "project"),
-            folder: suggestion.folder)
-        }
-      }
-      if !caches.isEmpty {
-        Text("Shared caches").font(.subheadline).foregroundStyle(.secondary)
-        ForEach(caches, id: \.folder) { cache in
-          row(cache.kind.label, Format.path(cache.folder.path), folder: cache.folder)
-        }
-        Button("Allow All…") { model.allowHomeFolder() }
-          .help("Lets Stowaway see your home folder, which covers every cache above.")
-      }
-    }
-    .padding(16)
-    .frame(width: 380)
-    .task { await model.detectProjectFolders() }
-  }
-
-  private func row(_ title: String, _ detail: String, folder: URL) -> some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 1) {
-        Text(title)
-        Text(detail).font(.caption).foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button("Allow…") {
-        model.addRoot(
-          startingAt: folder,
-          message: "Click Choose to let Stowaway look in \(Format.path(folder.path)).")
-      }
-      .accessibilityLabel("Allow \(title)")
-    }
-  }
-}

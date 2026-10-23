@@ -50,6 +50,19 @@ struct DashboardView: View {
       if waiting > 0 {
         Text("\(Format.count(waiting, "more folder")) queued.").foregroundStyle(.secondary)
       }
+      // Folders with projects or caches that aren't included yet (see the Folders window).
+      let suggested = model.suggestionCount
+      if suggested > 0 {
+        HStack(spacing: 6) {
+          Text(
+            suggested == 1
+              ? "1 suggested folder isn't included yet."
+              : "\(suggested) suggested folders aren't included yet."
+          )
+          .foregroundStyle(.secondary)
+          Button("Review…") { openWindow(id: WindowID.folders) }.buttonStyle(.link)
+        }
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)

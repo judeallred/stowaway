@@ -79,8 +79,8 @@ struct OnboardingView: View {
         "macOS only lets Stowaway see folders you choose. It looks at folder names and sizes, never inside your files."
       )
       .foregroundStyle(.secondary)
-      ForEach(model.rootGroups.map(\.root), id: \.self) { root in
-        Label(Format.path(root), systemImage: "checkmark.circle.fill")
+      ForEach(model.rootGroups, id: \.root) { group in
+        RootLabel(root: group.root, nested: group.nested, systemImage: "checkmark.circle.fill")
       }
       let suggestions = Array(model.suggestedProjectFolders.prefix(3))
       ForEach(suggestions, id: \.self) { suggestion in

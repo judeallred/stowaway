@@ -121,9 +121,41 @@ extension AppModel {
       .map { ProjectFinder.Suggestion(folder: $0, projects: 0) }
   }
 
-  /// How many folders Settings → Suggested Folders would offer.
-  var suggestionCount: Int {
-    suggestedProjectFolders.filter { $0.projects > 0 }.count + ungrantedCaches.count
+  /// A folder Stowaway would look in that isn't chosen yet: one that holds projects (found with
+  /// Spotlight), or one that holds a shared cache.
+  struct FolderSuggestion: Identifiable, Hashable {
+    let folder: URL
+    let title: String
+    let detail: String
+    var id: String { folder.path }
+  }
+
+  /// What the Folders window suggests adding: folders with projects, then shared caches, less any
+  /// the user said not to suggest again.
+  var folderSuggestions: [FolderSuggestion] {
+    let projects = suggestedProjectFolders.filter { $0.projects > 0 }.map {
+      FolderSuggestion(
+        folder: $0.folder, title: Format.path($0.folder.path),
+        detail: Format.count($0.projects, "project"))
+    }
+    let caches = ungrantedCaches.map {
+      FolderSuggestion(folder: $0.folder, title: $0.kind.label, detail: Format.path($0.folder.path))
+    }
+    return (projects + caches).filter { !dismissedSuggestions.contains($0.folder.path) }
+  }
+
+  var suggestionCount: Int { folderSuggestions.count }
+
+  /// Stops suggesting a folder, for good (kept across launches).
+  func dismissSuggestion(_ suggestion: FolderSuggestion) {
+    dismissedSuggestions.insert(suggestion.folder.path)
+  }
+
+  /// Opens the panel at a suggested folder, for the user to confirm.
+  func addSuggestion(_ suggestion: FolderSuggestion) {
+    addRoot(
+      startingAt: suggestion.folder,
+      message: "Click Choose to let Stowaway look in \(Format.path(suggestion.folder.path)).")
   }
 
   /// Fills `detectedProjectFolders` from Spotlight.

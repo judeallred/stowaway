@@ -136,10 +136,10 @@
             billTo: "Sam Rivera\nNorthwind Labs",
             payment: "Paid through the Mac App Store (transaction 2000000812345678).")),
         "expense-invoice-paid", width: 612, height: 792, in: folder)
-      render(FoldersSettings(model: model), "settings-folders", width: 520, height: 380, in: folder)
       render(OffloadSettings(model: model), "settings-stow", width: 520, height: 640, in: folder)
       render(
-        SuggestedFolders(model: model), "suggested-folders", width: 380, height: 300, in: folder)
+        FoldersSidebar(model: model, scope: .constant(.all)), "folders-sidebar", width: 260,
+        height: 600, in: folder)
     }
 
     private static func render(
