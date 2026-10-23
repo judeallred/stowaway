@@ -50,6 +50,8 @@ extension AppModel {
       testingSpeed = false
       activity = nil
       operation = nil
+      // Stowing waited for the test.
+      Task { await autoOffload() }
     }
     let engine = engine
     let result = await Task.detached { () -> Result<DriveSpeed, Error>? in
@@ -71,6 +73,7 @@ extension AppModel {
     let volume = (try? drive.resourceValues(forKeys: [.volumeURLKey]).volume) ?? drive
     let engine = engine
     engine.paused = true
+    ejecting = true
     activity = "Ejecting \(name)…"
     Task {
       await Task.detached { engine.prepareForEject() }.value
@@ -81,6 +84,7 @@ extension AppModel {
         message = "Couldn't eject \(name): \(error.localizedDescription)"
       }
       engine.paused = paused
+      ejecting = false
       activity = nil
       queueReconcile()
     }

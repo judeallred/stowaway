@@ -20,6 +20,10 @@ extension AppModel {
       message = "Connect \(name) to stow."
       return
     }
+    guard !ejecting else {
+      message = "\(name) is being ejected."
+      return
+    }
     // Stowing by hand undoes "keep on this Mac".
     keptOnMac.subtract(rows.map(\.path))
     for row in rows { broughtBack[row.path] = nil }
@@ -272,9 +276,11 @@ extension AppModel {
   }
 
   /// Whether automatic stowing may go on: checked before each folder, so Pause, Never, Stop
-  /// Using and the drive going away take effect at once, not after the pass.
+  /// Using and the drive going away take effect at once, not after the pass. It also waits out
+  /// an eject and a speed test (a copy would skew the speed and could block the eject).
   private var mayAutoStow: Bool {
     autoOffloadMinutes != AutoStow.never && driveConnected && !stoppingDrive && !paused
+      && !ejecting && !testingSpeed
   }
 
   private func autoStowPass() async {

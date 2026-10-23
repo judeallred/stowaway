@@ -142,6 +142,8 @@ final class AppModel {
   /// never pick the same folder.
   var autoStowing = false
   var autoStowAgain = false
+  /// The drive is being ejected: nothing is stowed onto it meanwhile.
+  var ejecting = false
   /// When stowed folders were last re-measured on the drive.
   var lastRecount = Date.distantPast
   var detectedProjectFolders: [ProjectFinder.Suggestion] = []
