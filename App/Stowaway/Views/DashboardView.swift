@@ -28,6 +28,9 @@ struct DashboardView: View {
         if let message = model.message {
           Label(message, systemImage: "exclamationmark.triangle")
             .font(.callout).foregroundStyle(.orange).lineLimit(2)
+        } else if let info = model.info {
+          Label(info, systemImage: "checkmark.circle")
+            .font(.callout).foregroundStyle(.secondary).lineLimit(2)
         }
         Spacer()
         Button("Folders…") { openWindow(id: WindowID.folders) }

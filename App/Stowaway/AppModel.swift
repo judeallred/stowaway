@@ -126,6 +126,17 @@ final class AppModel {
       }
     }
   }
+  /// News about something the user just did that went well, shown like `message` but not as a
+  /// problem (no warning badge on the menu bar icon).
+  var info: String? {
+    didSet {
+      guard let info else { return }
+      Task {
+        try? await Task.sleep(for: Timing.messageShown)
+        if self.info == info { self.info = nil }
+      }
+    }
+  }
   /// Shows the upgrade sheet. Use `showSupport()`: the sheet belongs to the main window.
   var showingSupport = false
   var showingOnboarding = false

@@ -55,7 +55,7 @@ extension AppModel {
     do {
       let root = try SampleProject.create(in: parent)
       grant(root, as: .root, failure: "Couldn't add the sample") { [weak self] in
-        self?.message =
+        self?.info =
           "Created a sample in \(Format.path(root.path)). Try stowing, bringing back or deleting it."
       }
     } catch {
