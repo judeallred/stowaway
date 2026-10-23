@@ -15,7 +15,7 @@ space they take, and lets you delete them, or keep them on an external drive ins
 Finding and deleting folders is free, and so is stowing up to 100 GB. Any purchase, at a price
 you choose, makes stowing unlimited.
 
-**Website:** [brooklynspaceport.com/stowaway](https://brooklynspaceport.com/stowaway)
+**Website:** brooklynspaceport.com/stowaway (coming soon)
 
 ## What it manages
 
