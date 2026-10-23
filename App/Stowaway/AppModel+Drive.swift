@@ -66,7 +66,9 @@ extension AppModel {
   }
 
   /// Ejects the drive: stowed folders switch to local ones first, as when it's unplugged. If
-  /// macOS can't eject it (something's using it), they link up again.
+  /// macOS can't eject it (something's using it), they link up again. While it runs, no
+  /// reconcile starts (`queueReconcile`) and nothing is stowed (`ejecting`); one already running
+  /// finishes first, since preparing takes the engine's lock.
   func ejectDrive() {
     guard let path = drivePath, let name = driveName, !ejecting, !refusedWhileStopping() else {
       return
@@ -364,15 +366,18 @@ extension AppModel {
     }
   }
 
-  /// Reconciles soon. Requests coalesce, and while one is waiting or running no other starts:
-  /// a long stow holds the engine's lock, and reconciles queued behind it would each tie up a
-  /// thread.
+  /// Reconciles soon. Every reconcile the app asks for comes through here. Requests coalesce,
+  /// and while one is waiting or running no other starts: a long stow holds the engine's lock,
+  /// and reconciles queued behind it would each tie up a thread. None runs while the drive is
+  /// being ejected (it would link folders back to the drive as it unmounts); the eject queues
+  /// one when it's done.
   func queueReconcile() {
-    guard !reconcilePending else { return }
+    guard !reconcilePending, !ejecting else { return }
     reconcilePending = true
     Task {
       defer { reconcilePending = false }
       try? await Task.sleep(for: Timing.coalesceVolumeChanges)
+      guard !ejecting else { return }
       let engine = engine
       await Task.detached { engine.reconcile() }.value
       let entries = engine.entries()
