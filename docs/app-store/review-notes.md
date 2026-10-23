@@ -19,7 +19,7 @@ HOW TO TRY IT (no external drive needed)
    step is optional.)
 2. The main window shows what Stowaway found, by kind, and what it's doing. Click "Folders…"
    (bottom right) to see each folder with its size.
-3. Click "Connect External Storage…" (top right of the main window) and pick any folder, for
+3. Click "Choose a Drive…" (top right of the main window) and pick any folder, for
    example a new folder in Documents. An external drive works the same way, but isn't required.
 4. Stowing is automatic, after the folders are left unchanged for a few minutes. To see it at
    once: in Folders, select a row and click Stow. The folder moves to the drive, and Stowaway

@@ -172,7 +172,7 @@ struct OnboardingView: View {
             ForEach(Array(model.externalVolumes.prefix(3)), id: \.self) { volume in
               Button("Use \(volume.lastPathComponent)") { model.chooseDrive(volume) }
             }
-            Button(model.externalVolumes.isEmpty ? "Choose a Location…" : "Somewhere Else…") {
+            Button(model.externalVolumes.isEmpty ? "Choose a Drive…" : "Somewhere Else…") {
               model.chooseDrive(anywhere: true)
             }
           }

@@ -77,7 +77,7 @@ struct MenuView: View {
         }
       }
     } else {
-      action("Select Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
+      action("Choose a Drive…", "externaldrive.badge.plus") { show { model.chooseDrive() } }
         .padding(.horizontal, -6)
     }
   }

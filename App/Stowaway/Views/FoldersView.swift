@@ -389,7 +389,7 @@ private struct DriveButton: View {
       Button {
         model.chooseDrive()
       } label: {
-        Label("Connect External Storage…", systemImage: "externaldrive.badge.plus")
+        Label("Choose a Drive…", systemImage: "externaldrive.badge.plus")
           .lineLimit(1)
           .frame(maxWidth: .infinity)
       }
