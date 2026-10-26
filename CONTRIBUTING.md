@@ -78,7 +78,9 @@ App/scripts/screenshots.sh
 
 This renders every screen with demo data, in light and dark, plus the App Store screenshots at
 2880×1800, into `App/build/screenshots`. It uses a Debug build's snapshot mode, so it doesn't need
-screen recording permission.
+screen recording permission. It can't lay out split views such as the Folders window's sidebar;
+to check those live, run a Debug build with `STOWAWAY_OPEN=folders`, which opens the Folders
+window at launch.
 
 ## App icon
 

@@ -15,6 +15,25 @@ struct FoldersSidebar: View {
   @State private var explainingHomeFolder = false
 
   var body: some View {
+    // The footer sits under the list rather than in a safe-area inset: there its text was
+    // measured without a width, came out very tall, and pushed the window's content off both
+    // edges.
+    VStack(spacing: 0) {
+      list
+      Divider()
+      footer
+    }
+    .task { await model.detectProjectFolders() }
+    .sheet(isPresented: $explainingHomeFolder) {
+      HomeFolderExplainer(
+        openPanel: { model.allowHomeFolder() }, back: { explainingHomeFolder = false }
+      )
+      .padding(24)
+      .frame(width: 560, height: 400)
+    }
+  }
+
+  private var list: some View {
     List(selection: $scope) {
       Label("All Folders", systemImage: "tray.full")
         .badge(model.rows.filter { !model.cantStow($0) }.count)
@@ -49,15 +68,6 @@ struct FoldersSidebar: View {
       }
     }
     .listStyle(.sidebar)
-    .safeAreaInset(edge: .bottom) { footer }
-    .task { await model.detectProjectFolders() }
-    .sheet(isPresented: $explainingHomeFolder) {
-      HomeFolderExplainer(
-        openPanel: { model.allowHomeFolder() }, back: { explainingHomeFolder = false }
-      )
-      .padding(24)
-      .frame(width: 560, height: 400)
-    }
   }
 
   private var footer: some View {
@@ -83,7 +93,8 @@ struct FoldersSidebar: View {
       .buttonStyle(.borderless)
       Text("To skip a folder inside one of these, put a file named .stowaway-ignore in it.")
         .font(.caption2).foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+        .lineLimit(3)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     .padding(10)
   }

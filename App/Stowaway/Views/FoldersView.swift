@@ -52,7 +52,7 @@ struct FoldersView: View {
   var body: some View {
     NavigationSplitView {
       FoldersSidebar(model: model, scope: $scope)
-        .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 340)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 340)
     } detail: {
       detail
     }
@@ -122,10 +122,11 @@ struct FoldersView: View {
         }
         .help(row.path)
       }
+      .width(min: 140, ideal: 200)
       TableColumn("What", value: \.kind.label) { row in
         Text(row.kind.label).help(row.kind.summary)
       }
-      .width(min: 120, ideal: 150)
+      .width(min: 110, ideal: 140)
       TableColumn("Size", value: \.sortSize) { row in
         Text(row.sizeText).monospacedDigit()
       }
@@ -133,7 +134,7 @@ struct FoldersView: View {
       TableColumn("Last Changed", value: \.sortDate) { row in
         Text(Format.ago(row.lastActivity))
       }
-      .width(min: 90, ideal: 120)
+      .width(min: 90, ideal: 110)
       TableColumn("Where", value: \.placeOrder) { row in
         if model.busy.contains(row.path) {
           HStack(spacing: 6) {
@@ -148,7 +149,7 @@ struct FoldersView: View {
             problem: model.problem(for: row))
         }
       }
-      .width(min: 110, ideal: 130)
+      .width(min: 100, ideal: 120)
     }
     .contextMenu(forSelectionType: Row.ID.self) { ids in
       let rows = model.rows.filter { ids.contains($0.id) }

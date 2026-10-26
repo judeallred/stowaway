@@ -30,9 +30,9 @@ struct StowawayApp: App {
 
     Window("Folders", id: WindowID.folders) {
       FoldersView(model: model)
-        .frame(minWidth: 760, minHeight: 400)
+        .frame(minWidth: 860, minHeight: 400)
     }
-    .defaultSize(width: 920, height: 600)
+    .defaultSize(width: 1080, height: 640)
 
     Settings {
       SettingsView(model: model)
@@ -111,6 +111,12 @@ private struct MenuBarLabel: View {
         #endif
         model.start()
         AppDelegate.openPending()
+        #if DEBUG
+          // For checking a window's layout live: STOWAWAY_OPEN=folders.
+          if ProcessInfo.processInfo.environment["STOWAWAY_OPEN"] == "folders" {
+            openWindow(id: WindowID.folders)
+          }
+        #endif
         if model.showingOnboarding {
           openWindow(id: WindowID.library)
           NSApp.activate()
