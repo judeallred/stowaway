@@ -520,6 +520,15 @@ final class AppModel {
   extension AppModel {
     /// Snapshots (Snapshots.swift) only: the state a connected drive mid-stow would have.
     func applyDemo(drive: String, roots: [String]) {
+      // The drive's path and speed save themselves, into the real app's settings: the demo's go
+      // in memory only, and what was saved is put back.
+      let defaults = UserDefaults.standard
+      let savedDrivePath = defaults.object(forKey: "lastDrivePath")
+      let savedSpeed = defaults.object(forKey: "driveSpeed")
+      defer {
+        defaults.set(savedDrivePath, forKey: "lastDrivePath")
+        defaults.set(savedSpeed, forKey: "driveSpeed")
+      }
       self.roots = roots
       drivePath = drive
       driveName = URL(fileURLWithPath: drive).lastPathComponent

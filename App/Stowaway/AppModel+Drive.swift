@@ -7,6 +7,16 @@ import StowawayCore
 /// The drive: choosing it, stopping using it, its space and speed, and keeping links in step as
 /// it comes and goes.
 extension AppModel {
+  /// How to show where stowed folders go: the drive's name when it's the whole drive, or the
+  /// folder's path when it's a folder on one. Nil without a drive.
+  var driveLabel: String? {
+    guard let name = driveName else { return nil }
+    guard let path = drivePath else { return name }
+    let volume = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeURLKey]).volume
+    return volume?.standardizedFileURL.path == URL(fileURLWithPath: path).standardizedFileURL.path
+      ? name : Format.path(path)
+  }
+
   /// Reads the folders, drive and login setting. Everything that touches the drive runs off the
   /// main thread: a drive busy with a big copy can take seconds to answer.
   func refreshSettings() {

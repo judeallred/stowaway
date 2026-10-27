@@ -94,6 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 private struct MenuBarLabel: View {
   let model: AppModel
   @Environment(\.openWindow) private var openWindow
+  #if DEBUG
+    @Environment(\.openSettings) private var openSettings
+  #endif
 
   var body: some View {
     Image(nsImage: MenuBarImage.image(badge: model.iconState.badge))
@@ -112,9 +115,13 @@ private struct MenuBarLabel: View {
         model.start()
         AppDelegate.openPending()
         #if DEBUG
-          // For checking a window's layout live: STOWAWAY_OPEN=folders.
-          if ProcessInfo.processInfo.environment["STOWAWAY_OPEN"] == "folders" {
-            openWindow(id: WindowID.folders)
+          // For checking a window's layout live: STOWAWAY_OPEN=folders or settings.
+          switch ProcessInfo.processInfo.environment["STOWAWAY_OPEN"] {
+          case "folders": openWindow(id: WindowID.folders)
+          case "settings":
+            NSApp.activate()
+            openSettings()
+          default: break
           }
         #endif
         if model.showingOnboarding {

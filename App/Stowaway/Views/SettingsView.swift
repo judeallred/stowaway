@@ -5,17 +5,19 @@ struct SettingsView: View {
   @Bindable var model: AppModel
 
   var body: some View {
+    // Each tab sets its own height, so the window fits it rather than scrolling.
     TabView {
-      OffloadSettings(model: model)
+      StowSettings(model: model)
+        .frame(width: 520, height: 570)
         .tabItem { Label("Stow", systemImage: "externaldrive") }
       GeneralSettings(model: model)
+        .frame(width: 520, height: 520)
         .tabItem { Label("General", systemImage: "gearshape") }
     }
-    .frame(width: 520, height: 380)
   }
 }
 
-struct OffloadSettings: View {
+struct StowSettings: View {
   @Bindable var model: AppModel
 
   var body: some View {
@@ -23,10 +25,7 @@ struct OffloadSettings: View {
       Section("Stow location") {
         HStack {
           if let name = model.driveName {
-            Label(
-              model.drivePath.map(Format.path) ?? name,
-              systemImage: model.driveSymbol
-            )
+            Label(model.driveLabel ?? name, systemImage: model.driveSymbol)
             if !model.driveConnected { Text("disconnected").foregroundStyle(.secondary) }
           } else {
             Text("None chosen").foregroundStyle(.secondary)
@@ -56,6 +55,16 @@ struct OffloadSettings: View {
           LabeledContent("Format", value: format)
         }
         LabeledContent("Stowed", value: Format.bytes(model.offloadedBytes))
+      }
+      Section {
+        Picker("Stow automatically", selection: $model.autoOffloadMinutes) {
+          ForEach(AppModel.AutoStow.choices, id: \.minutes) { Text($0.label).tag($0.minutes) }
+        }
+      } footer: {
+        Text(
+          "Folders that haven't changed for this long move to the drive while it's connected. A build or an IDE using one holds it back."
+        )
+        .font(.caption).foregroundStyle(.secondary)
       }
       if model.driveName != nil {
         Section {
@@ -91,38 +100,33 @@ struct OffloadSettings: View {
           .font(.caption).foregroundStyle(.secondary)
         }
       }
-      Section {
-        Picker("Stow automatically", selection: $model.autoOffloadMinutes) {
-          ForEach(AppModel.AutoStow.choices, id: \.minutes) { Text($0.label).tag($0.minutes) }
-        }
-      } footer: {
-        Text(
-          "Folders that haven't changed for this long move to the drive while it's connected. Immediately moves them as soon as Stowaway finds them, so builds read and write on the drive: best with a fast one. A running Cargo build, or Xcode or a Gradle IDE that's open, holds off the folders they use."
-        )
-        .font(.caption).foregroundStyle(.secondary)
-      }
-      Section("Plan") {
-        if model.store.hasPurchased {
-          Label("Unlimited stowing. Thank you!", systemImage: "heart.fill")
-        } else {
-          if let left = model.freeAllowanceLeft {
-            LabeledContent("Free stowage left", value: Format.bytes(left))
-          }
-          Button("Go Unlimited…") { model.showSupport() }
-        }
-      }
     }
     .formStyle(.grouped)
   }
 }
 
-private struct GeneralSettings: View {
+struct GeneralSettings: View {
   let model: AppModel
   /// What the last Restore Purchases found.
   @State private var restoreResult: String?
+  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
     Form {
+      Section("Folders") {
+        HStack {
+          Text(
+            model.roots.isEmpty
+              ? "Stowaway doesn't look in any folders yet."
+              : "Stowaway looks in \(Format.count(model.rootGroups.count, "folder"))."
+          )
+          Spacer()
+          Button("Open Folders…") {
+            NSApp.activate()
+            openWindow(id: WindowID.folders)
+          }
+        }
+      }
       Section {
         Toggle(
           "Open Stowaway at login",
@@ -132,6 +136,16 @@ private struct GeneralSettings: View {
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("Purchases") {
+        if model.store.hasPurchased {
+          Label("Unlimited stowing. Thank you!", systemImage: "heart.fill")
+        } else {
+          LabeledContent("Free stowage left") {
+            HStack {
+              Text(model.freeAllowanceLeft.map(Format.bytes) ?? "—")
+              Button("Go Unlimited…") { model.showSupport() }
+            }
+          }
+        }
         HStack {
           Button("Restore Purchases") {
             restoreResult = nil
@@ -151,7 +165,6 @@ private struct GeneralSettings: View {
     }
     .formStyle(.grouped)
   }
-
 }
 
 extension DriveSpeed {
@@ -179,6 +192,3 @@ extension DriveSpeed {
     }
   }
 }
-
-/// Folders Stowaway could look in but can't yet: where Spotlight finds projects, and shared
-/// caches outside the chosen folders.
