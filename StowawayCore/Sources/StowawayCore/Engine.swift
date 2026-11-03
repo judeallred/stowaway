@@ -466,6 +466,17 @@ public final class Engine: @unchecked Sendable {
       throw StowawayError("the drive isn't connected")
     }
     try validateAdoptable(local, store: store)
+    if let reason = DockerStorage.refusal(for: local) {
+      throw StowawayError.refusal(reason)
+    }
+    if kind == .cargoCache {
+      guard isCargoCache(local) else {
+        throw StowawayError.refusal("it no longer looks like a Cargo build cache")
+      }
+      if Measure.isBusy(Candidate(kind: .cargoCache, path: local.path, project: nil)) {
+        throw StowawayError.refusal("a Cargo build is using it")
+      }
+    }
     if let refusal = Self.refusal(forBuildOutput: local) {
       throw StowawayError.refusal(refusal)
     }
@@ -766,6 +777,11 @@ public final class Engine: @unchecked Sendable {
   /// `quietPeriod`, or Cargo holds the lock of the build profile it belongs to.
   func isBeingWritten(_ entry: Entry) -> Bool {
     let local = URL(fileURLWithPath: entry.local)
+    if entry.kind == .cargoCache,
+      Measure.isBusy(Candidate(kind: .cargoCache, path: local.path, project: nil))
+    {
+      return true
+    }
     if entry.kind == .cargoTarget {
       // A part (target/debug/deps) or the whole target: check every profile's lock.
       let target =

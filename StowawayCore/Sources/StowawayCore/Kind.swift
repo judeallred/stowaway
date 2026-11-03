@@ -4,9 +4,11 @@ import Foundation
 public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   case node
   case cargoTarget = "cargo-target"
+  case cargoCache = "cargo-cache"
   case next
   case venv
   case pnpmStore = "pnpm-store"
+  case pnpmCache = "pnpm-cache"
   case cargoHome = "cargo-home"
   case xcodeDerivedData = "xcode-derived-data"
   case gradleHome = "gradle-home"
@@ -14,6 +16,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   case jsCaches = "js-caches"
   case npx
   case huggingface
+  case browserDownloads = "browser-downloads"
 
   public var id: String { rawValue }
 
@@ -21,9 +24,11 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     switch self {
     case .node: "node_modules"
     case .cargoTarget: "Cargo build files"
+    case .cargoCache: "Cargo build cache"
     case .next: "Next.js build files"
     case .venv: "Python virtualenv"
     case .pnpmStore: "pnpm store"
+    case .pnpmCache: "pnpm download cache"
     case .cargoHome: "Cargo registry"
     case .xcodeDerivedData: "Xcode DerivedData"
     case .gradleHome: "Gradle caches"
@@ -31,6 +36,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .jsCaches: "npm, Yarn and bun caches"
     case .npx: "npx packages"
     case .huggingface: "Hugging Face models"
+    case .browserDownloads: "Playwright & Puppeteer browsers"
     }
   }
 
@@ -39,9 +45,12 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .node: "A project's installed packages. npm, Yarn or bun reinstalls them."
     case .cargoTarget:
       "Compiled dependencies and caches from a Cargo build. The programs it builds stay on this Mac."
+    case .cargoCache:
+      "A Cargo dependency, incremental or build cache. Source worktrees and built programs stay on this Mac."
     case .next: "A Next.js project's build output and build cache."
     case .venv: "A Python project's virtual environment and installed packages."
     case .pnpmStore: "Packages pnpm shares between all your projects."
+    case .pnpmCache: "Package metadata and temporary packages downloaded by pnpm."
     case .cargoHome: "Crates and git dependencies Cargo has downloaded."
     case .xcodeDerivedData: "Xcode's build intermediates and indexes. Built apps stay on this Mac."
     case .gradleHome: "Downloaded dependencies and Gradle versions."
@@ -49,6 +58,8 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .jsCaches: "Download caches for npm, Yarn and bun."
     case .npx: "Packages npx has downloaded to run."
     case .huggingface: "Models and datasets downloaded from Hugging Face."
+    case .browserDownloads:
+      "Browser binaries used for automated testing. Playwright and Puppeteer can download them again."
     }
   }
 
@@ -74,7 +85,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     }
   }
 
-  public var isGlobal: Bool { projectRule == nil }
+  public var isGlobal: Bool { projectRule == nil && self != .cargoCache }
 
   /// Default locations of a machine-wide cache, relative to the home folder. A sandboxed app can't
   /// ask the tools (`pnpm store path`, `go env`) or read the shell's environment, so custom
@@ -82,6 +93,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   public var defaultLocations: [String] {
     switch self {
     case .pnpmStore: ["Library/pnpm/store"]
+    case .pnpmCache: ["Library/Caches/pnpm"]
     case .cargoHome: [".cargo/registry", ".cargo/git"]
     case .xcodeDerivedData: ["Library/Developer/Xcode/DerivedData"]
     case .gradleHome: [".gradle/caches", ".gradle/wrapper/dists"]
@@ -90,6 +102,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
       [".npm/_cacache", "Library/Caches/Yarn", ".yarn/berry/cache", ".bun/install/cache"]
     case .npx: [".npm/_npx"]
     case .huggingface: [".cache/huggingface/hub"]
+    case .browserDownloads: ["Library/Caches/ms-playwright", ".cache/puppeteer"]
     default: []
     }
   }
@@ -186,3 +199,20 @@ public let realHomeDirectory: URL = {
   }
   return FileManager.default.homeDirectoryForCurrentUser
 }()
+
+/// Positive identification for caches found inside mixed experiment output folders.
+func isCargoCache(_ url: URL) -> Bool {
+  guard ["deps", "incremental", "build"].contains(url.lastPathComponent) else { return false }
+  let profile = url.deletingLastPathComponent()
+  return isRealDirectory(profile.appendingPathComponent(".fingerprint").path)
+    || FileManager.default.fileExists(atPath: profile.appendingPathComponent(".cargo-lock").path)
+}
+
+func isCargoProfile(_ url: URL) -> Bool {
+  let fm = FileManager.default
+  return
+    (isRealDirectory(url.appendingPathComponent("deps").path)
+    || isSymlink(url.appendingPathComponent("deps").path))
+    && (isRealDirectory(url.appendingPathComponent(".fingerprint").path)
+      || fm.fileExists(atPath: url.appendingPathComponent(".cargo-lock").path))
+}

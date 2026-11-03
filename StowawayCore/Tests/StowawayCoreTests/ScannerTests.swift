@@ -267,3 +267,198 @@ final class PartialScanTests: XCTestCase {
     XCTAssertFalse(full.contains(web + "/node_modules"))
   }
 }
+
+final class MixedCargoTests: XCTestCase {
+  func testFindsOnlyCachesAndPreservesMixedOutputs() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    try s.file("code/rs/Cargo.toml")
+    try s.file("code/rs/target/notes.json", "precious")
+    for profile in ["debug", "experiment/debug", "worktree/target/release"] {
+      for part in ["deps", "incremental", "build", ".fingerprint"] {
+        try s.file("code/rs/target/\(profile)/\(part)/data", "cache")
+      }
+      try s.file("code/rs/target/\(profile)/app", "executable")
+    }
+    try s.file("code/rs/target/worktree/Cargo.toml", "source")
+    try s.file("code/rs/target/unidentified/deps/data", "not enough evidence")
+    try s.file("code/rs/target/ignored/.stowaway-ignore")
+    try s.dir("code/rs/target/ignored/debug/.fingerprint")
+    try s.dir("code/rs/target/ignored/debug/deps")
+    let found = Scanner().scan(roots: [code.path])
+    XCTAssertEqual(found.count, 9)
+    XCTAssertTrue(found.allSatisfy { $0.kind == .cargoCache })
+    for candidate in found {
+      try engine.adopt(candidate.path, kind: candidate.kind)
+    }
+    XCTAssertEqual(engine.entries().count, 9)
+    XCTAssertEqual(
+      Set(Scanner().scan(roots: [code.path])), Set(found),
+      "Stowed parts retain their owning project and remain discoverable without following links")
+    for candidate in found { try engine.release(candidate.path) }
+    // Deletion is limited to identified caches, leaving source and executables alone.
+    for candidate in found {
+      try Cleaner().delete(candidate, roots: [code.path], offloaded: [])
+    }
+    for path in ["notes.json", "debug/app", "worktree/Cargo.toml", "unidentified/deps/data"] {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: s.path("code/rs/target/" + path)))
+    }
+  }
+
+  func testCargoCacheRevalidatesAndHonorsLocksAndGit() throws {
+    let s = try Scratch()
+    try s.file("rs/Cargo.toml")
+    try s.file("rs/target/debug/deps/data")
+    let marker = try s.dir("rs/target/debug/.fingerprint")
+    let c = Candidate(
+      kind: .cargoCache, path: s.path("rs/target/debug/deps"), project: s.path("rs"))
+    XCTAssertNil(Cleaner().refusal(c, roots: [s.root.path], offloaded: []))
+    try FileManager.default.removeItem(at: marker)
+    XCTAssertNotNil(Cleaner().refusal(c, roots: [s.root.path], offloaded: []))
+    let lock = try s.file("rs/target/debug/.cargo-lock")
+    let fd = open(lock.path, O_RDWR)
+    defer { close(fd) }
+    XCTAssertEqual(flock(fd, LOCK_EX), 0)
+    XCTAssertTrue(Measure.isBusy(c))
+    flock(fd, LOCK_UN)
+    try shell("/usr/bin/git", ["init", "-q"], in: s.root)
+    try shell("/usr/bin/git", ["add", "."], in: s.root)
+    XCTAssertNotNil(Cleaner().refusal(c, roots: [s.root.path], offloaded: []))
+  }
+}
+
+final class WorktreeLocationTests: XCTestCase {
+  func testCommonWorktreesAreIndependentInFullAndPartialScans() throws {
+    let s = try Scratch()
+    try s.file("repo/package.json", "{}")
+    try s.dir("repo/node_modules/a")
+    for location in Scanner.checkoutFolders {
+      let path = "repo/" + location + "/fix"
+      try s.file(path + "/package.json", "{}")
+      try s.dir(path + "/node_modules/b")
+    }
+    let roots = [s.root.path]
+    let full = Set(Scanner().scan(roots: roots).map(\.path))
+    XCTAssertEqual(full.count, Scanner.checkoutFolders.count + 1)
+    for location in Scanner.checkoutFolders {
+      let path = s.path("repo/" + location + "/fix")
+      XCTAssertTrue(full.contains(path + "/node_modules"))
+      XCTAssertEqual(
+        Scanner().scan(folder: path, roots: roots).map(\.path), [path + "/node_modules"])
+    }
+  }
+
+  func testWorktreeContainersRespectIgnoresAndSymlinkBoundaries() throws {
+    let s = try Scratch()
+    try s.file("outside/fix/package.json", "{}")
+    try s.dir("outside/fix/node_modules/a")
+    try s.dir("repo/.cursor")
+    try s.file("repo/.cursor/.stowaway-ignore")
+    try s.file("repo/.cursor/worktrees/fix/package.json", "{}")
+    try s.dir("repo/.cursor/worktrees/fix/node_modules/a")
+    try s.dir("repo/.claude")
+    try FileManager.default.createSymbolicLink(
+      atPath: s.path("repo/.claude/worktrees"), withDestinationPath: s.path("outside"))
+    XCTAssertEqual(Scanner().scan(roots: [s.path("repo")]), [])
+    for path in ["repo/.cursor/worktrees/fix", "repo/.claude/worktrees/fix"] {
+      XCTAssertEqual(Scanner().scan(folder: s.path(path), roots: [s.path("repo")]), [])
+    }
+  }
+
+  func testHiddenCheckoutRootsAreWalkable() {
+    let home = realHomeDirectory.path
+    for location in [".cursor/worktrees", ".codex/worktrees", ".t3/worktrees"] {
+      let root = home + "/" + location
+      XCTAssertEqual(Scanner.walkable([root]), [root])
+    }
+  }
+}
+
+final class DownloadCacheTests: XCTestCase {
+  func testPnpmDownloadCacheLifecycleAndIgnore() throws {
+    try checkLifecycle(.pnpmCache)
+  }
+
+  func testBrowserDownloadCacheLifecycleAndIgnore() throws {
+    try checkLifecycle(.browserDownloads)
+  }
+
+  private func checkLifecycle(_ kind: Kind) throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    let home = try s.dir("code/home")
+    for relative in kind.defaultLocations {
+      let cache = home.appendingPathComponent(relative)
+      try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+      try Data("downloaded".utf8).write(to: cache.appendingPathComponent("data"))
+      let candidates = Scanner().caches(roots: [home.path], home: home).filter { $0.kind == kind }
+      XCTAssertTrue(candidates.contains { $0.path == cache.path })
+      let candidate = try XCTUnwrap(candidates.first { $0.path == cache.path })
+      try engine.adopt(cache.path, kind: kind)
+      XCTAssertTrue(isSymlink(cache.path))
+      try engine.release(cache.path)
+      XCTAssertEqual(
+        try String(contentsOf: cache.appendingPathComponent("data"), encoding: .utf8), "downloaded")
+      try Cleaner().delete(candidate, roots: [code.path], offloaded: [])
+      XCTAssertTrue(isRealDirectory(cache.path))
+      XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cache.path), [])
+      try Data().write(to: cache.appendingPathComponent(Scanner.ignoreMarker))
+      XCTAssertFalse(
+        Scanner().caches(roots: [home.path], home: home).contains { $0.path == cache.path })
+      XCTAssertFalse(
+        Scanner().caches(roots: [s.path("ungranted")], home: home).contains {
+          $0.path == cache.path
+        })
+    }
+  }
+}
+
+final class ScopedScanRegressionTests: XCTestCase {
+  func testDeepWorktreeUsesSameDepthForFullAndPartialScans() throws {
+    let s = try Scratch()
+    let project = "repo/.claude/worktrees/fix/web"
+    try s.file(project + "/package.json", "{}")
+    try s.dir(project + "/node_modules/a")
+    var scanner = Scanner()
+    scanner.maxDepth = 3
+    let full = scanner.scan(roots: [s.root.path])
+    XCTAssertEqual(full.map(\.path), [s.path(project + "/node_modules")])
+    XCTAssertEqual(scanner.scan(folder: s.path(project), roots: [s.root.path]), full)
+    scanner.maxDepth = 2
+    XCTAssertEqual(scanner.scan(roots: [s.root.path]), [])
+    XCTAssertEqual(scanner.scan(folder: s.path(project), roots: [s.root.path]), [])
+  }
+
+  func testMixedCargoPartialScanKeepsFullScanKindsAndOwners() throws {
+    let s = try Scratch()
+    try s.file("repo/Cargo.toml")
+    try s.file("repo/target/nested/Cargo.toml")
+    try s.file("repo/target/nested/target/CACHEDIR.TAG")
+    for profile in ["repo/target/debug", "repo/target/nested/target/release"] {
+      try s.dir(profile + "/.fingerprint")
+      try s.dir(profile + "/deps")
+      try s.dir(profile + "/build")
+    }
+    let roots = [s.root.path]
+    let full = Scanner().scan(roots: roots)
+    XCTAssertEqual(full.count, 4)
+    for folder in [
+      "repo/target", "repo/target/debug", "repo/target/nested",
+      "repo/target/nested/target/release/deps",
+    ] {
+      let path = s.path(folder)
+      let expected = full.filter { $0.path == path || $0.path.hasPrefix(path + "/") }
+      XCTAssertEqual(Set(Scanner().scan(folder: path, roots: roots)), Set(expected), folder)
+    }
+  }
+
+  func testSymlinkRootIsNotTraversedByEitherScan() throws {
+    let s = try Scratch()
+    try s.file("actual/package.json", "{}")
+    try s.dir("actual/node_modules/a")
+    try FileManager.default.createSymbolicLink(
+      atPath: s.path("link"), withDestinationPath: s.path("actual"))
+    XCTAssertEqual(Scanner().scan(roots: [s.path("link")]), [])
+    XCTAssertEqual(Scanner().scan(folder: s.path("link"), roots: [s.path("link")]), [])
+  }
+}

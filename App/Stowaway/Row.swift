@@ -24,7 +24,7 @@ struct Row: Identifiable, Hashable {
   var entryPaths: [String] = []
 
   var name: String {
-    if let project { return URL(fileURLWithPath: project).lastPathComponent }
+    if let project { return (project as NSString).lastPathComponent }
     return kind.label
   }
 
