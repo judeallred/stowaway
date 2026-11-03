@@ -412,3 +412,53 @@ final class DownloadCacheTests: XCTestCase {
     }
   }
 }
+
+final class ScopedScanRegressionTests: XCTestCase {
+  func testDeepWorktreeUsesSameDepthForFullAndPartialScans() throws {
+    let s = try Scratch()
+    let project = "repo/.claude/worktrees/fix/web"
+    try s.file(project + "/package.json", "{}")
+    try s.dir(project + "/node_modules/a")
+    var scanner = Scanner()
+    scanner.maxDepth = 3
+    let full = scanner.scan(roots: [s.root.path])
+    XCTAssertEqual(full.map(\.path), [s.path(project + "/node_modules")])
+    XCTAssertEqual(scanner.scan(folder: s.path(project), roots: [s.root.path]), full)
+    scanner.maxDepth = 2
+    XCTAssertEqual(scanner.scan(roots: [s.root.path]), [])
+    XCTAssertEqual(scanner.scan(folder: s.path(project), roots: [s.root.path]), [])
+  }
+
+  func testMixedCargoPartialScanKeepsFullScanKindsAndOwners() throws {
+    let s = try Scratch()
+    try s.file("repo/Cargo.toml")
+    try s.file("repo/target/nested/Cargo.toml")
+    try s.file("repo/target/nested/target/CACHEDIR.TAG")
+    for profile in ["repo/target/debug", "repo/target/nested/target/release"] {
+      try s.dir(profile + "/.fingerprint")
+      try s.dir(profile + "/deps")
+      try s.dir(profile + "/build")
+    }
+    let roots = [s.root.path]
+    let full = Scanner().scan(roots: roots)
+    XCTAssertEqual(full.count, 4)
+    for folder in [
+      "repo/target", "repo/target/debug", "repo/target/nested",
+      "repo/target/nested/target/release/deps",
+    ] {
+      let path = s.path(folder)
+      let expected = full.filter { $0.path == path || $0.path.hasPrefix(path + "/") }
+      XCTAssertEqual(Set(Scanner().scan(folder: path, roots: roots)), Set(expected), folder)
+    }
+  }
+
+  func testSymlinkRootIsNotTraversedByEitherScan() throws {
+    let s = try Scratch()
+    try s.file("actual/package.json", "{}")
+    try s.dir("actual/node_modules/a")
+    try FileManager.default.createSymbolicLink(
+      atPath: s.path("link"), withDestinationPath: s.path("actual"))
+    XCTAssertEqual(Scanner().scan(roots: [s.path("link")]), [])
+    XCTAssertEqual(Scanner().scan(folder: s.path("link"), roots: [s.path("link")]), [])
+  }
+}

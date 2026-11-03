@@ -16,7 +16,7 @@ public struct Candidate: Identifiable, Hashable, Sendable {
 
   public var url: URL { URL(fileURLWithPath: path) }
   public var name: String {
-    if let project { return URL(fileURLWithPath: project).lastPathComponent }
+    if let project { return (project as NSString).lastPathComponent }
     return url.lastPathComponent
   }
 }
@@ -59,7 +59,7 @@ public struct Scanner: Sendable {
     var seen = Set<String>()
     for root in Self.walkable(roots) {
       var st = stat()
-      guard lstat(root, &st) == 0 else { continue }
+      guard lstat(root, &st) == 0, st.st_mode & S_IFMT == S_IFDIR else { continue }
       visit(
         URL(fileURLWithPath: root), device: st.st_dev, depth: 0, nodeAncestor: false, into: &found)
     }
@@ -76,58 +76,14 @@ public struct Scanner: Sendable {
         folder == $0 || folder.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/")
       })
     else { return [] }
-    let parts = folder.dropFirst(root.count).split(separator: "/").map(String.init)
-    guard parts.count <= maxDepth else { return [] }
-    // Folders the full scan skips in the home folder (Desktop, Documents…) aren't scanned here.
-    if root == realHomeDirectory.standardizedFileURL.path, let first = parts.first,
-      Self.homeSkips.contains(first)
-    {
-      return []
-    }
-    var allowedHidden = Set<Int>()
-    for location in Self.checkoutFolders {
-      let components = location.split(separator: "/").map(String.init)
-      for start in parts.indices where start + components.count <= parts.count {
-        if Array(parts[start..<(start + components.count)]) == components {
-          allowedHidden.formUnion(start..<(start + components.count))
-        }
-      }
-    }
-    if parts.contains(where: { $0 == "node_modules" || $0 == ".git" })
-      || parts.indices.contains(where: { parts[$0].hasPrefix(".") && !allowedHidden.contains($0) })
-    {
-      return []
-    }
-    // Walk down from the root to the folder's parent, as visit would, to learn whether a
-    // node_modules project lies above it (a checkout starts afresh) and to honor an ignore marker
-    // anywhere above it.
-    var nodeAncestor = false
-    var dir = URL(fileURLWithPath: root)
-    for part in parts {
-      if FileManager.default.fileExists(atPath: dir.appendingPathComponent(Self.ignoreMarker).path)
-      {
-        return []
-      }
-      if let rule = Kind.node.projectRule,
-        FileManager.default.fileExists(atPath: dir.appendingPathComponent(rule.manifest).path),
-        isRealDirectory(dir.appendingPathComponent(rule.folderName).path)
-      {
-        nodeAncestor = true
-      }
-      dir = dir.appendingPathComponent(part)
-      guard isRealDirectory(dir.path) else { return [] }
-      if Self.checkoutFolders.contains(where: {
-        dir.deletingLastPathComponent().path.hasSuffix("/" + $0)
-      }) {
-        nodeAncestor = false
-      }
-    }
     var st = stat()
-    guard lstat(folder, &st) == 0, st.st_mode & S_IFMT == S_IFDIR else { return [] }
+    guard lstat(root, &st) == 0, st.st_mode & S_IFMT == S_IFDIR else { return [] }
     var found: [Candidate] = []
+    // Prune unrelated branches of the same traversal used by a full scan. Worktree depth,
+    // managed-folder boundaries, ignores and volume checks then have one source of truth.
     visit(
-      URL(fileURLWithPath: folder), device: st.st_dev, depth: parts.count,
-      nodeAncestor: nodeAncestor, into: &found)
+      URL(fileURLWithPath: root), device: st.st_dev, depth: 0,
+      nodeAncestor: false, scope: folder, into: &found)
     return found
   }
 
@@ -181,8 +137,10 @@ public struct Scanner: Sendable {
   }
 
   private func visit(
-    _ dir: URL, device: dev_t, depth: Int, nodeAncestor: Bool, into found: inout [Candidate]
+    _ dir: URL, device: dev_t, depth: Int, nodeAncestor: Bool, scope: String? = nil,
+    into found: inout [Candidate]
   ) {
+    guard overlapsScope(dir.path, scope) else { return }
     let fm = FileManager.default
     if fm.fileExists(atPath: dir.appendingPathComponent(Self.ignoreMarker).path) { return }
     guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return }
@@ -195,7 +153,9 @@ public struct Scanner: Sendable {
       skip.insert(rule.folderName)
       let folder = dir.appendingPathComponent(rule.folderName)
       // Offloaded folders are symlinks; the engine lists those itself.
-      guard present.contains(rule.folderName), isRealDirectory(folder.path) else { continue }
+      guard present.contains(rule.folderName), isLocalDirectory(folder.path, device: device) else {
+        continue
+      }
       if kind == .node {
         childrenHaveNodeAncestor = true
         if nodeAncestor { continue }
@@ -204,7 +164,8 @@ public struct Scanner: Sendable {
       if kind == .cargoTarget,
         !fm.fileExists(atPath: folder.appendingPathComponent("CACHEDIR.TAG").path)
       {
-        visitCargoArtifacts(folder, project: dir.path, device: device, depth: 0, into: &found)
+        visitCargoArtifacts(
+          folder, project: dir.path, device: device, depth: 0, scope: scope, into: &found)
         continue
       }
       if let marker = rule.requiredMarker,
@@ -212,7 +173,9 @@ public struct Scanner: Sendable {
       {
         continue
       }
-      found.append(Candidate(kind: kind, path: folder.path, project: dir.path))
+      if withinScope(folder.path, scope) {
+        found.append(Candidate(kind: kind, path: folder.path, project: dir.path))
+      }
     }
 
     guard depth < maxDepth else { return }
@@ -224,17 +187,20 @@ public struct Scanner: Sendable {
       && !Self.packageExtensions.contains((name as NSString).pathExtension.lowercased())
     {
       let child = dir.appendingPathComponent(name)
-      if isLocalDirectory(child.path, device: device) {
+      if overlapsScope(child.path, scope), isLocalDirectory(child.path, device: device) {
         visit(
           child, device: device, depth: depth + 1, nodeAncestor: childrenHaveNodeAncestor,
-          into: &found)
+          scope: scope, into: &found)
       }
     }
     // Each checkout is its own project, so this one's node_modules isn't its ancestor.
-    for checkouts in checkoutContainers(in: dir, device: device) {
+    for checkouts in checkoutContainers(in: dir, device: device)
+    where overlapsScope(checkouts.path, scope) {
       for checkout in subdirectories(of: checkouts)
-      where isLocalDirectory(checkout.path, device: device) {
-        visit(checkout, device: device, depth: depth + 1, nodeAncestor: false, into: &found)
+      where overlapsScope(checkout.path, scope) && isLocalDirectory(checkout.path, device: device) {
+        visit(
+          checkout, device: device, depth: depth + 1, nodeAncestor: false, scope: scope,
+          into: &found)
       }
     }
   }
@@ -242,15 +208,18 @@ public struct Scanner: Sendable {
   /// Mixed targets contain experiments and even source checkouts. Only identified cache
   /// parts become candidates; never the enclosing folder or its executable outputs.
   private func visitCargoArtifacts(
-    _ dir: URL, project: String, device: dev_t, depth: Int, into found: inout [Candidate]
+    _ dir: URL, project: String, device: dev_t, depth: Int, scope: String? = nil,
+    into found: inout [Candidate]
   ) {
-    guard depth <= maxDepth, isLocalDirectory(dir.path, device: device),
+    guard overlapsScope(dir.path, scope), depth <= maxDepth,
+      isLocalDirectory(dir.path, device: device),
       !FileManager.default.fileExists(atPath: dir.appendingPathComponent(Self.ignoreMarker).path)
     else { return }
     if isCargoProfile(dir) {
       for name in ["deps", "incremental", "build"] {
         let part = dir.appendingPathComponent(name)
-        if isLocalDirectory(part.path, device: device) || isSymlink(part.path),
+        if withinScope(part.path, scope),
+          isLocalDirectory(part.path, device: device) || isSymlink(part.path),
           !FileManager.default.fileExists(
             atPath: part.appendingPathComponent(Self.ignoreMarker).path)
         {
@@ -268,8 +237,19 @@ public struct Scanner: Sendable {
     where !["node_modules", "deps", "incremental", "build"].contains(child.lastPathComponent)
       && !Self.packageExtensions.contains(child.pathExtension.lowercased())
     {
-      visitCargoArtifacts(child, project: owner, device: device, depth: depth + 1, into: &found)
+      visitCargoArtifacts(
+        child, project: owner, device: device, depth: depth + 1, scope: scope, into: &found)
     }
+  }
+
+  private func withinScope(_ path: String, _ scope: String?) -> Bool {
+    guard let scope else { return true }
+    return path == scope || path.hasPrefix(scope.hasSuffix("/") ? scope : scope + "/")
+  }
+
+  private func overlapsScope(_ path: String, _ scope: String?) -> Bool {
+    guard let scope else { return true }
+    return withinScope(path, scope) || withinScope(scope, path)
   }
 
   private func checkoutContainers(in dir: URL, device: dev_t) -> [URL] {
