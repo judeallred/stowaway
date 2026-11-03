@@ -370,3 +370,38 @@ final class WorktreeLocationTests: XCTestCase {
     }
   }
 }
+
+final class DownloadCacheTests: XCTestCase {
+  func testPnpmDownloadCacheLifecycleAndIgnore() throws {
+    try checkLifecycle(.pnpmCache)
+  }
+
+  private func checkLifecycle(_ kind: Kind) throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    let home = try s.dir("code/home")
+    for relative in kind.defaultLocations {
+      let cache = home.appendingPathComponent(relative)
+      try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+      try Data("downloaded".utf8).write(to: cache.appendingPathComponent("data"))
+      let candidates = Scanner().caches(roots: [home.path], home: home).filter { $0.kind == kind }
+      XCTAssertTrue(candidates.contains { $0.path == cache.path })
+      let candidate = try XCTUnwrap(candidates.first { $0.path == cache.path })
+      try engine.adopt(cache.path, kind: kind)
+      XCTAssertTrue(isSymlink(cache.path))
+      try engine.release(cache.path)
+      XCTAssertEqual(
+        try String(contentsOf: cache.appendingPathComponent("data"), encoding: .utf8), "downloaded")
+      try Cleaner().delete(candidate, roots: [code.path], offloaded: [])
+      XCTAssertTrue(isRealDirectory(cache.path))
+      XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cache.path), [])
+      try Data().write(to: cache.appendingPathComponent(Scanner.ignoreMarker))
+      XCTAssertFalse(
+        Scanner().caches(roots: [home.path], home: home).contains { $0.path == cache.path })
+      XCTAssertFalse(
+        Scanner().caches(roots: [s.path("ungranted")], home: home).contains {
+          $0.path == cache.path
+        })
+    }
+  }
+}

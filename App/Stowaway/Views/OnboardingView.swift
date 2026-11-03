@@ -274,7 +274,7 @@ extension Kind {
     case .xcodeDerivedData: "often 10–100 GB"
     case .huggingface: "often 10–500 GB"
     case .gradleHome: "often 5–50 GB"
-    case .go, .pnpmStore: "often 2–30 GB"
+    case .go, .pnpmStore, .pnpmCache: "often 2–30 GB"
     case .cargoHome: "often 1–10 GB"
     case .jsCaches: "often 1–20 GB"
     case .npx: "often 1–5 GB"

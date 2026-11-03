@@ -152,15 +152,27 @@ public struct Scanner: Sendable {
 
   /// The machine-wide caches that exist under the roots. Instant, unlike walking the roots, so
   /// the app can show them while the walk runs.
-  public func caches(roots: [String]) -> [Candidate] {
+  public func caches(roots: [String], home: URL = realHomeDirectory) -> [Candidate] {
     var found: [Candidate] = []
     for kind in Kind.allCases where kind.isGlobal {
       for rel in kind.defaultLocations {
-        let path = realHomeDirectory.appendingPathComponent(rel).standardizedFileURL.path
+        let path = home.appendingPathComponent(rel).standardizedFileURL.path
         guard
           roots.contains(where: { path == $0 || path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") })
         else { continue }
-        if isRealDirectory(path) || isSymlink(path) {
+        var ancestor = URL(fileURLWithPath: path)
+        var ignored = false
+        while ancestor.path != "/" {
+          if FileManager.default.fileExists(
+            atPath: ancestor.appendingPathComponent(Self.ignoreMarker).path)
+          {
+            ignored = true
+            break
+          }
+          if roots.contains(ancestor.path) { break }
+          ancestor.deleteLastPathComponent()
+        }
+        if !ignored, isRealDirectory(path) || isSymlink(path) {
           found.append(Candidate(kind: kind, path: path, project: nil))
         }
       }

@@ -8,6 +8,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   case next
   case venv
   case pnpmStore = "pnpm-store"
+  case pnpmCache = "pnpm-cache"
   case cargoHome = "cargo-home"
   case xcodeDerivedData = "xcode-derived-data"
   case gradleHome = "gradle-home"
@@ -26,6 +27,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .next: "Next.js build files"
     case .venv: "Python virtualenv"
     case .pnpmStore: "pnpm store"
+    case .pnpmCache: "pnpm download cache"
     case .cargoHome: "Cargo registry"
     case .xcodeDerivedData: "Xcode DerivedData"
     case .gradleHome: "Gradle caches"
@@ -46,6 +48,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .next: "A Next.js project's build output and build cache."
     case .venv: "A Python project's virtual environment and installed packages."
     case .pnpmStore: "Packages pnpm shares between all your projects."
+    case .pnpmCache: "Package metadata and temporary packages downloaded by pnpm."
     case .cargoHome: "Crates and git dependencies Cargo has downloaded."
     case .xcodeDerivedData: "Xcode's build intermediates and indexes. Built apps stay on this Mac."
     case .gradleHome: "Downloaded dependencies and Gradle versions."
@@ -86,6 +89,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   public var defaultLocations: [String] {
     switch self {
     case .pnpmStore: ["Library/pnpm/store"]
+    case .pnpmCache: ["Library/Caches/pnpm"]
     case .cargoHome: [".cargo/registry", ".cargo/git"]
     case .xcodeDerivedData: ["Library/Developer/Xcode/DerivedData"]
     case .gradleHome: [".gradle/caches", ".gradle/wrapper/dists"]
