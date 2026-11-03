@@ -277,7 +277,7 @@ extension Kind {
     case .go, .pnpmStore, .pnpmCache: "often 2–30 GB"
     case .cargoHome: "often 1–10 GB"
     case .jsCaches: "often 1–20 GB"
-    case .npx: "often 1–5 GB"
+    case .npx, .browserDownloads: "often 1–5 GB"
     default: ""
     }
   }

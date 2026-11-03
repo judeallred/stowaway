@@ -26,7 +26,7 @@ you choose, makes stowing unlimited.
 | Python | a project's `.venv` (next to `pyproject.toml`) |
 | Cargo | a workspace's `target/` build folders (the programs it builds stay on your Mac), and `~/.cargo/registry` and `git` |
 | Xcode | DerivedData's intermediates and indexes (built apps stay on your Mac) |
-| Caches | pnpm's store and download cache, npm, Yarn and bun caches, npx packages, Go's module and build caches, Gradle's caches, Hugging Face models |
+| Caches | pnpm's store and download cache, npm, Yarn and bun caches, npx packages, Go's module and build caches, Gradle's caches, Hugging Face models, Playwright and Puppeteer browser downloads |
 
 Mixed Cargo `target` folders without `CACHEDIR.TAG` are searched for positively identified
 `deps`, `incremental` and `build` caches, including those in nested experiments and worktrees.

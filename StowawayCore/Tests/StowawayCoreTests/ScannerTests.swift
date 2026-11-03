@@ -376,6 +376,10 @@ final class DownloadCacheTests: XCTestCase {
     try checkLifecycle(.pnpmCache)
   }
 
+  func testBrowserDownloadCacheLifecycleAndIgnore() throws {
+    try checkLifecycle(.browserDownloads)
+  }
+
   private func checkLifecycle(_ kind: Kind) throws {
     let s = try Scratch()
     let (engine, code, _) = try makeEngine(s)

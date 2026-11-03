@@ -16,6 +16,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   case jsCaches = "js-caches"
   case npx
   case huggingface
+  case browserDownloads = "browser-downloads"
 
   public var id: String { rawValue }
 
@@ -35,6 +36,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .jsCaches: "npm, Yarn and bun caches"
     case .npx: "npx packages"
     case .huggingface: "Hugging Face models"
+    case .browserDownloads: "Browser downloads"
     }
   }
 
@@ -56,6 +58,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .jsCaches: "Download caches for npm, Yarn and bun."
     case .npx: "Packages npx has downloaded to run."
     case .huggingface: "Models and datasets downloaded from Hugging Face."
+    case .browserDownloads: "Browsers downloaded by Playwright and Puppeteer for automated testing."
     }
   }
 
@@ -98,6 +101,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
       [".npm/_cacache", "Library/Caches/Yarn", ".yarn/berry/cache", ".bun/install/cache"]
     case .npx: [".npm/_npx"]
     case .huggingface: [".cache/huggingface/hub"]
+    case .browserDownloads: ["Library/Caches/ms-playwright", ".cache/puppeteer"]
     default: []
     }
   }
