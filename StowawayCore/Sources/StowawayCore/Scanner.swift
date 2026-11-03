@@ -29,8 +29,11 @@ public struct Scanner: Sendable {
   /// Marker file that excludes a folder and everything under it.
   public static let ignoreMarker = ".stowaway-ignore"
   /// Hidden folders inside a project that hold whole checkouts, scanned as separate projects:
-  /// Claude Code's worktrees.
-  static let checkoutFolders = [".claude/worktrees"]
+  /// Common tool-managed and repository-local worktrees.
+  static let checkoutFolders = [
+    ".claude/worktrees", ".cursor/worktrees", ".codex/worktrees", ".t3/worktrees",
+    ".worktrees", ".git-worktrees", ".trees", "worktrees",
+  ]
 
   public var maxDepth = 6
   /// Folders in the home folder that never hold projects but take minutes to walk. The caches
@@ -81,9 +84,17 @@ public struct Scanner: Sendable {
     {
       return []
     }
-    let inCheckout = folder.contains("/" + Self.checkoutFolders[0] + "/")
+    var allowedHidden = Set<Int>()
+    for location in Self.checkoutFolders {
+      let components = location.split(separator: "/").map(String.init)
+      for start in parts.indices where start + components.count <= parts.count {
+        if Array(parts[start..<(start + components.count)]) == components {
+          allowedHidden.formUnion(start..<(start + components.count))
+        }
+      }
+    }
     if parts.contains(where: { $0 == "node_modules" || $0 == ".git" })
-      || (parts.contains(where: { $0.hasPrefix(".") }) && !inCheckout)
+      || parts.indices.contains(where: { parts[$0].hasPrefix(".") && !allowedHidden.contains($0) })
     {
       return []
     }
@@ -104,7 +115,10 @@ public struct Scanner: Sendable {
         nodeAncestor = true
       }
       dir = dir.appendingPathComponent(part)
-      if dir.deletingLastPathComponent().path.hasSuffix("/" + Self.checkoutFolders[0]) {
+      guard isRealDirectory(dir.path) else { return [] }
+      if Self.checkoutFolders.contains(where: {
+        dir.deletingLastPathComponent().path.hasSuffix("/" + $0)
+      }) {
         nodeAncestor = false
       }
     }
@@ -125,7 +139,10 @@ public struct Scanner: Sendable {
     return roots.filter { root in
       if root.hasPrefix(home + "/") {
         let first = root.dropFirst(home.count + 1).prefix { $0 != "/" }
-        if first == "Library" || first.hasPrefix(".") { return false }
+        let checkoutRoot = Self.checkoutFolders.contains {
+          root == home + "/" + $0 || root.hasPrefix(home + "/" + $0 + "/")
+        }
+        if first == "Library" || (first.hasPrefix(".") && !checkoutRoot) { return false }
       }
       return !roots.contains { other in
         other != root && root.hasPrefix(other.hasSuffix("/") ? other : other + "/")
@@ -158,7 +175,7 @@ public struct Scanner: Sendable {
     if fm.fileExists(atPath: dir.appendingPathComponent(Self.ignoreMarker).path) { return }
     guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return }
     let present = Set(names)
-    var skip: Set<String> = [".git", "node_modules"]
+    var skip: Set<String> = [".git", "node_modules", "worktrees"]
     var childrenHaveNodeAncestor = nodeAncestor
 
     for kind in Kind.allCases {
@@ -172,6 +189,12 @@ public struct Scanner: Sendable {
         if nodeAncestor { continue }
       }
       if kind == .cargoTarget, Self.cargoTargetRedirected(dir) { continue }
+      if kind == .cargoTarget,
+        !fm.fileExists(atPath: folder.appendingPathComponent("CACHEDIR.TAG").path)
+      {
+        visitCargoArtifacts(folder, project: dir.path, device: device, depth: 0, into: &found)
+        continue
+      }
       if let marker = rule.requiredMarker,
         !fm.fileExists(atPath: folder.appendingPathComponent(marker).path)
       {
@@ -196,12 +219,58 @@ public struct Scanner: Sendable {
       }
     }
     // Each checkout is its own project, so this one's node_modules isn't its ancestor.
-    for checkouts in Self.checkoutFolders.map({ dir.appendingPathComponent($0) })
-    where isLocalDirectory(checkouts.path, device: device) {
+    for checkouts in checkoutContainers(in: dir, device: device) {
       for checkout in subdirectories(of: checkouts)
       where isLocalDirectory(checkout.path, device: device) {
         visit(checkout, device: device, depth: depth + 1, nodeAncestor: false, into: &found)
       }
+    }
+  }
+
+  /// Mixed targets contain experiments and even source checkouts. Only identified cache
+  /// parts become candidates; never the enclosing folder or its executable outputs.
+  private func visitCargoArtifacts(
+    _ dir: URL, project: String, device: dev_t, depth: Int, into found: inout [Candidate]
+  ) {
+    guard depth <= maxDepth, isLocalDirectory(dir.path, device: device),
+      !FileManager.default.fileExists(atPath: dir.appendingPathComponent(Self.ignoreMarker).path)
+    else { return }
+    if isCargoProfile(dir) {
+      for name in ["deps", "incremental", "build"] {
+        let part = dir.appendingPathComponent(name)
+        if isLocalDirectory(part.path, device: device),
+          !FileManager.default.fileExists(
+            atPath: part.appendingPathComponent(Self.ignoreMarker).path)
+        {
+          found.append(Candidate(kind: .cargoCache, path: part.path, project: project))
+        }
+      }
+      return
+    }
+    let owner =
+      FileManager.default.fileExists(atPath: dir.appendingPathComponent("Cargo.toml").path)
+      ? dir.path : project
+    let checkouts = checkoutContainers(in: dir, device: device)
+      .filter { $0.path.dropFirst(dir.path.count + 1).hasPrefix(".") }
+    for child in subdirectories(of: dir) + checkouts
+    where !["node_modules", "deps", "incremental", "build"].contains(child.lastPathComponent)
+      && !Self.packageExtensions.contains(child.pathExtension.lowercased())
+    {
+      visitCargoArtifacts(child, project: owner, device: device, depth: depth + 1, into: &found)
+    }
+  }
+
+  private func checkoutContainers(in dir: URL, device: dev_t) -> [URL] {
+    Self.checkoutFolders.compactMap { location in
+      var path = dir
+      for part in location.split(separator: "/") {
+        path.appendPathComponent(String(part))
+        guard isLocalDirectory(path.path, device: device),
+          !FileManager.default.fileExists(
+            atPath: path.appendingPathComponent(Self.ignoreMarker).path)
+        else { return nil }
+      }
+      return path
     }
   }
 
@@ -287,8 +356,12 @@ public enum Measure {
   /// Whether a tool is working in the folder right now, where that can be told: Cargo holds a
   /// lock on `target/<profile>/.cargo-lock` for the whole build.
   public static func isBusy(_ candidate: Candidate) -> Bool {
-    guard candidate.kind == .cargoTarget else { return false }
-    for profile in subdirectories(of: candidate.url) {
+    guard candidate.kind == .cargoTarget || candidate.kind == .cargoCache else { return false }
+    let profiles =
+      candidate.kind == .cargoCache
+      ? [candidate.url.deletingLastPathComponent()]
+      : subdirectories(of: candidate.url).flatMap { [$0] + subdirectories(of: $0) }
+    for profile in profiles {
       let lock = profile.appendingPathComponent(".cargo-lock").path
       let fd = open(lock, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
       guard fd >= 0 else { continue }

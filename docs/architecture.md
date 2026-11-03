@@ -56,8 +56,9 @@ quarantining the files Stowaway copies; without it, binaries on the drive wouldn
 volumes. It skips hidden folders, `.git`, the inside of `node_modules`, and anything under a
 `.stowaway-ignore` file. In the home folder it skips Desktop, Documents and Downloads
 (`Scanner.homeSkips`): macOS asks the user before an app reads each of them, so a project kept
-there is added by choosing it. Claude Code's `.claude/worktrees` checkouts are scanned as separate
-projects. A folder counts when it sits next to its kind's manifest (`Kind.projectRule`):
+there is added by choosing it. Common worktree containers (`.claude/worktrees`, `.cursor/worktrees`, `.codex/worktrees`,
+`.t3/worktrees`, `.worktrees`, `.git-worktrees`, `.trees`, `worktrees`) are scanned as separate
+projects. Hidden worktree containers can also be granted directly. A folder counts when it sits next to its kind's manifest (`Kind.projectRule`):
 
 | Kind | Folder | Next to | Also requires |
 |---|---|---|---|
@@ -65,6 +66,11 @@ projects. A folder counts when it sits next to its kind's manifest (`Kind.projec
 | cargo-target | `target` | `Cargo.toml` | `CACHEDIR.TAG` inside; no `target-dir` override in `.cargo/config` |
 | next | `.next` | `package.json` | |
 | venv | `.venv` | `pyproject.toml` | `pyvenv.cfg` inside |
+
+A mixed `target` without `CACHEDIR.TAG` is searched up to six levels for Cargo profiles with
+`deps` plus `.fingerprint` or `.cargo-lock`. Only each profile's `deps`, `incremental` and `build`
+folders become `cargo-cache` candidates. They are revalidated before stowing or deletion and
+checked for Cargo locks; surrounding worktrees, executables and experiment outputs stay local.
 
 Machine-wide caches (`Kind.defaultLocations`) count when they exist under a root. A sandboxed app
 can't ask the tools (`pnpm store path`, `go env`) or read the shell's environment, so custom

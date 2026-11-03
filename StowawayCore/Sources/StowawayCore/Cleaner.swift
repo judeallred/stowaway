@@ -27,6 +27,12 @@ public struct Cleaner: Sendable {
         rule.requiredMarker.map({ FileManager.default.fileExists(atPath: path + "/" + $0) }) ?? true
       else { return "it no longer looks like \(candidate.kind.label)" }
     }
+    if candidate.kind == .cargoCache, !isCargoCache(candidate.url) {
+      return "it no longer looks like a Cargo build cache"
+    }
+    if candidate.kind == .cargoCache, Measure.isBusy(candidate) {
+      return "a Cargo build is using it"
+    }
     if GitIndex.containsRepository(candidate.url) { return "it contains a git repository" }
     switch GitIndex.tracking(of: candidate.url) {
     case .untracked: return nil

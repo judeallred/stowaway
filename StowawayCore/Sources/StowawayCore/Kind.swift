@@ -4,6 +4,7 @@ import Foundation
 public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   case node
   case cargoTarget = "cargo-target"
+  case cargoCache = "cargo-cache"
   case next
   case venv
   case pnpmStore = "pnpm-store"
@@ -21,6 +22,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     switch self {
     case .node: "node_modules"
     case .cargoTarget: "Cargo build files"
+    case .cargoCache: "Cargo build cache"
     case .next: "Next.js build files"
     case .venv: "Python virtualenv"
     case .pnpmStore: "pnpm store"
@@ -39,6 +41,8 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .node: "A project's installed packages. npm, Yarn or bun reinstalls them."
     case .cargoTarget:
       "Compiled dependencies and caches from a Cargo build. The programs it builds stay on this Mac."
+    case .cargoCache:
+      "A Cargo dependency, incremental or build cache. Source worktrees and built programs stay on this Mac."
     case .next: "A Next.js project's build output and build cache."
     case .venv: "A Python project's virtual environment and installed packages."
     case .pnpmStore: "Packages pnpm shares between all your projects."
@@ -74,7 +78,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     }
   }
 
-  public var isGlobal: Bool { projectRule == nil }
+  public var isGlobal: Bool { projectRule == nil && self != .cargoCache }
 
   /// Default locations of a machine-wide cache, relative to the home folder. A sandboxed app can't
   /// ask the tools (`pnpm store path`, `go env`) or read the shell's environment, so custom
@@ -186,3 +190,20 @@ public let realHomeDirectory: URL = {
   }
   return FileManager.default.homeDirectoryForCurrentUser
 }()
+
+/// Positive identification for caches found inside mixed experiment output folders.
+func isCargoCache(_ url: URL) -> Bool {
+  guard ["deps", "incremental", "build"].contains(url.lastPathComponent) else { return false }
+  let profile = url.deletingLastPathComponent()
+  return isRealDirectory(profile.appendingPathComponent(".fingerprint").path)
+    || FileManager.default.fileExists(atPath: profile.appendingPathComponent(".cargo-lock").path)
+}
+
+func isCargoProfile(_ url: URL) -> Bool {
+  let fm = FileManager.default
+  return
+    (isRealDirectory(url.appendingPathComponent("deps").path)
+    || isSymlink(url.appendingPathComponent("deps").path))
+    && (isRealDirectory(url.appendingPathComponent(".fingerprint").path)
+      || fm.fileExists(atPath: url.appendingPathComponent(".cargo-lock").path))
+}
