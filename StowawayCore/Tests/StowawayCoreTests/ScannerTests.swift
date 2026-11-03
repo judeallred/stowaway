@@ -292,6 +292,9 @@ final class MixedCargoTests: XCTestCase {
       try engine.adopt(candidate.path, kind: candidate.kind)
     }
     XCTAssertEqual(engine.entries().count, 9)
+    XCTAssertEqual(
+      Set(Scanner().scan(roots: [code.path])), Set(found),
+      "Stowed parts retain their owning project and remain discoverable without following links")
     for candidate in found { try engine.release(candidate.path) }
     // Deletion is limited to identified caches, leaving source and executables alone.
     for candidate in found {

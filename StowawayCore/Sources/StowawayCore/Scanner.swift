@@ -250,7 +250,7 @@ public struct Scanner: Sendable {
     if isCargoProfile(dir) {
       for name in ["deps", "incremental", "build"] {
         let part = dir.appendingPathComponent(name)
-        if isLocalDirectory(part.path, device: device),
+        if isLocalDirectory(part.path, device: device) || isSymlink(part.path),
           !FileManager.default.fileExists(
             atPath: part.appendingPathComponent(Self.ignoreMarker).path)
         {
