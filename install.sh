@@ -25,7 +25,8 @@ if command -v xcodegen >/dev/null 2>&1; then
 fi
 xcodebuild -quiet -project "$app/Stowaway.xcodeproj" -scheme Stowaway -configuration Release \
   -derivedDataPath "$app/build/DerivedData" -destination 'generic/platform=macOS' \
-  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO build
 
 # Quit the running copy as its Quit menu item does.
 if pgrep -xq Stowaway; then
