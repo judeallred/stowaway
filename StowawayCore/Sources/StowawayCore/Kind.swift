@@ -36,7 +36,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .jsCaches: "npm, Yarn and bun caches"
     case .npx: "npx packages"
     case .huggingface: "Hugging Face models"
-    case .browserDownloads: "Browser downloads"
+    case .browserDownloads: "Playwright & Puppeteer browsers"
     }
   }
 
@@ -58,7 +58,8 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .jsCaches: "Download caches for npm, Yarn and bun."
     case .npx: "Packages npx has downloaded to run."
     case .huggingface: "Models and datasets downloaded from Hugging Face."
-    case .browserDownloads: "Browsers downloaded by Playwright and Puppeteer for automated testing."
+    case .browserDownloads:
+      "Browser binaries used for automated testing. Playwright and Puppeteer can download them again."
     }
   }
 
