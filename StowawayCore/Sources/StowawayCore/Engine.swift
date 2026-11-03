@@ -466,6 +466,9 @@ public final class Engine: @unchecked Sendable {
       throw StowawayError("the drive isn't connected")
     }
     try validateAdoptable(local, store: store)
+    if let reason = DockerStorage.refusal(for: local) {
+      throw StowawayError.refusal(reason)
+    }
     if kind == .cargoCache {
       guard isCargoCache(local) else {
         throw StowawayError.refusal("it no longer looks like a Cargo build cache")

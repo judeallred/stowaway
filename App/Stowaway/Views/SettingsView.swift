@@ -135,6 +135,7 @@ struct GeneralSettings: View {
         Text("Stowaway can only switch stowed folders to local ones while it's running.")
           .font(.caption).foregroundStyle(.secondary)
       }
+      DockerStorageSettings(model: model)
       Section("Purchases") {
         if model.store.hasPurchased {
           Label("Unlimited stowing. Thank you!", systemImage: "heart.fill")
@@ -190,5 +191,92 @@ extension DriveSpeed {
     case .moderate: .primary
     case .slow: .orange
     }
+  }
+}
+
+/// A separate workflow: Docker must move its own persistent VM, outside automatic stowing.
+private struct DockerStorageSettings: View {
+  let model: AppModel
+  @State private var disks: [DockerStorage.Disk] = []
+  @State private var checking = false
+
+  var body: some View {
+    Section {
+      ForEach(disks) { disk in
+        VStack(alignment: .leading, spacing: 4) {
+          LabeledContent("Disk space used", value: Format.bytes(disk.allocatedBytes))
+          Text(Format.path(disk.path)).font(.caption).foregroundStyle(.secondary)
+            .textSelection(.enabled)
+          Text("Maximum image size: \(Format.bytes(disk.maximumBytes))")
+            .font(.caption).foregroundStyle(.secondary)
+        }
+      }
+      if disks.isEmpty {
+        Text(
+          "Choose the folder containing Docker.raw to measure Docker's storage. You can find its location in Docker Desktop's settings."
+        )
+        .foregroundStyle(.secondary)
+      }
+      HStack {
+        Button("Choose Disk Folder…") {
+          model.addRoot(
+            startingAt: realHomeDirectory.appendingPathComponent(DockerStorage.defaultDirectory),
+            message:
+              "Choose the folder containing Docker.raw or Docker.qcow2. Stowaway will measure it; Docker Desktop manages moving it."
+          )
+        }
+        Button("Refresh") { Task { await refresh() } }.disabled(checking)
+      }
+      DisclosureGroup("Move Docker storage to a drive") {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("1. In Docker Desktop, open Settings → Resources → Advanced.")
+          Text(
+            "2. Under Disk image location, choose Browse and select a folder on your external drive."
+          )
+          Text(
+            "3. Choose Apply and let Docker finish moving the disk. Then choose the new disk folder here to verify its size."
+          )
+          Text(
+            "Keep the drive connected while Docker is running. Quit Docker Desktop before ejecting it. This disk contains containers, images and persistent volumes, so Stowaway does not automatically stow or delete it."
+          )
+          Text(
+            "Use Docker's disk location setting to move it. Moving it in Finder or reducing its maximum size can lose data."
+          )
+          HStack {
+            Button("Open Docker Desktop") {
+              guard
+                let app = NSWorkspace.shared.urlForApplication(
+                  withBundleIdentifier: "com.docker.docker")
+              else {
+                model.message = "Docker Desktop isn't installed."
+                return
+              }
+              NSWorkspace.shared.open(app)
+            }
+            if let documentation = DockerStorage.documentation {
+              Link("Docker's Instructions", destination: documentation)
+            }
+          }
+        }
+        .font(.callout).padding(.vertical, 6)
+      }
+    } header: {
+      Text("Docker Desktop storage")
+    } footer: {
+      Text(
+        "Managed by Docker Desktop; separate from Stowaway's stowed total. Disk space used measures allocated storage, not the image's maximum size."
+      )
+      .font(.caption)
+    }
+    .task(id: model.roots) { await refresh() }
+  }
+
+  private func refresh() async {
+    checking = true
+    defer { checking = false }
+    let roots = model.roots
+    let found = await Task.detached { DockerStorage.disks(roots: roots) }.value
+    guard !Task.isCancelled else { return }
+    disks = found
   }
 }

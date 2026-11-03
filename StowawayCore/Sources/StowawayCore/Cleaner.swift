@@ -33,6 +33,7 @@ public struct Cleaner: Sendable {
     if candidate.kind == .cargoCache, Measure.isBusy(candidate) {
       return "a Cargo build is using it"
     }
+    if let reason = DockerStorage.refusal(for: candidate.url) { return reason }
     if GitIndex.containsRepository(candidate.url) { return "it contains a git repository" }
     switch GitIndex.tracking(of: candidate.url) {
     case .untracked: return nil
