@@ -38,18 +38,6 @@ Choose the home folder or each tool's worktree folder to include checkouts outsi
 Stowaway only looks in the folders you choose, never touches source code, and never touches a
 folder git tracks. To exclude a folder, put a file named `.stowaway-ignore` in it.
 
-## Docker Desktop storage
-
-Settings → General shows Docker disk usage after you grant its disk folder. It measures allocated
-space rather than the sparse image's maximum size, and supports choosing a relocated disk folder.
-Expand **Move Docker storage to a drive** for the guided workflow and **Open Docker Desktop**.
-Docker moves its own disk through Settings → Resources → Advanced → Disk image location.
-Keep the drive connected while Docker runs and quit Docker before ejecting it.
-
-Docker VM storage contains persistent volumes. It is excluded from automatic stowing, cleaning
-and Stowaway's totals; it cannot use the empty-folder fallback used for recreatable caches.
-See [Docker's move instructions](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/macfaqs/#how-do-i-move-the-file-to-a-bigger-drive).
-
 ## Repository
 
 | Path | What |
