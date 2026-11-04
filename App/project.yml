@@ -2,6 +2,9 @@
 #   xcodegen generate --spec App/project.yml
 name: Stowaway
 options:
+  # Older XcodeGen writes an older project format, rewriting the committed project.
+  minimumXcodeGenVersion: "2.45.0"
+  projectFormat: xcode16_0
   bundleIdPrefix: com.brooklynspaceport
   deploymentTarget:
     macOS: "14.0"
