@@ -33,7 +33,15 @@ struct Row: Identifiable, Hashable {
   var candidate: Candidate { Candidate(kind: kind, path: path, project: project) }
 
   // For sorting and showing in the library.
-  var sortSize: Int64 { (localBytes ?? 0) + driveBytes }
+  /// The size shown: on this Mac, or on the drive once stowed. (A stowed folder's local bytes
+  /// are what stays behind, a Cargo target's built programs, or its size before it was stowed
+  /// until the next measure; sorting by them put folders out of order.)
+  var sortSize: Int64 {
+    switch place {
+    case .mac: localBytes ?? 0
+    case .drive, .driveAway: driveBytes
+    }
+  }
   var sortDate: Date { lastActivity ?? .distantPast }
   var placeOrder: Int {
     switch place {

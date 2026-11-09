@@ -270,7 +270,7 @@ struct FoldersView: View {
 
 }
 
-/// Where a repository's folders are: all on the drive, all on this Mac, or how many are stowed.
+/// Where a repository's folders are: all on the drive, all on this Mac, or how many are left on it.
 private struct RepositoryPlace: View {
   let rows: [Row]
 
@@ -281,7 +281,10 @@ private struct RepositoryPlace: View {
     } else if stowed == 0 {
       Label("This Mac", systemImage: "laptopcomputer").foregroundStyle(.secondary)
     } else {
-      Text("\(stowed) of \(rows.count) stowed").foregroundStyle(.secondary)
+      // Short enough for the column even with thousands of folders.
+      Label("\(rows.count - stowed) on This Mac", systemImage: "laptopcomputer")
+        .foregroundStyle(.secondary)
+        .help("\(stowed) of \(rows.count) folders are stowed.")
     }
   }
 }
