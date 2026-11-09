@@ -193,6 +193,9 @@
         if place != .mac { r.entryPaths = [r.path] }
         return r
       }
+      func worktree(_ name: String, _ gb: Double, _ daysAgo: Double, _ place: Row.Place) -> Row {
+        row(.cargoTarget, "telemetry-agent/.claude/worktrees/\(name)", "target", gb, daysAgo, place)
+      }
       rows = [
         row(.node, "storefront-web", "node_modules", 1.21, 0.2, .mac),
         row(.cargoTarget, "telemetry-agent", "target", 14.8, 3, .drive),
@@ -204,7 +207,15 @@
         row(.cargoHome, nil, ".cargo/registry", 4.1, 2, .mac),
         row(.huggingface, nil, ".cache/huggingface/hub", 22.9, 9, .drive),
         row(.pnpmStore, nil, "Library/pnpm/store", 6.3, 5, .mac),
+        worktree("fix-flaky-upload", 9.6, 0.1, .mac),
+        worktree("batch-exporter", 11.2, 6, .drive),
       ]
+      // telemetry-agent has two worktrees, so its folders are listed under it.
+      let repository = "\(home)/code/telemetry-agent"
+      for i in rows.indices where rows[i].path.isWithin(repository) {
+        rows[i].checkout = GitIndex.Checkout(
+          path: rows[i].project ?? repository, repository: repository)
+      }
       applyDemo(
         drive: "/Volumes/Archive SSD",
         roots: [

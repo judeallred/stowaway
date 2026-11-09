@@ -101,4 +101,42 @@ final class GitIndexTests: XCTestCase {
     try s.file("py2/.venv/lib/python3.12/site-packages/x.py", "x")
     XCTAssertFalse(GitIndex.containsRepository(s.root.appendingPathComponent("py2/.venv")))
   }
+
+  /// Worktrees belong to their main checkout's repository, wherever they are.
+  func testWorktreesBelongToTheirMainCheckout() throws {
+    let s = try Scratch()
+    let main = try s.dir("code/app")
+    try shell("/usr/bin/git", ["init", "-q"], in: main)
+    try s.file("code/app/README", "x")
+    try shell("/usr/bin/git", ["add", "README"], in: main)
+    try shell(
+      "/usr/bin/git",
+      ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"], in: main)
+    try shell("/usr/bin/git", ["worktree", "add", "-q", ".claude/worktrees/one"], in: main)
+    try shell(
+      "/usr/bin/git", ["worktree", "add", "-q", s.root.appendingPathComponent("trees/two").path],
+      in: main)
+    try s.file("code/app/.claude/worktrees/one/crates/a/Cargo.toml")
+
+    let real = main.resolvingSymlinksInPath().path
+    let mainCheckout = try XCTUnwrap(GitIndex.checkout(of: main.appendingPathComponent("README")))
+    XCTAssertEqual(mainCheckout, GitIndex.Checkout(path: real, repository: real))
+    XCTAssertFalse(mainCheckout.isWorktree)
+
+    let one = try XCTUnwrap(
+      GitIndex.checkout(of: main.appendingPathComponent(".claude/worktrees/one/crates/a")))
+    XCTAssertEqual(one.path, real + "/.claude/worktrees/one")
+    XCTAssertEqual(one.repository, real)
+    XCTAssertTrue(one.isWorktree)
+    XCTAssertEqual(one.repositoryName, "app")
+
+    let two = try XCTUnwrap(GitIndex.checkout(of: s.root.appendingPathComponent("trees/two")))
+    XCTAssertEqual(two.repository, real)
+    XCTAssertNil(GitIndex.checkout(of: s.root.appendingPathComponent("trees")))
+  }
+
+  func testABareRepositorysNameDropsGit() {
+    XCTAssertEqual(
+      GitIndex.Checkout(path: "/w/x", repository: "/r/app.git").repositoryName, "app")
+  }
 }

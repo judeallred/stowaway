@@ -7,9 +7,9 @@ import SwiftUI
 /// Folders Stowaway can't stow, such as pnpm projects, aren't listed.
 struct FoldersView: View {
   @Bindable var model: AppModel
-  @State private var selection: Set<Row.ID> = []
+  @State private var selection: Set<FolderItem.ID> = []
   @State private var filter: Filter = .all
-  @State private var sortOrder = [KeyPathComparator(\Row.sortSize, order: .reverse)]
+  @State private var sortOrder = [KeyPathComparator(\FolderItem.sortSize, order: .reverse)]
   @State private var confirmingDelete: [Row] = []
   @State private var search = ""
   /// All folders, or those in one watched folder (chosen in the sidebar).
@@ -40,14 +40,25 @@ struct FoldersView: View {
         search.isEmpty || $0.path.localizedCaseInsensitiveContains(search)
           || $0.kind.label.localizedCaseInsensitiveContains(search)
       }
-      .sorted(using: sortOrder)
+  }
+
+  /// The table's lines: the visible folders, worktrees gathered under their repository.
+  private var items: [FolderItem] {
+    FolderItem.sorted(FolderItem.grouping(visible), using: sortOrder)
   }
 
   /// What the row being worked on shows in the Where column.
   private var working: String { "\((model.operation ?? .stowing).verb)…" }
 
-  /// Selected rows the filter and search still show: hidden ones are never acted on.
-  private var selected: [Row] { visible.filter { selection.contains($0.id) } }
+  /// Selected rows the filter and search still show: hidden ones are never acted on. A selected
+  /// repository stands for all its folders.
+  private var selected: [Row] { rows(for: selection) }
+
+  private func rows(for ids: Set<FolderItem.ID>) -> [Row] {
+    items.flatMap { item in
+      ids.contains(item.id) ? item.rows : item.rows.filter { ids.contains($0.id) }
+    }
+  }
 
   var body: some View {
     NavigationSplitView {
@@ -113,47 +124,55 @@ struct FoldersView: View {
   }
 
   private var table: some View {
-    Table(visible, selection: $selection, sortOrder: $sortOrder) {
-      TableColumn("Project", value: \.name) { row in
+    Table(items, children: \.children, selection: $selection, sortOrder: $sortOrder) {
+      TableColumn("Project", value: \.name) { item in
         VStack(alignment: .leading, spacing: 1) {
-          Text(row.name)
-          Text(Format.path(row.path)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+          Text(item.name).fontWeight(item.row == nil ? .medium : nil)
+          Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             .truncationMode(.middle)
         }
-        .help(row.path)
+        .help(item.row?.path ?? "\(item.name): \(item.detail.lowercased())")
       }
       .width(min: 140, ideal: 200)
-      TableColumn("What", value: \.kind.label) { row in
-        Text(row.kind.label).help(row.kind.summary)
+      TableColumn("What", value: \.kindLabel) { item in
+        Text(item.kindLabel).help(item.row?.kind.summary ?? "")
       }
       .width(min: 110, ideal: 140)
-      TableColumn("Size", value: \.sortSize) { row in
-        Text(row.sizeText).monospacedDigit()
+      TableColumn("Size", value: \.sortSize) { item in
+        Text(item.row?.sizeText ?? Format.bytes(item.sortSize)).monospacedDigit()
       }
       .width(80)
-      TableColumn("Last Changed", value: \.sortDate) { row in
-        Text(Format.ago(row.lastActivity))
+      TableColumn("Last Changed", value: \.sortDate) { item in
+        Text(Format.ago(item.row?.lastActivity ?? item.rows.compactMap(\.lastActivity).max()))
       }
       .width(min: 90, ideal: 110)
-      TableColumn("Where", value: \.placeOrder) { row in
-        if model.busy.contains(row.path) {
-          HStack(spacing: 6) {
-            ProgressView().controlSize(.small)
-            Text(working).foregroundStyle(.secondary)
-          }
-        } else if model.queued.contains(row.path) {
-          Label("Queued", systemImage: "clock").foregroundStyle(.secondary)
+      TableColumn("Where", value: \.placeOrder) { item in
+        if let row = item.row {
+          place(of: row)
         } else {
-          PlaceLabel(
-            place: row.place, kept: model.keptOnMac.contains(row.path),
-            problem: model.problem(for: row))
+          RepositoryPlace(rows: item.rows)
         }
       }
       .width(min: 100, ideal: 120)
     }
-    .contextMenu(forSelectionType: Row.ID.self) { ids in
-      let rows = model.rows.filter { ids.contains($0.id) }
-      actions(for: rows)
+    .contextMenu(forSelectionType: FolderItem.ID.self) { ids in
+      actions(for: rows(for: ids))
+    }
+  }
+
+  @ViewBuilder
+  private func place(of row: Row) -> some View {
+    if model.busy.contains(row.path) {
+      HStack(spacing: 6) {
+        ProgressView().controlSize(.small)
+        Text(working).foregroundStyle(.secondary)
+      }
+    } else if model.queued.contains(row.path) {
+      Label("Queued", systemImage: "clock").foregroundStyle(.secondary)
+    } else {
+      PlaceLabel(
+        place: row.place, kept: model.keptOnMac.contains(row.path),
+        problem: model.problem(for: row))
     }
   }
 
@@ -192,8 +211,9 @@ struct FoldersView: View {
   }
 
   @ViewBuilder private var selectionButtons: some View {
-    Button("Select All") { selection = Set(visible.map(\.id)) }
-      .disabled(visible.isEmpty || visible.allSatisfy { selection.contains($0.id) })
+    let all = items.flatMap { [$0.id] + ($0.children ?? []).map(\.id) }
+    Button("Select All") { selection = Set(all) }
+      .disabled(all.isEmpty || all.allSatisfy { selection.contains($0) })
     Button("Select None") { selection = [] }
       .disabled(selection.isEmpty)
   }
@@ -248,6 +268,22 @@ struct FoldersView: View {
       : "Delete \(confirmingDelete.count) folders (\(Format.bytes(bytes)))?"
   }
 
+}
+
+/// Where a repository's folders are: all on the drive, all on this Mac, or how many are stowed.
+private struct RepositoryPlace: View {
+  let rows: [Row]
+
+  var body: some View {
+    let stowed = rows.filter { $0.place != .mac }.count
+    if stowed == rows.count {
+      Label("Drive", systemImage: "externaldrive.fill")
+    } else if stowed == 0 {
+      Label("This Mac", systemImage: "laptopcomputer").foregroundStyle(.secondary)
+    } else {
+      Text("\(stowed) of \(rows.count) stowed").foregroundStyle(.secondary)
+    }
+  }
 }
 
 /// Where a folder is: on the drive or on this Mac. A folder on this Mac is pending; if it's

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00E768FD9864B340A920F0AD /* FolderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E51470579A6C2C974D21B7 /* FolderItem.swift */; };
 		083D156F60FF7160935AA67C /* AppModel+Stow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56A0A8B92B42DE610604A304 /* AppModel+Stow.swift */; };
 		084E7D56BFFB9AF63628900B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE53D75B4C836D23647495CB /* AppModel.swift */; };
 		199C4A8ECA9F6BA87B0E314F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E771D811017E307261D18D3D /* PrivacyInfo.xcprivacy */; };
@@ -56,6 +57,7 @@
 		6529079C3D37E34B3F0DE2D9 /* AppModel+Folders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Folders.swift"; sourceTree = "<group>"; };
 		6E8BCFC4A5129628D012E55A /* FoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersView.swift; sourceTree = "<group>"; };
 		733FBCEB8E4E38C0DB765291 /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
+		80E51470579A6C2C974D21B7 /* FolderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderItem.swift; sourceTree = "<group>"; };
 		83216434CA2022F8DE1FD81B /* Products.storekit */ = {isa = PBXFileReference; path = Products.storekit; sourceTree = "<group>"; };
 		89069E2306AC30B5CEE1C615 /* StowawayCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = StowawayCore; path = ../StowawayCore; sourceTree = SOURCE_ROOT; };
 		901B7E9737A31AE93B4EAD6C /* BugReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugReport.swift; sourceTree = "<group>"; };
@@ -114,6 +116,7 @@
 				B918AE999924FB50CE2401CD /* Common.swift */,
 				E5B68FE87CAE686F8FA57C04 /* DashboardView.swift */,
 				AD67DDBF8835AF154AAD867E /* ExpenseViews.swift */,
+				80E51470579A6C2C974D21B7 /* FolderItem.swift */,
 				1CD3221BB936759B0EA56D72 /* FoldersSidebar.swift */,
 				6E8BCFC4A5129628D012E55A /* FoldersView.swift */,
 				733FBCEB8E4E38C0DB765291 /* MenuView.swift */,
@@ -266,6 +269,7 @@
 				8F5514C82D3DB241D29883BA /* Common.swift in Sources */,
 				CACAAA47083520FA4C64434E /* DashboardView.swift in Sources */,
 				3156F1C2846988D5EAF78755 /* ExpenseViews.swift in Sources */,
+				00E768FD9864B340A920F0AD /* FolderItem.swift in Sources */,
 				8DE73CEBE9119E5E3EF7A6EF /* FolderWatcher.swift in Sources */,
 				22897D4D95B186FDB5E15AEE /* FoldersSidebar.swift in Sources */,
 				C5A031E814FE7585C8733344 /* FoldersView.swift in Sources */,

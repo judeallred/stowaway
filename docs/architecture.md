@@ -58,7 +58,9 @@ volumes. It skips hidden folders, `.git`, the inside of `node_modules`, and anyt
 (`Scanner.homeSkips`): macOS asks the user before an app reads each of them, so a project kept
 there is added by choosing it. Common worktree containers (`.claude/worktrees`, `.cursor/worktrees`, `.codex/worktrees`,
 `.t3/worktrees`, `.worktrees`, `.git-worktrees`, `.trees`, `worktrees`) are scanned as separate
-projects. Hidden worktree containers can also be granted directly. A folder counts when it sits next to its kind's manifest (`Kind.projectRule`):
+projects. Hidden worktree containers can also be granted directly. The Folders window lists a repository's
+worktrees together under it: each project's checkout and repository are read from its `.git`
+(a linked worktree's `.git` file names `<repository>/.git/worktrees/<name>`), by `GitIndex.checkout`. A folder counts when it sits next to its kind's manifest (`Kind.projectRule`):
 
 | Kind | Folder | Next to | Also requires |
 |---|---|---|---|

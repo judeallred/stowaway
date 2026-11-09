@@ -327,6 +327,15 @@ extension AppModel {
       row.entryPaths.append(entry.local)
       rows[container] = row
     }
+    // Which checkout each project is in (a few small reads per project, once per merge).
+    var checkouts: [String: GitIndex.Checkout?] = [:]
+    for key in rows.keys {
+      guard let project = rows[key]?.project else { continue }
+      if checkouts[project] == nil {
+        checkouts[project] = GitIndex.checkout(of: URL(fileURLWithPath: project))
+      }
+      rows[key]?.checkout = checkouts[project] ?? nil
+    }
     return rows.values.sorted { ($0.name, $0.path) < ($1.name, $1.path) }
   }
 

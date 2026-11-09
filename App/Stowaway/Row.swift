@@ -22,6 +22,8 @@ struct Row: Identifiable, Hashable {
   var lastActivity: Date?
   /// Engine entries that make up this row (a Cargo `target/` is stowed as several parts).
   var entryPaths: [String] = []
+  /// The git checkout the project is in, so worktrees can be shown with their repository.
+  var checkout: GitIndex.Checkout?
 
   var name: String {
     if let project { return (project as NSString).lastPathComponent }

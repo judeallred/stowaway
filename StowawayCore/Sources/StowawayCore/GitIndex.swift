@@ -58,14 +58,61 @@ public enum GitIndex {
   /// The working tree's root and its index file, for the repository `folder` is in. The index is
   /// nil when `.git` is a file that can't be read or doesn't name its repository.
   static func repository(containing folder: URL) -> (root: URL, index: URL?)? {
-    var dir = folder.standardizedFileURL.deletingLastPathComponent()
+    guard
+      let (root, gitdir) = gitDirectory(
+        from: folder.standardizedFileURL.deletingLastPathComponent())
+    else { return nil }
+    return (root, gitdir?.appendingPathComponent("index"))
+  }
+
+  /// A git checkout: the folder holding `.git`, and the repository it belongs to. For a linked
+  /// worktree (`git worktree add`) that's the main checkout (or a bare repository); otherwise
+  /// it's the checkout itself.
+  public struct Checkout: Hashable, Sendable {
+    public let path: String
+    public let repository: String
+    public var isWorktree: Bool { path != repository }
+    /// The repository's name: its folder's, without a bare repository's `.git`.
+    public var repositoryName: String {
+      let name = (repository as NSString).lastPathComponent
+      return name.hasSuffix(".git") && name != ".git" ? String(name.dropLast(4)) : name
+    }
+
+    public init(path: String, repository: String) {
+      self.path = path
+      self.repository = repository
+    }
+  }
+
+  /// The checkout `folder` is in (or is), read from `.git` without running git.
+  public static func checkout(of folder: URL) -> Checkout? {
+    guard let (root, gitdir) = gitDirectory(from: folder.standardizedFileURL) else { return nil }
+    // A linked worktree's git directory is `<common>/worktrees/<name>`, where the common one is
+    // the main checkout's `.git` (or a bare repository). Anything else (a submodule's
+    // `.git/modules/<name>`) is its own repository.
+    if let gitdir, gitdir.deletingLastPathComponent().lastPathComponent == "worktrees" {
+      let common = gitdir.deletingLastPathComponent().deletingLastPathComponent()
+      let repository =
+        common.lastPathComponent == ".git" ? common.deletingLastPathComponent() : common
+      // git writes real paths into `.git` files; compare like with like.
+      return Checkout(
+        path: root.resolvingSymlinksInPath().path,
+        repository: repository.resolvingSymlinksInPath().path)
+    }
+    let path = root.resolvingSymlinksInPath().path
+    return Checkout(path: path, repository: path)
+  }
+
+  /// The nearest folder from `start` up that holds `.git`, and its git directory: `.git` itself,
+  /// or where a `.git` file (a worktree's or submodule's) says it is. Nil git directory when a
+  /// `.git` file can't be read or doesn't say.
+  private static func gitDirectory(from start: URL) -> (root: URL, gitdir: URL?)? {
+    var dir = start
     while dir.path != "/" {
       let git = dir.appendingPathComponent(".git")
       var isDir: ObjCBool = false
       if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir) {
-        if isDir.boolValue {
-          return (dir, git.appendingPathComponent("index"))
-        }
+        if isDir.boolValue { return (dir, git) }
         // A worktree or submodule: `.git` is a file saying `gitdir: <path>`.
         if let text = try? String(contentsOf: git, encoding: .utf8),
           let line = text.split(whereSeparator: \.isNewline).first(where: {
@@ -75,7 +122,7 @@ public enum GitIndex {
           let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
           let gitdir =
             path.hasPrefix("/") ? URL(fileURLWithPath: path) : dir.appendingPathComponent(path)
-          return (dir, gitdir.appendingPathComponent("index"))
+          return (dir, gitdir.standardizedFileURL)
         }
         return (dir, nil)
       }
