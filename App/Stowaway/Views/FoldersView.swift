@@ -51,13 +51,11 @@ struct FoldersView: View {
   private var working: String { "\((model.operation ?? .stowing).verb)…" }
 
   /// Selected rows the filter and search still show: hidden ones are never acted on. A selected
-  /// repository stands for all its folders.
+  /// repository or checkout stands for all its folders.
   private var selected: [Row] { rows(for: selection) }
 
   private func rows(for ids: Set<FolderItem.ID>) -> [Row] {
-    items.flatMap { item in
-      ids.contains(item.id) ? item.rows : item.rows.filter { ids.contains($0.id) }
-    }
+    items.flatMap { $0.rows(for: ids) }
   }
 
   var body: some View {
@@ -211,7 +209,7 @@ struct FoldersView: View {
   }
 
   @ViewBuilder private var selectionButtons: some View {
-    let all = items.flatMap { [$0.id] + ($0.children ?? []).map(\.id) }
+    let all = items.flatMap(\.allIDs)
     Button("Select All") { selection = Set(all) }
       .disabled(all.isEmpty || all.allSatisfy { selection.contains($0) })
     Button("Select None") { selection = [] }
