@@ -42,8 +42,10 @@ extension AppModel {
       let total = values?.volumeTotalCapacity.map(Int64.init)
       let format = values?.volumeLocalizedFormatDescription
       let bytes = engine.offloadedBytes
+      let cargoOn = engine.cargoBuildFolderIsOn()
       await MainActor.run {
         guard generation == self.settingsGeneration else { return }
+        self.cargoBuildFolderOn = cargoOn
         self.drivePath = drivePath
         self.driveConnected = store != nil
         self.driveFreeBytes = free

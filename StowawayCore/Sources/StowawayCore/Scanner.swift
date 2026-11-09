@@ -346,13 +346,20 @@ public enum Measure {
   }
 
   /// Whether a tool is working in the folder right now, where that can be told: Cargo holds a
-  /// lock on `target/<profile>/.cargo-lock` for the whole build.
+  /// lock on `target/<profile>/.cargo-lock` for the whole build. (In the shared build folder,
+  /// each project's profiles are two levels down: `<hash>/<hash>/<profile>`.)
   public static func isBusy(_ candidate: Candidate) -> Bool {
-    guard candidate.kind == .cargoTarget || candidate.kind == .cargoCache else { return false }
-    let profiles =
-      candidate.kind == .cargoCache
-      ? [candidate.url.deletingLastPathComponent()]
-      : subdirectories(of: candidate.url).flatMap { [$0] + subdirectories(of: $0) }
+    let profilesIn = { (dir: URL) in
+      subdirectories(of: dir).flatMap { [$0] + subdirectories(of: $0) }
+    }
+    let profiles: [URL]
+    switch candidate.kind {
+    case .cargoCache: profiles = [candidate.url.deletingLastPathComponent()]
+    case .cargoTarget: profiles = profilesIn(candidate.url)
+    case .cargoBuild:
+      profiles = subdirectories(of: candidate.url).flatMap(subdirectories(of:)).flatMap(profilesIn)
+    default: return false
+    }
     for profile in profiles {
       let lock = profile.appendingPathComponent(".cargo-lock").path
       let fd = open(lock, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)

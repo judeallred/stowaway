@@ -8,7 +8,7 @@ struct SettingsView: View {
     // Each tab sets its own height, so the window fits it rather than scrolling.
     TabView {
       StowSettings(model: model)
-        .frame(width: 520, height: 570)
+        .frame(width: 520, height: model.usesRust || model.cargoBuildFolderOn ? 720 : 570)
         .tabItem { Label("Stow", systemImage: "externaldrive") }
       GeneralSettings(model: model)
         .frame(width: 520, height: 520)
@@ -65,6 +65,21 @@ struct StowSettings: View {
           "Folders that haven't changed for this long move to the drive while it's connected. A build or an IDE using one holds it back."
         )
         .font(.caption).foregroundStyle(.secondary)
+      }
+      if model.usesRust || model.cargoBuildFolderOn {
+        Section {
+          Toggle(
+            CargoBuildFolderText.title,
+            isOn: Binding(
+              get: { model.cargoBuildFolderOn }, set: { model.setCargoBuildFolder($0) }))
+        } header: {
+          Text("Rust")
+        } footer: {
+          Text(
+            "Cargo keeps most of every build in one folder on the drive, so projects and worktrees build there from the start. Adds one line to ~/.cargo/config.toml; turning this off removes it and deletes that folder. Needs Rust 1.91 or later."
+          )
+          .font(.caption).foregroundStyle(.secondary)
+        }
       }
       if model.driveName != nil {
         Section {

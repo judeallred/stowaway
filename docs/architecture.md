@@ -192,6 +192,25 @@ waits until purchases are read, so a paying user is never held to it. Stowaway n
 folder of yours on its own; it only cleans up its own copies (a package's old copy on the drive
 after an upgrade, a local folder after it's moved to the drive, the copies of a deleted project).
 
+## Cargo's build folder (opt-in)
+
+Cargo 1.91+ can keep a build's intermediate files (`deps`, `incremental`, `build`,
+`.fingerprint`) in a separate `build.build-dir`, leaving only built programs in `target/`. With
+the setting on (in the setup wizard, Settings, or suggested on the main window once 20 GB of
+Cargo build files have been stowed), Stowaway (`CargoBuildFolder`):
+
+- makes `~/.cargo/stowaway-build`, a machine-wide cache of kind `cargo-build`, and stows it at
+  once while it's empty, so it's a link to the drive (or a local folder while the drive is away);
+- adds one marked line to Cargo's config (`config.toml`, or the older `config` when that's in
+  use): `build.build-dir = "~/.cargo/stowaway-build/{workspace-path-hash}"`, or `build-dir` inside
+  an existing `[build]` table. A config that sets `build-dir` itself, or `build` as an inline
+  table, is left alone.
+
+So every project and worktree builds onto the drive from its first build, each in its own
+folder. Cargo's locks in it (`<hash>/<hash>/<profile>/.cargo-lock`) count as busy, as a
+target's do. Turning it off removes the line and deletes the folder. It needs `~/.cargo` (or
+the home folder) to be granted, and asks for it if not.
+
 ## Deleting
 
 `Cleaner` applies the same guard rails as stowing, and runs under the engine's lock

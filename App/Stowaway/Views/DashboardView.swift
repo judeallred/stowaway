@@ -17,6 +17,7 @@ struct DashboardView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 24) {
             status
+            if model.showsCargoSuggestion { CargoBuildFolderSuggestion(model: model) }
             breakdown
           }
           .padding(20)

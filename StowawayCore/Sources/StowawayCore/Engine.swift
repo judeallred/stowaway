@@ -860,6 +860,11 @@ public final class Engine: @unchecked Sendable {
     {
       return true
     }
+    if entry.kind == .cargoBuild,
+      Measure.isBusy(Candidate(kind: .cargoBuild, path: local.path, project: nil))
+    {
+      return true
+    }
     if entry.kind == .cargoTarget {
       // A part (target/debug/deps) or the whole target: check every profile's lock.
       let target =

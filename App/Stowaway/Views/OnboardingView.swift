@@ -1,7 +1,7 @@
 import StowawayCore
 import SwiftUI
 
-/// First launch, in four short steps. Every step can be skipped ("Set Up Later", or Esc), and
+/// First launch, in four or five short steps (the Rust one only where Rust is set up). Every step can be skipped ("Set Up Later", or Esc), and
 /// onboarding doesn't come back once finished or skipped: the library's empty state and Settings
 /// cover everything it asks for.
 struct OnboardingView: View {
@@ -14,7 +14,12 @@ struct OnboardingView: View {
   @State private var explainingHomeFolder: Bool
 
   enum Step: Int, CaseIterable {
-    case welcome, projects, caches, finish
+    case welcome, projects, caches, cargo, finish
+  }
+
+  /// The steps shown: the Rust one only on a Mac with Rust.
+  private var steps: [Step] {
+    Step.allCases.filter { $0 != .cargo || model.usesRust || model.cargoBuildFolderOn }
   }
 
   init(model: AppModel, step: Step = .welcome, explainingHomeFolder: Bool = false) {
@@ -39,6 +44,7 @@ struct OnboardingView: View {
         } else {
           caches
         }
+      case .cargo: cargo
       case .finish: finish
       }
       Spacer(minLength: 0)
@@ -152,6 +158,30 @@ struct OnboardingView: View {
     }
   }
 
+  private var cargo: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(CargoBuildFolderText.title).font(.title2.weight(.semibold))
+      Text("Optional. " + CargoBuildFolderText.summary)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(CargoBuildFolderText.points, id: \.text) { point in
+          Label(point.text, systemImage: point.symbol)
+        }
+      }
+      if model.cargoBuildFolderOn {
+        Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+          .font(.headline)
+      } else {
+        Button("Turn On…") { model.turnOnCargoBuildFolder() }
+          .buttonStyle(.borderedProminent)
+      }
+      Text(CargoBuildFolderText.requirements)
+        .font(.caption).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
   private var finish: some View {
     VStack(alignment: .leading, spacing: 14) {
       Text("Almost done").font(.title2.weight(.semibold))
@@ -246,7 +276,7 @@ struct OnboardingView: View {
       Button("Set Up Later") { model.skipOnboarding() }
         .keyboardShortcut(.cancelAction)
       Spacer()
-      Text("Step \(step.rawValue + 1) of \(Step.allCases.count)")
+      Text("Step \((steps.firstIndex(of: step) ?? 0) + 1) of \(steps.count)")
         .font(.caption).foregroundStyle(.secondary)
       Spacer()
       if step != .welcome {
@@ -263,7 +293,8 @@ struct OnboardingView: View {
   }
 
   private func move(_ by: Int) {
-    step = Step(rawValue: step.rawValue + by) ?? step
+    guard let i = steps.firstIndex(of: step), steps.indices.contains(i + by) else { return }
+    step = steps[i + by]
   }
 }
 

@@ -55,6 +55,14 @@ final class AppModel {
     }
   }
   var roots: [String] = []
+  /// Cargo builds into Stowaway's shared build folder: its line is in Cargo's config.
+  var cargoBuildFolderOn = false
+  /// The main window's suggestion to turn that on was dismissed for good.
+  var cargoSuggestionDismissed = UserDefaults.standard.bool(forKey: "cargoSuggestionDismissed") {
+    didSet {
+      UserDefaults.standard.set(cargoSuggestionDismissed, forKey: "cargoSuggestionDismissed")
+    }
+  }
   /// Suggested folders the user said not to suggest again. Kept across launches.
   var dismissedSuggestions: Set<String> = Set(
     UserDefaults.standard.stringArray(forKey: "dismissedSuggestions") ?? [])

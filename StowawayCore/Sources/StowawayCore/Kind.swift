@@ -17,6 +17,8 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
   case npx
   case huggingface
   case browserDownloads = "browser-downloads"
+  /// The shared build folder Cargo uses when Stowaway's build folder setting is on.
+  case cargoBuild = "cargo-build"
 
   public var id: String { rawValue }
 
@@ -37,6 +39,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .npx: "npx packages"
     case .huggingface: "Hugging Face models"
     case .browserDownloads: "Playwright & Puppeteer browsers"
+    case .cargoBuild: "Cargo shared build folder"
     }
   }
 
@@ -60,6 +63,8 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .huggingface: "Models and datasets downloaded from Hugging Face."
     case .browserDownloads:
       "Browser binaries used for automated testing. Playwright and Puppeteer can download them again."
+    case .cargoBuild:
+      "Build files for every Rust project and worktree, where Stowaway pointed Cargo. The programs they build stay in each project's target folder."
     }
   }
 
@@ -103,6 +108,7 @@ public enum Kind: String, CaseIterable, Codable, Sendable, Identifiable {
     case .npx: [".npm/_npx"]
     case .huggingface: [".cache/huggingface/hub"]
     case .browserDownloads: ["Library/Caches/ms-playwright", ".cache/puppeteer"]
+    case .cargoBuild: [CargoBuildFolder.location]
     default: []
     }
   }
