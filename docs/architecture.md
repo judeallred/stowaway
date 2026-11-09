@@ -156,6 +156,11 @@ every 2 minutes:
   stays deleted), and the link returns.
 - **A link leads somewhere else** (the drive mounted under another name): it's pointed back at
   the copy. If the copy is gone, the folder becomes a local one.
+- **The project is gone** (a worktree removed with `git worktree remove`, a project folder
+  deleted): once it's stayed gone for an hour (`Engine.vanishedGrace`, counted across launches),
+  its copies on the drive are deleted and its entries forgotten. Only the project folder itself
+  missing counts, not its `target/` (that's `cargo clean`), and only under a root that's still
+  there, so a grant that didn't resolve is never taken for a deletion.
 
 Merging or replacing waits while a tool may still be writing: until nothing in the folder has
 changed for 20 seconds, and no Cargo build holds its profile's lock (`Engine.isBeingWritten`).
@@ -183,7 +188,7 @@ It also skips folders the user brought back ("Kept on Mac", until they're stowed
 folders it couldn't stow (a pnpm project), until they change. It stops at the free limit, and
 waits until purchases are read, so a paying user is never held to it. Stowaway never deletes a
 folder of yours on its own; it only cleans up its own copies (a package's old copy on the drive
-after an upgrade, a local folder after it's moved to the drive).
+after an upgrade, a local folder after it's moved to the drive, the copies of a deleted project).
 
 ## Deleting
 

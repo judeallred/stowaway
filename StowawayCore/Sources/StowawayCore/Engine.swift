@@ -135,6 +135,9 @@ public final class Engine: @unchecked Sendable {
   /// How long an npm node_modules must be untouched before packages an install brought back are
   /// offloaded again.
   public var quietPeriod: TimeInterval = 20
+  /// How long a stowed folder's project must stay gone (a deleted worktree, say) before its copy
+  /// on the drive is deleted. Long enough to ride out a project being deleted and cloned again.
+  public var vanishedGrace: TimeInterval = 3600
 
   /// Paused: reconcile does what keeps tools working (local folders when the drive goes, links
   /// put right) but moves nothing onto the drive: no merging local builds back, no re-stowing
@@ -747,6 +750,7 @@ public final class Engine: @unchecked Sendable {
 
   private func reconcileUnlocked() {
     let store = enterGrants()
+    if let store, !paused { sweepVanished(store: store) }
     for entry in entries() {
       if entry.mode == .packages {
         reconcilePackages(entry, store: store)
@@ -771,6 +775,80 @@ public final class Engine: @unchecked Sendable {
         replace(entry, store: store)
       }
     }
+  }
+
+  /// Deletes the copies of stowed folders whose project is gone for good: a worktree removed
+  /// with `git worktree remove`, a project folder deleted. Nothing on the Mac leads to them any
+  /// more, so they'd only take up the drive (and count toward the free limit). A project must
+  /// stay gone for `vanishedGrace`, across launches, before its copies go.
+  private func sweepVanished(store: URL) {
+    let now = Date().timeIntervalSince1970
+    let seen = lock.withLock {
+      defaults.dictionary(forKey: "vanishedSince") as? [String: Double] ?? [:]
+    }
+    var since: [String: Double] = [:]
+    var gone: [Entry] = []
+    for entry in entries() where isVanished(entry) {
+      let first = seen[entry.id] ?? now
+      if now - first >= vanishedGrace {
+        gone.append(entry)
+      } else {
+        since[entry.id] = first
+      }
+    }
+    for entry in gone {
+      do {
+        let remote = try storePath(entry.remote, in: store)
+        let slot = entry.mode == .packages ? remote : remote.deletingLastPathComponent()
+        try checkContained(slot, in: store)
+        try trash(slot)
+        try save(entries().filter { $0.id != entry.id })
+        note("\(entry.local)'s project is gone; deleted its copy on the drive")
+      } catch {
+        // Kept for the next reconcile to try again.
+        since[entry.id] = seen[entry.id] ?? now
+        note("couldn't delete the copy of \(entry.local): \(error.localizedDescription)")
+      }
+    }
+    lock.withLock {
+      if since.isEmpty {
+        defaults.removeObject(forKey: "vanishedSince")
+      } else {
+        defaults.set(since, forKey: "vanishedSince")
+      }
+    }
+  }
+
+  /// Whether an entry's project folder no longer exists: neither its link nor its folder is
+  /// there, and the project folder holding it is gone, under a root that's still reachable.
+  /// Only "no such file" counts: a folder the sandbox can't see right now (a grant that didn't
+  /// resolve) is never taken for a deleted one. Machine-wide caches have no project.
+  func isVanished(_ entry: Entry) -> Bool {
+    guard entry.kind?.isGlobal != true, let project = projectFolder(of: entry) else {
+      return false
+    }
+    func missing(_ path: String) -> Bool {
+      var st = stat()
+      return lstat(path, &st) != 0 && errno == ENOENT
+    }
+    guard missing(entry.local), missing(project.path) else { return false }
+    let path = project.standardizedFileURL.path
+    return rootPaths.contains { root in
+      path.hasPrefix(root.hasSuffix("/") ? root : root + "/") && isRealDirectory(root)
+    }
+  }
+
+  /// The project folder an entry belongs to: the one holding its `target/`, `node_modules`,
+  /// `.venv`… (For a Cargo cache part, `…/target/<…>/debug/deps`, the one holding the `target`.)
+  func projectFolder(of entry: Entry) -> URL? {
+    let local = URL(fileURLWithPath: entry.local).standardizedFileURL
+    if entry.kind == .cargoCache {
+      let components = local.pathComponents
+      guard let i = components.lastIndex(of: "target"), i > 1 else { return nil }
+      return URL(fileURLWithPath: NSString.path(withComponents: Array(components[..<i])))
+    }
+    return URL(fileURLWithPath: entry.container ?? entry.local).standardizedFileURL
+      .deletingLastPathComponent()
   }
 
   /// Whether a tool may be writing into an entry's local folder: something in it changed within

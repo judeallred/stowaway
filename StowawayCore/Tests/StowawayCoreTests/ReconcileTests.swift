@@ -178,4 +178,83 @@ final class ReconcileTests: XCTestCase {
     engine.reconcile()
     XCTAssertTrue(isRealDirectory(local.path), "still local while paused")
   }
+
+  // MARK: Deleted projects
+
+  /// A worktree with its Cargo build folders stowed; returns the worktree and the store.
+  private func stowedWorktree(_ engine: Engine, _ s: Scratch) throws -> (worktree: URL, store: URL)
+  {
+    try s.file("code/.claude/worktrees/feature/Cargo.toml")
+    try s.file("code/.claude/worktrees/feature/target/CACHEDIR.TAG")
+    try s.file("code/.claude/worktrees/feature/target/debug/deps/libx.rlib", "x")
+    try s.file("code/.claude/worktrees/feature/target/debug/build/out", "x")
+    let worktree = s.root.appendingPathComponent("code/.claude/worktrees/feature")
+    let target = worktree.appendingPathComponent("target")
+    for part in try XCTUnwrap(Kind.cargoTarget.parts(of: target)) {
+      try engine.adopt(part.path, kind: .cargoTarget, container: target.path)
+    }
+    XCTAssertEqual(engine.entries().count, 2)
+    return (worktree, try XCTUnwrap(engine.enterGrants()))
+  }
+
+  /// A removed worktree's copies go once it's stayed gone for the grace period.
+  func testADeletedWorktreesCopiesAreDeletedAfterTheGracePeriod() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let (worktree, store) = try stowedWorktree(engine, s)
+    try FileManager.default.removeItem(at: worktree)
+
+    engine.reconcile()
+    XCTAssertEqual(engine.entries().count, 2, "within the grace period: kept")
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path).count, 2)
+
+    engine.vanishedGrace = 0
+    engine.reconcile()
+    XCTAssertTrue(engine.entries().isEmpty)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.path), [])
+  }
+
+  /// A project that's back (deleted and cloned again) keeps its copies.
+  func testAProjectThatComesBackKeepsItsCopies() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let (worktree, _) = try stowedWorktree(engine, s)
+    try FileManager.default.removeItem(at: worktree)
+    engine.reconcile()
+    try s.file("code/.claude/worktrees/feature/Cargo.toml")
+    engine.vanishedGrace = 0
+    engine.reconcile()
+    XCTAssertEqual(engine.entries().count, 2)
+  }
+
+  /// `cargo clean` deletes the target, not the project: its entries stay for the next build.
+  func testACleanedTargetIsNotADeletedProject() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let (worktree, _) = try stowedWorktree(engine, s)
+    engine.vanishedGrace = 0
+    try FileManager.default.removeItem(at: worktree.appendingPathComponent("target"))
+    engine.reconcile()
+    XCTAssertEqual(engine.entries().count, 2)
+  }
+
+  /// A Cargo cache part's project is the folder holding its `target`.
+  func testACargoCachePartBelongsToTheFolderHoldingTarget() throws {
+    let entry = Entry(
+      id: "a", local: "/code/rs/target/x/debug/deps", remote: "deps-a/deps", online: true,
+      adoptedAt: Date(), kind: .cargoCache, container: "/code/rs/target/x/debug/deps")
+    XCTAssertEqual(Engine().projectFolder(of: entry)?.path, "/code/rs")
+  }
+
+  /// With the whole root gone (a grant that no longer resolves, a volume away), nothing is
+  /// taken for deleted.
+  func testNothingIsSweptWhileItsRootIsMissing() throws {
+    let s = try Scratch()
+    let (engine, code, _) = try makeEngine(s)
+    _ = try stowedWorktree(engine, s)
+    engine.vanishedGrace = 0
+    try FileManager.default.removeItem(at: code)
+    engine.reconcile()
+    XCTAssertEqual(engine.entries().count, 2)
+  }
 }
