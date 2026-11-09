@@ -287,6 +287,7 @@ private struct DriveStats: View {
           "\(Format.bytes(model.offloadedBytes)) stowed · \(Format.bytes(free)) free of \(Format.bytes(total))"
         )
         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        DriveSpaceWarning(model: model)
       }
     } else if !model.driveConnected {
       Text("Disconnected: your tools use local folders meanwhile.")

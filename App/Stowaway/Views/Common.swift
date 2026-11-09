@@ -40,6 +40,22 @@ struct MessageLine: View {
   }
 }
 
+/// Explains the capacity warning beside the drive's space information.
+struct DriveSpaceWarning: View {
+  let model: AppModel
+
+  var body: some View {
+    if model.driveNearlyFull {
+      Label(
+        model.driveFreeBytes == 0 ? "External drive is full" : "External drive is nearly full",
+        systemImage: "exclamationmark.circle.fill"
+      )
+      .font(.caption).foregroundStyle(.orange)
+      .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+}
+
 /// The drive's space: stowed by Stowaway (accent), other files (gray), free (the track).
 struct DriveSpaceBar: View {
   let model: AppModel

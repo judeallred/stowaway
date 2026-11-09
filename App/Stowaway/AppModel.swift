@@ -512,15 +512,17 @@ final class AppModel {
     return needsAttention ? .warning : .idle
   }
 
-  /// The drive is nearly full (under 5% or 10 GB free), or the free stowage is used up while
-  /// there's more waiting to be stowed.
+  /// The drive is nearly full: under 5% or 10 GB free, whichever is larger.
+  var driveNearlyFull: Bool {
+    guard driveConnected, let free = driveFreeBytes, let total = driveTotalBytes, total > 0
+    else { return false }
+    return free < max(10_000_000_000, total / 20)
+  }
+
+  /// The drive is nearly full, or the free stowage is used up while more is waiting.
   private var needsAttention: Bool {
-    if driveConnected, let free = driveFreeBytes, let total = driveTotalBytes, total > 0,
-      free < max(10_000_000_000, total / 20)
-    {
-      return true
-    }
-    return freeStowageFull && !pendingRows.isEmpty && autoOffloadMinutes != AutoStow.never
+    driveNearlyFull
+      || (freeStowageFull && !pendingRows.isEmpty && autoOffloadMinutes != AutoStow.never)
   }
 }
 

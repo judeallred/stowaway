@@ -74,6 +74,7 @@ struct MenuView: View {
           DriveSpaceBar(model: model, free: free, total: total)
           Text("\(Format.bytes(free)) free of \(Format.bytes(total))")
             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+          DriveSpaceWarning(model: model)
         }
       }
     } else {
