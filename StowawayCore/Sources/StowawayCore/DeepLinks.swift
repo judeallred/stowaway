@@ -792,6 +792,7 @@ extension Engine {
     }
     try checkContained(store, in: mine)
     try trash(store)
+    forgetShared(String(store.path.dropFirst(mine.path.count + 1)), store: mine)
     note("released \(entry.local)")
   }
 }

@@ -35,12 +35,14 @@ extension AppModel {
       let values = store.flatMap {
         try? $0.resourceValues(forKeys: [
           .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
-          .volumeLocalizedFormatDescriptionKey,
+          .volumeLocalizedFormatDescriptionKey, .volumeSupportsFileCloningKey,
         ])
       }
       let free = values?.volumeAvailableCapacityForImportantUsage
       let total = values?.volumeTotalCapacity.map(Int64.init)
       let format = values?.volumeLocalizedFormatDescription
+      let canShare = values?.volumeSupportsFileCloning
+      let saved = engine.savedBySharing()
       let bytes = engine.offloadedBytes
       let cargoOn = engine.cargoBuildFolderIsOn()
       await MainActor.run {
@@ -51,6 +53,8 @@ extension AppModel {
         self.driveFreeBytes = free
         self.driveTotalBytes = total
         self.driveFormat = format
+        if let canShare { self.driveCanShare = canShare }
+        self.savedBySharing = saved
         self.offloadedBytes = bytes
       }
     }
@@ -101,6 +105,8 @@ extension AppModel {
     let doing = "Ejecting \(name)…"
     activity = doing
     Task {
+      // A sweep reading a file would keep the drive busy: it stops (paused), and is waited for.
+      await stopSweeping()
       await Task.detached { engine.prepareForEject() }.value
       do {
         try await FileManager.default.unmountVolume(
@@ -336,6 +342,7 @@ extension AppModel {
     guard let intent = stopIntent, !stopping, driveName != nil else { return }
     stopping = true
     defer { stopping = false }
+    await stopSweeping()
     if intent == .quickDrop {
       let engine = engine
       do {
@@ -405,6 +412,7 @@ extension AppModel {
   func queueReconcile() {
     guard !reconcilePending, !ejecting else { return }
     reconcilePending = true
+    makeWayForWork()
     Task {
       defer { reconcilePending = false }
       try? await Task.sleep(for: Timing.coalesceVolumeChanges)
@@ -418,6 +426,9 @@ extension AppModel {
       }
       refreshSettings()
       if stopIntent != nil { Task { await continueStopping() } }
+      // Every reconcile (at least every 2 minutes) is a chance for a sweep, if nothing else is
+      // going on.
+      considerSweeping()
     }
   }
 

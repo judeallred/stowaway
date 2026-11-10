@@ -296,7 +296,11 @@ extension AppModel {
       return
     }
     autoStowing = true
-    defer { autoStowing = false }
+    defer {
+      autoStowing = false
+      // Stowing's done: time to look for identical files, if nothing else is going on.
+      considerSweeping()
+    }
     repeat {
       autoStowAgain = false
       await autoStowPass()
@@ -325,6 +329,8 @@ extension AppModel {
       else { return false }
       return true
     }
+    // Stowing goes first.
+    if !due.isEmpty { makeWayForWork() }
     // Shown as queued in the library until their turn.
     queued.formUnion(due.map(\.path))
     defer { queued.subtract(due.map(\.path)) }

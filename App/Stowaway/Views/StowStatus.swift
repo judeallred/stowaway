@@ -9,6 +9,9 @@ struct StowedHeadline: View {
     VStack(alignment: .leading, spacing: 2) {
       Text("\(Format.bytes(model.offloadedBytes)) stowed")
         .font(.title2.weight(.semibold)).monospacedDigit()
+      if model.savedBySharing > 0 {
+        SharingSavings(model: model)
+      }
       Text(toStow)
         .font(.callout).foregroundStyle(.secondary).monospacedDigit()
     }
@@ -26,6 +29,30 @@ struct StowedHeadline: View {
   }
 }
 
+/// The space identical files save by being stored on the drive once: shown off under the
+/// stowed total.
+struct SharingSavings: View {
+  let model: AppModel
+
+  var body: some View {
+    Label {
+      // The long way where there's room (the main window), the short way in the menu.
+      ViewThatFits(in: .horizontal) {
+        Text("\(Format.bytes(model.savedBySharing)) saved by storing identical files once")
+        Text("\(Format.bytes(model.savedBySharing)) saved by sharing identical files")
+        Text("\(Format.bytes(model.savedBySharing)) saved by sharing")
+      }
+    } icon: {
+      Image(systemName: "square.on.square.fill")
+    }
+    .font(.callout.weight(.medium)).monospacedDigit()
+    .foregroundStyle(.tint)
+    .help(
+      "Your stowed folders hold \(Format.bytes(model.offloadedBytes)) of files but take \(Format.bytes(model.stowedOnDrive)) on the drive: files that are the same in several folders (the same dependencies built in each worktree, say) are stored once and shared. Each folder still works on its own, and changing a file in one never changes it in another."
+    )
+  }
+}
+
 /// What Stowaway is doing now, or what happens next. Shown in the menu and the main window.
 struct StowStatus: View {
   let model: AppModel
@@ -39,6 +66,16 @@ struct StowStatus: View {
       HStack(spacing: 6) {
         ProgressView().controlSize(.small)
         Text(activity).lineLimit(2).truncationMode(.middle)
+      }
+    } else if model.sweeping {
+      HStack(spacing: 6) {
+        ProgressView().controlSize(.small)
+        Text(
+          model.driveNearlyFull
+            ? "Making room: storing identical files on the drive once…"
+            : "Looking for identical files on the drive to store once…"
+        )
+        .lineLimit(2)
       }
     } else if model.paused {
       Label("Paused: nothing is stowed automatically until you resume", systemImage: "pause.circle")

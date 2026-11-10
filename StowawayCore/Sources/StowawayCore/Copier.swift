@@ -9,9 +9,15 @@ public struct CopyStats: Sendable, CustomStringConvertible {
   public var seconds = 0.0
   /// Packages already on the drive, relinked without copying.
   public var reused = 0
+  /// Files the drive already had, cloned rather than written again.
+  public var cloned = 0
+  public var clonedBytes: Int64 = 0
 
   public var description: String {
     (reused > 0 ? "\(reused) unchanged packages relinked, " : "")
+      + (cloned > 0
+        ? "\(cloned) files (\(String(format: "%.1f", Double(clonedBytes) / 1e6)) MB) shared with identical ones, "
+        : "")
       + String(
         format: "%d files, %d dirs, %.1f MB in %.2fs (%.0f MB/s, %.0f files/s)", files, directories,
         Double(bytes) / 1e6, seconds, Double(bytes) / 1e6 / max(seconds, 0.001),
@@ -34,7 +40,11 @@ public enum Copier {
   /// folders. (The caller checks that `dst`'s parents are real folders.) Read-only folders in `dst`
   /// (Go's module cache) are made writable while files go in; their permissions are restored
   /// from `src` afterwards.
-  public static func copyContents(of src: URL, into dst: URL) throws -> CopyStats {
+  ///
+  /// With `clones`, a file the drive already has is cloned from it instead of written again.
+  public static func copyContents(
+    of src: URL, into dst: URL, clones: (any CloneSource)? = nil
+  ) throws -> CopyStats {
     let start = Date()
     var stats = CopyStats()
     let fm = FileManager.default
@@ -78,18 +88,28 @@ public enum Copier {
 
     let failure = Failure()
     let jobs = leaves
+    let shared = Tally()
     DispatchQueue.concurrentPerform(iterations: workers) { worker in
       var i = worker
       while i < jobs.count, !failure.isSet {
         let (from, to) = jobs[i]
+        i += workers
         unlink(to)
+        let attempt = clones?.clone(from, to: to) ?? (cloned: false, hash: nil)
+        if attempt.cloned {
+          var st = stat()
+          shared.add(lstat(to, &st) == 0 ? Int64(st.st_size) : 0)
+          continue
+        }
         if copyfile(from, to, nil, copyfile_flags_t(COPYFILE_ALL | COPYFILE_NOFOLLOW)) != 0 {
           failure.set(StowawayError.posix("copying", from))
+        } else if let hash = attempt.hash {
+          clones?.copied(to: to, hash: hash)
         }
-        i += workers
       }
     }
     if let error = failure.error { throw error }
+    (stats.cloned, stats.clonedBytes) = shared.value
 
     for (from, to) in dirs.reversed() {
       copyfile(from, to, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_NOFOLLOW))
@@ -172,6 +192,21 @@ public enum Copier {
       }
     }
     if unlinkat(parent, name, AT_REMOVEDIR) != 0 { throw StowawayError.posix("deleting", path) }
+  }
+}
+
+/// Files cloned and their bytes, counted from the copier's workers.
+final class Tally: @unchecked Sendable {
+  private let lock = NSLock()
+  private var files = 0
+  private var bytes: Int64 = 0
+
+  var value: (Int, Int64) { lock.withLock { (files, bytes) } }
+  func add(_ size: Int64) {
+    lock.withLock {
+      files += 1
+      bytes += size
+    }
   }
 }
 

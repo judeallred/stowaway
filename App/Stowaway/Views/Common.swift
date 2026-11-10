@@ -64,7 +64,8 @@ struct DriveSpaceBar: View {
 
   var body: some View {
     let used = max(0, total - free)
-    let stowed = min(model.offloadedBytes, used)
+    // What stowed folders really take: identical files are stored once.
+    let stowed = min(model.stowedOnDrive, used)
     StorageBar(
       segments: [(stowed, .accentColor), (used - stowed, Color.gray.opacity(0.55))], total: total
     )

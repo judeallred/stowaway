@@ -55,6 +55,20 @@ final class AppModel {
     }
   }
   var roots: [String] = []
+  /// Space the drive saves by storing identical files once (APFS clones), as last worked out.
+  var savedBySharing: Int64 = 0
+  /// Whether the drive can share identical files (APFS can; ExFAT and HFS+ can't). Nil until
+  /// known.
+  var driveCanShare: Bool?
+  /// A sweep for identical files is running (see AppModel+Sharing).
+  var sweeping = false
+  var sweepTask: Task<Void, Never>?
+  let sweepGate = SweepGate()
+  /// The last sweep stopped early to make way: the next chance carries on, whenever it was.
+  var sweepUnfinished = true
+  var lastSweep = Date(timeIntervalSince1970: UserDefaults.standard.double(forKey: "lastSweep")) {
+    didSet { UserDefaults.standard.set(lastSweep.timeIntervalSince1970, forKey: "lastSweep") }
+  }
   /// Cargo builds into Stowaway's shared build folder: its line is in Cargo's config.
   var cargoBuildFolderOn = false
   /// The main window's suggestion to turn that on was dismissed for good.
@@ -102,7 +116,12 @@ final class AppModel {
   /// What Stowaway is doing right now ("Scanning…", what's moving), for the status line.
   var activity: String?
   /// The kind of work `activity` describes, for the menu bar icon and the library's rows.
-  var operation: Operation?
+  /// Any work but a scan makes a running sweep give way.
+  var operation: Operation? {
+    didSet {
+      if let operation, operation != .scanning { makeWayForWork() }
+    }
+  }
   /// The user chose to stop using the drive: bring everything back, or delete it. Kept across
   /// launches, so the work carries on after a relaunch or once the drive is back, and automatic
   /// stowing stays off until it's done and the drive is forgotten.

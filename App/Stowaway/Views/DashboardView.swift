@@ -284,10 +284,16 @@ private struct DriveStats: View {
       VStack(alignment: .trailing, spacing: 3) {
         DriveSpaceBar(model: model, free: free, total: total)
         Text(
-          "\(Format.bytes(model.offloadedBytes)) stowed · \(Format.bytes(free)) free of \(Format.bytes(total))"
+          "\(Format.bytes(model.stowedOnDrive)) used · \(Format.bytes(free)) free of \(Format.bytes(total))"
         )
         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         DriveSpaceWarning(model: model)
+        if let note = model.sharingUnavailableNote {
+          Text(note)
+            .font(.caption).foregroundStyle(.secondary)
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
     } else if !model.driveConnected {
       Text("Disconnected: your tools use local folders meanwhile.")

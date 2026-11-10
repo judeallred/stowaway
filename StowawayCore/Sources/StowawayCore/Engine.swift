@@ -84,7 +84,7 @@ public final class Engine: @unchecked Sendable {
     case drive
   }
 
-  private let defaults: UserDefaults
+  let defaults: UserDefaults
   let stateDirectory: URL
   private let lock = NSLock()
   /// Folders being accessed, by path. Access is started once and kept for the life of the
@@ -94,6 +94,13 @@ public final class Engine: @unchecked Sendable {
   /// bookmark for every scan and reconcile was a good part of the app's idle work.
   private var resolved: [Data: URL] = [:]
   private let resolvedLock = NSLock()
+  /// The index of files on the drive (SharedFiles.swift), with the store it's for.
+  var openSharedIndex: (identity: String, index: SharedIndex)?
+  let sharedIndexLock = NSLock()
+  /// Held for the whole of a sweep, so two never run at once.
+  let sweepLock = NSLock()
+  /// For tests: called with each file just before a sweep swaps it for a clone.
+  var willShare: (@Sendable (String) -> Void)?
 
   private func cachedURL(for data: Data) -> URL? {
     guard let url = resolvedLock.withLock({ resolved[data] }) else { return nil }
@@ -254,6 +261,8 @@ public final class Engine: @unchecked Sendable {
       lock.withLock {
         defaults.removeObject(forKey: "drive")
         defaults.removeObject(forKey: "driveName")
+        // What sharing saved was on that drive.
+        defaults.removeObject(forKey: "savedBySharing")
       }
     }
   }
@@ -280,6 +289,8 @@ public final class Engine: @unchecked Sendable {
       lock.withLock {
         defaults.removeObject(forKey: "drive")
         defaults.removeObject(forKey: "driveName")
+        // What sharing saved was on that drive.
+        defaults.removeObject(forKey: "savedBySharing")
       }
       note("forgot the offload location; its copies stay on the drive")
     }
@@ -501,9 +512,11 @@ public final class Engine: @unchecked Sendable {
     try checkContained(remote, in: store)
     let stats: CopyStats
     do {
-      stats = try Copier.copyContents(of: local, into: remote)
+      stats = try Copier.copyContents(of: local, into: remote, clones: cloneSource(for: store))
+      if stats.cloned > 0 { sharingChanged(store) }
     } catch {
       // A partial copy (the drive filled or went away) is never recorded, so clear it now.
+      forgetShared(slot, store: store)
       try? Copier.remove(store.appendingPathComponent(slot))
       throw error
     }
@@ -632,6 +645,7 @@ public final class Engine: @unchecked Sendable {
       try fm.removeItem(atPath: path)
       try fm.moveItem(at: staging, to: URL(fileURLWithPath: path))
       try trash(remote.deletingLastPathComponent())
+      forgetShared(remote.deletingLastPathComponent().lastPathComponent, store: store)
       note("brought back \(path): \(stats)")
     }
     try save(entries().filter { $0.id != entry.id })
@@ -683,6 +697,7 @@ public final class Engine: @unchecked Sendable {
       let slot = entry.mode == .packages ? remote : remote.deletingLastPathComponent()
       try checkContained(slot, in: store)
       try trash(slot)
+      forgetShared(String(slot.path.dropFirst(store.path.count + 1)), store: store)
       try trash(URL(fileURLWithPath: path))
       if entry.kind?.isGlobal == true {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false)
@@ -802,6 +817,7 @@ public final class Engine: @unchecked Sendable {
         let slot = entry.mode == .packages ? remote : remote.deletingLastPathComponent()
         try checkContained(slot, in: store)
         try trash(slot)
+        forgetShared(String(slot.path.dropFirst(store.path.count + 1)), store: store)
         try save(entries().filter { $0.id != entry.id })
         note("\(entry.local)'s project is gone; deleted its copy on the drive")
       } catch {
@@ -906,10 +922,18 @@ public final class Engine: @unchecked Sendable {
       try checkContained(remote, in: store)
       // Copy beside the old copy first; the swap is two renames.
       let staging = Self.leftoverName(for: remote, kind: "staging")
-      _ = try Copier.copyContents(of: local, into: staging)
+      _ = try Copier.copyContents(of: local, into: staging, clones: cloneSource(for: store))
       let old = Self.leftoverName(for: remote)
       if fm.fileExists(atPath: remote.path) { try fm.moveItem(at: remote, to: old) }
       try fm.moveItem(at: staging, to: remote)
+      // The old copy's files are gone; the new one's are the staging folder's, renamed.
+      if let index = sharedIndex(for: store) {
+        let base = store.path + "/"
+        try? index.forget(String(remote.path.dropFirst(base.count)))
+        try? index.move(
+          String(staging.path.dropFirst(base.count)), to: String(remote.path.dropFirst(base.count)))
+        updateSavedBySharing(index)
+      }
       let aside = Self.leftoverName(for: local)
       try fm.moveItem(at: local, to: aside)
       try fm.createSymbolicLink(at: local, withDestinationURL: remote)
@@ -945,7 +969,8 @@ public final class Engine: @unchecked Sendable {
       try checkContained(remote, in: store)
       var stats = CopyStats()
       if isRealDirectory(local.path) {
-        stats = try Copier.copyContents(of: local, into: remote)
+        stats = try Copier.copyContents(of: local, into: remote, clones: cloneSource(for: store))
+        if stats.cloned > 0 { sharingChanged(store) }
         let old = Self.leftoverName(for: local)
         try fm.moveItem(at: local, to: old)
         try fm.createSymbolicLink(at: local, withDestinationURL: remote)

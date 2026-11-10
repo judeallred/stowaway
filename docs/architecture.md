@@ -192,6 +192,49 @@ waits until purchases are read, so a paying user is never held to it. Stowaway n
 folder of yours on its own; it only cleans up its own copies (a package's old copy on the drive
 after an upgrade, a local folder after it's moved to the drive, the copies of a deleted project).
 
+## Identical files, stored once
+
+On an APFS drive, identical files share their storage as clones (`clonefile`), which are
+copy-on-write: writing to one never changes another. Worktrees compile the same dependencies, so
+there's a lot to share: on one real drive, a third of 727 GB. Sizes, the stowed total and the
+free limit still count every file in full; what sharing saves is shown on top ("21.7 GB saved by
+storing identical files once"). ExFAT and HFS+ drives can't clone, and say so beside their format.
+
+**The index** (`SharedIndex`, SQLite in the app's container, never on the drive) holds each
+large file's stamp (inode, size, modification and change times; any write changes the change
+time), its SHA-256 once read, and whether it shares storage with the other files of its hash.
+Every file of a hash marked shared shares one copy, so the saving is, per hash, the size times
+the number marked, less one. It's tied to the drive's volume UUID and the store's path: another
+drive, or the same one reformatted, starts afresh.
+
+**The sweep** (`Engine.sweepSharedFiles`):
+1. *Walk* each stowed folder, comparing stamps with the index; only what changed is written, and
+   what's gone is forgotten. 5 million unchanged files take about half a minute.
+2. *Read* only files whose size another file has (biggest first), and never one that changed in
+   the last 10 minutes or while being read.
+3. *Share*: clone the file already sharing (or the first) beside each duplicate, give the clone
+   the duplicate's own permissions, attributes, ACL, flags and dates, check that neither file
+   changed, and rename it over the duplicate in one step. The folder's dates are put back (npm
+   trusts them); a read-only folder is opened and closed again. Anything holding the old file
+   open keeps it.
+
+It skips hard links, locked and compressed files, Stowaway's own work in progress, and folders a
+Cargo build holds (on the Mac, or in the shared build folder on the drive). A file that can't
+be swapped for lasting reasons (a permission) isn't tried again until it changes; one that
+failed for a passing one (a full drive) is. A crash mid-swap leaves only a `.stowaway-clone-…`
+file, which the next sweep deletes.
+
+**When it runs** (`AppModel+Sharing`): only when Stowaway has nothing else to do, at the
+lowest disk priority, and it gives way between files as soon as any other work starts (stowing,
+bringing back, deleting, reconciling, a speed test); the next chance carries on from the index.
+It holds the engine's lock only in 0.2-second turns. When the drive is nearly full, getting
+space back is the work: it runs at once, at normal priority, without giving way. Pausing,
+ejecting and stopping use of the drive always stop it (an eject waits for it).
+
+**Copying what the drive has**: when stowing, merging or replacing copies a file whose size the
+index has seen, it's hashed first; if the drive already has it, it's cloned from there (with
+the source's own metadata) instead of written again.
+
 ## Cargo's build folder (opt-in)
 
 Cargo 1.91+ can keep a build's intermediate files (`deps`, `incremental`, `build`,

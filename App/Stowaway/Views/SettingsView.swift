@@ -8,7 +8,7 @@ struct SettingsView: View {
     // Each tab sets its own height, so the window fits it rather than scrolling.
     TabView {
       StowSettings(model: model)
-        .frame(width: 520, height: model.usesRust || model.cargoBuildFolderOn ? 720 : 570)
+        .frame(width: 520, height: model.usesRust || model.cargoBuildFolderOn ? 790 : 640)
         .tabItem { Label("Stow", systemImage: "externaldrive") }
       GeneralSettings(model: model)
         .frame(width: 520, height: 520)
@@ -52,9 +52,28 @@ struct StowSettings: View {
           }
         }
         if model.driveConnected, let format = model.driveFormat {
-          LabeledContent("Format", value: format)
+          LabeledContent("Format") {
+            VStack(alignment: .trailing, spacing: 2) {
+              Text(format)
+              Text(
+                model.driveCanShare == false
+                  ? "Identical files are stored separately; APFS stores them once"
+                  : "Identical files are stored once"
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }
+          }
         }
         LabeledContent("Stowed", value: Format.bytes(model.offloadedBytes))
+        if model.savedBySharing > 0 {
+          LabeledContent("Saved by sharing") {
+            VStack(alignment: .trailing, spacing: 2) {
+              Text(Format.bytes(model.savedBySharing)).foregroundStyle(.tint)
+              Text("Takes \(Format.bytes(model.stowedOnDrive)) on the drive")
+                .font(.caption).foregroundStyle(.secondary)
+            }
+          }
+        }
       }
       Section {
         Picker("Stow automatically", selection: $model.autoOffloadMinutes) {

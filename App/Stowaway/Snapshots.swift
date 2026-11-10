@@ -136,7 +136,7 @@
             billTo: "Sam Rivera\nNorthwind Labs",
             payment: "Paid through the Mac App Store (transaction 2000000812345678).")),
         "expense-invoice-paid", width: 612, height: 792, in: folder)
-      render(StowSettings(model: model), "settings-stow", width: 520, height: 720, in: folder)
+      render(StowSettings(model: model), "settings-stow", width: 520, height: 790, in: folder)
       render(GeneralSettings(model: model), "settings-general", width: 520, height: 520, in: folder)
       render(
         FoldersSidebar(model: model, scope: .constant(.all)), "folders-sidebar", width: 260,
@@ -210,6 +210,9 @@
         worktree("fix-flaky-upload", 9.6, 0.1, .mac),
         worktree("batch-exporter", 11.2, 6, .drive),
       ]
+      // The worktrees' identical dependencies, stored once.
+      savedBySharing = 21_700_000_000
+      driveCanShare = true
       // telemetry-agent has two worktrees, so its folders are listed under it.
       let repository = "\(home)/code/telemetry-agent"
       for i in rows.indices where rows[i].path.isWithin(repository) {
