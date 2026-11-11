@@ -29,21 +29,20 @@ struct StowedHeadline: View {
   }
 }
 
-/// The space identical files save by being stored on the drive once: shown off under the
-/// stowed total.
+/// What stowed folders really take on the drive, and what deduplication saves: under the
+/// stowed total, with how it works in the tooltip.
 struct SharingSavings: View {
   let model: AppModel
 
   var body: some View {
-    Label {
-      Text("\(Format.bytes(model.savedBySharing)) saved by deduplication")
-    } icon: {
-      Image(systemName: "square.on.square.fill")
+    VStack(alignment: .leading, spacing: 1) {
+      Text("Storage on drive used: \(Format.bytes(model.stowedOnDrive))")
+      Text("(storage saved by deduplication: \(Format.bytes(model.savedBySharing)))")
     }
-    .font(.callout.weight(.medium)).monospacedDigit()
-    .foregroundStyle(.tint)
+    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+    .contentShape(Rectangle())
     .help(
-      "Your stowed folders hold \(Format.bytes(model.offloadedBytes)) of files but take \(Format.bytes(model.stowedOnDrive)) on the drive: files that are the same in several folders (the same dependencies built in each worktree, say) are stored once and shared. Each folder still works on its own, and changing a file in one never changes it in another."
+      "Your stowed folders hold \(Format.bytes(model.offloadedBytes)) of files, but take only \(Format.bytes(model.stowedOnDrive)) on the drive. Files that are exactly the same in several folders (the same dependencies built in each worktree, say) are stored on the drive once and shared, using APFS clones. Each folder still works on its own: changing a file in one makes that copy its own again, and never changes it in another. Stowaway finds identical files in the background when it has nothing else to do, and clones a file the drive already has instead of copying it again. Sizes and the free stowage still count every file in full."
     )
   }
 }
