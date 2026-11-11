@@ -66,7 +66,7 @@ struct StowSettings: View {
         }
         LabeledContent("Stowed", value: Format.bytes(model.offloadedBytes))
         if model.savedBySharing > 0 {
-          LabeledContent("Saved by sharing") {
+          LabeledContent("Saved by deduplication") {
             VStack(alignment: .trailing, spacing: 2) {
               Text(Format.bytes(model.savedBySharing)).foregroundStyle(.tint)
               Text("Takes \(Format.bytes(model.stowedOnDrive)) on the drive")
