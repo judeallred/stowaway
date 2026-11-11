@@ -64,16 +64,10 @@ struct StowSettings: View {
             }
           }
         }
-        LabeledContent("Stowed", value: Format.bytes(model.offloadedBytes))
-        if model.savedBySharing > 0 {
-          LabeledContent("Saved by deduplication") {
-            VStack(alignment: .trailing, spacing: 2) {
-              Text(Format.bytes(model.savedBySharing)).foregroundStyle(.tint)
-              Text("Takes \(Format.bytes(model.stowedOnDrive)) on the drive")
-                .font(.caption).foregroundStyle(.secondary)
-            }
-          }
-        }
+        LabeledContent(
+          "Stowed (local storage freed up for you)", value: Format.bytes(model.offloadedBytes))
+        LabeledContent("Space used on drive", value: Format.bytes(model.stowedOnDrive))
+        LabeledContent("Space saved by deduplication", value: Format.bytes(model.savedBySharing))
       }
       Section {
         Picker("Stow automatically", selection: $model.autoOffloadMinutes) {
