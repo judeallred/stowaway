@@ -56,6 +56,8 @@ let eager: SweepOptions = {
   options.minimumSize = 1
   options.minimumAge = -1
   options.lowPriority = false
+  // Tests change files between sweeps and expect each to see it.
+  options.rewalkAfter = 0
   return options
 }()
 
@@ -99,6 +101,27 @@ final class CloningTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: keeper)), bytes)
     XCTAssertGreaterThan(try XCTUnwrap(Cloning.privateSize(duplicate)), 0)
     XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: s.path("d")) == ["lib.rlib"])
+  }
+
+  /// The clone starts with the keeper's flags: the duplicate's own must be what it ends with,
+  /// either way round.
+  func testFlagsAreTheDuplicatesNotTheKeepers() throws {
+    let s = try Scratch()
+    let bytes = randomData(90_000)
+    for (keeperFlags, duplicateFlags) in [(UF_HIDDEN, 0), (0, UF_HIDDEN)] {
+      let keeper = s.path("k\(keeperFlags)")
+      let duplicate = s.path("d\(keeperFlags)")
+      try write(bytes, to: keeper)
+      try write(bytes, to: duplicate)
+      chflags(keeper, UInt32(keeperFlags))
+      chflags(duplicate, UInt32(duplicateFlags))
+      _ = try Cloning.share(
+        duplicate, with: keeper, duplicateStamp: try stamp(duplicate),
+        keeperStamp: try stamp(keeper))
+      var st = stat()
+      lstat(duplicate, &st)
+      XCTAssertEqual(st.st_flags & UInt32(UF_HIDDEN), UInt32(duplicateFlags))
+    }
   }
 
   func testAChangedFileIsNeverSwapped() throws {
@@ -768,6 +791,60 @@ final class SweepTests: XCTestCase {
     XCTAssertGreaterThan(engine.savedBySharing(), 0)
     try engine.abandonDrive()
     XCTAssertEqual(engine.savedBySharing(), 0)
+  }
+
+  /// Unread files come a page at a time, biggest first, each once.
+  func testUnreadFilesComeInPages() throws {
+    let s = try Scratch()
+    let index = try SharedIndex(at: s.root.appendingPathComponent("i.sqlite"), identity: "d")
+    for (path, size) in [("a", 10), ("b", 10), ("c", 30), ("d", 30), ("e", 30), ("lonely", 99)] {
+      try index.put(
+        SharedIndex.Row(
+          path: path,
+          stamp: FileStamp(
+            inode: 0, size: Int64(size), allocated: Int64(size), modified: 0, changed: 0)))
+    }
+    var seen: [String] = []
+    var page = try index.unhashedWithTwins(limit: 2)
+    while !page.isEmpty {
+      seen += page.map(\.path)
+      page = try index.unhashedWithTwins(after: page.last, limit: 2)
+    }
+    XCTAssertEqual(seen, ["c", "d", "e", "a", "b"], "no twin for lonely")
+  }
+
+  /// A sweep picking up after making way doesn't walk the drive again if it walked it just now;
+  /// a later one does.
+  func testAResumedSweepSkipsARecentWalk() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    _ = try twins(engine, s)
+    _ = engine.sweepSharedFiles(eager)
+    _ = try twins(engine, s, projects: ["c"])
+    var resumed = eager
+    resumed.rewalkAfter = 3600
+    let soon = engine.sweepSharedFiles(resumed)
+    XCTAssertEqual(soon.filesSeen, 0)
+    XCTAssertEqual(soon.filesShared, 0)
+    // (c's dependencies are its own random bytes; only tiny.d matches a's and b's.)
+    XCTAssertEqual(engine.sweepSharedFiles(eager).filesShared, 1, "c's tiny.d, once walked")
+  }
+
+  /// The shared Cargo build folder is always being written by some build: it's swept anyway,
+  /// minding only its profiles' locks.
+  func testTheSharedBuildFolderIsSweptWhileOthersBuild() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let bytes = randomData(200_000)
+    try s.dir("code/.cargo")
+    let folder = "code/.cargo/stowaway-build"
+    for project in ["11/aaaa", "22/bbbb"] {
+      try write(bytes, to: s.path("\(folder)/\(project)/debug/deps/libx.rlib"))
+    }
+    try engine.adopt(s.path(folder), kind: .cargoBuild)
+    // Something changed there a moment ago: any other stowed folder would wait.
+    engine.quietPeriod = 3600
+    XCTAssertEqual(engine.sweepSharedFiles(eager).filesShared, 1)
   }
 
   func testOnlyLastingFailuresStopRetries() {

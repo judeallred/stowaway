@@ -196,7 +196,13 @@ enum Cloning {
       throw SharingError.failed("setting the permissions of", target)
     }
     guard setDates(target, from: st) else { throw SharingError.failed("dating", target) }
-    if st.st_flags != 0, chflags(target, st.st_flags) != 0 {
+    // Always: the clone came with the keeper's flags. Only the ones a user can set; the
+    // system's aren't for Stowaway to carry over (and refusing them would be taken as lasting).
+    var now = stat()
+    let flags = st.st_flags & UInt32(UF_SETTABLE)
+    if lstat(target, &now) == 0, now.st_flags & UInt32(UF_SETTABLE) != flags,
+      lchflags(target, (now.st_flags & ~UInt32(UF_SETTABLE)) | flags) != 0
+    {
       throw SharingError.failed("flagging", target)
     }
   }
@@ -505,15 +511,21 @@ final class SharedIndex: @unchecked Sendable {
     }
   }
 
-  /// Files not read yet whose size another file has: only those can have a twin.
-  func unhashedWithTwins() throws -> [Row] {
+  /// Files not read yet whose size another file has (only those can have a twin), biggest
+  /// first, a page at a time: the next `limit` after `after` (the last row of the page before).
+  func unhashedWithTwins(after: Row? = nil, limit: Int = 5000) throws -> [Row] {
     try lock.withLock {
       try rows(
         """
         SELECT \(Self.columns) FROM files WHERE hash IS NULL AND size IN
           (SELECT size FROM files GROUP BY size HAVING COUNT(*) > 1)
-        ORDER BY size DESC
-        """)
+          AND (size < ? OR (size = ? AND path > ?))
+        ORDER BY size DESC, path LIMIT ?
+        """,
+        [
+          .int(after?.stamp.size ?? Int64.max), .int(after?.stamp.size ?? Int64.max),
+          .text(after?.path ?? ""), .int(Int64(limit)),
+        ])
     }
   }
 

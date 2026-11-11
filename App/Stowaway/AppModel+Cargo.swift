@@ -60,13 +60,12 @@ extension AppModel {
       return
     }
     cargoBuildFolderOn = true
-    // Stow the folder now, while it's empty, so the very first build goes to the drive.
-    if driveConnected, cargoBuildRow?.place != .drive {
-      await offload([
-        Row(kind: .cargoBuild, path: CargoBuildFolder.folder.path, project: nil, place: .mac)
-      ])
-    }
+    // Stow the folder now, while it's empty, so the very first build goes to the drive. Stowing
+    // only takes folders a scan has listed, so scan first.
     await scan()
+    if driveConnected, let row = cargoBuildRow, row.place == .mac {
+      await offload([row])
+    }
   }
 
   /// Takes the line out of Cargo's config and deletes the shared build folder, after asking.

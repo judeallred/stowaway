@@ -13,6 +13,9 @@ public struct SweepOptions: Sendable {
   /// Longest the engine's lock is held at a time while clones are swapped in, so stowing and
   /// reconciling never wait long.
   public var lockSlice: TimeInterval = 0.2
+  /// A sweep stopped to make way picks up where it was, without walking the drive again, if
+  /// the last walk finished this recently. (Reading and sharing check every file anyway.)
+  public var rewalkAfter: TimeInterval = 10 * 60
 
   public init() {}
 }
@@ -127,7 +130,12 @@ extension Engine {
       updateSavedBySharing(index)
     }
     var report = SweepReport(outcome: .finished)
-    var finished = walk(store, index, options, &report, shouldYield)
+    let lastWalk = (try? index.meta("walked")).flatMap { $0.flatMap(Double.init) } ?? 0
+    var finished = true
+    if Date().timeIntervalSince1970 - lastWalk >= options.rewalkAfter {
+      finished = walk(store, index, options, &report, shouldYield)
+      if finished { try? index.setMeta("walked", String(Date().timeIntervalSince1970)) }
+    }
     if finished { finished = hashTwins(store, index, options, &report, shouldYield) }
     if finished { finished = shareTwins(store, index, options, &report, shouldYield) }
     guard finished else {
@@ -158,7 +166,9 @@ extension Engine {
       let folder = String(remote.path.dropFirst(base.count + 1))
       folders.insert(folder)
       // A tool writing into it right now: leave it (and what's known of it) for another time.
-      if entry.online, isBeingWritten(entry) { continue }
+      // Not the shared Cargo build folder: every build writes there, so it'd hardly ever be
+      // swept. Its profiles' locks, and files' age, keep builds' files alone instead.
+      if entry.online, entry.kind != .cargoBuild, isBeingWritten(entry) { continue }
       var known = (try? index.rows(in: folder)) ?? [:]
       var roots: [UnsafeMutablePointer<CChar>?] = [strdup(remote.path), nil]
       defer { free(roots[0]) }
@@ -238,9 +248,17 @@ extension Engine {
     _ shouldYield: () -> Bool
   ) -> Bool {
     let quietSince = Date().addingTimeInterval(-options.minimumAge)
+    var lastRead: SharedIndex.Row?
     var rows = ((try? index.unhashedWithTwins()) ?? [])[...]
     var stopped = false
-    while !rows.isEmpty, !stopped {
+    while !stopped {
+      if rows.isEmpty {
+        // The next page, after the last one: files left unread (too new) aren't met again.
+        guard let last = lastRead,
+          let next = try? index.unhashedWithTwins(after: last), !next.isEmpty
+        else { break }
+        rows = next[...]
+      }
       // Asked between files, but written to the index a few hundred at a time.
       var hashed: [(Data, FileStamp, String)] = []
       var gone: [String] = []
@@ -251,6 +269,7 @@ extension Engine {
           break
         }
         rows.removeFirst()
+        lastRead = row
         guard row.stamp.changedDate <= quietSince else { continue }
         if let (hash, stamp) = Cloning.hash(store.path + "/" + row.path, expected: row.stamp) {
           hashed.append((hash, stamp, row.path))
