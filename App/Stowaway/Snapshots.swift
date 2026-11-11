@@ -102,6 +102,7 @@
       render(DashboardView(model: model), "library", width: 900, height: 560, in: folder)
       render(FoldersView(model: model), "folders", width: 1100, height: 600, in: folder)
       render(MenuView(model: model), "menu", width: 290, height: 360, in: folder)
+      render(StowedBreakdown(model: model), "stowed-breakdown", width: 340, height: 300, in: folder)
       for step in OnboardingView.Step.allCases {
         render(
           OnboardingView(model: model, step: step), "onboarding-\(step.rawValue)", width: 560,

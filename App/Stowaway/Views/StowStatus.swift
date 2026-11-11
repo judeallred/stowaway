@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// "8.9 GB stowed", then how much more is on this Mac to stow. Leads the menu and the main
-/// window.
+/// "8.9 GB stowed", what that takes on the drive once deduplicated, then how much more is on
+/// this Mac to stow. Leads the menu and the main window. Hovering a moment shows the breakdown.
 struct StowedHeadline: View {
   let model: AppModel
 
@@ -9,12 +9,17 @@ struct StowedHeadline: View {
     VStack(alignment: .leading, spacing: 2) {
       Text("\(Format.bytes(model.offloadedBytes)) stowed")
         .font(.title2.weight(.semibold)).monospacedDigit()
-      if model.savedBySharing > 0 {
-        SharingSavings(model: model)
+      Group {
+        if model.savedBySharing > 0 {
+          Text("\(Format.bytes(model.stowedOnDrive)) stored on drive")
+          Text("\(Format.bytes(model.savedBySharing)) deduplicated")
+        }
+        Text(toStow)
       }
-      Text(toStow)
-        .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+      .font(.callout).foregroundStyle(.secondary).monospacedDigit()
     }
+    .contentShape(Rectangle())
+    .hoverDetail(after: .seconds(1.5)) { StowedBreakdown(model: model) }
   }
 
   /// What's left on this Mac. Sizes come after a scan's first stows, so until every folder is
@@ -29,21 +34,89 @@ struct StowedHeadline: View {
   }
 }
 
-/// What stowed folders really take on the drive, and what deduplication saves: under the
-/// stowed total, with how it works in the tooltip.
-struct SharingSavings: View {
+/// The headline's numbers in full, and what deduplication is. Shown on hover.
+struct StowedBreakdown: View {
   let model: AppModel
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 1) {
-      Text("Storage on drive used: \(Format.bytes(model.stowedOnDrive))")
-      Text("(storage saved by deduplication: \(Format.bytes(model.savedBySharing)))")
+    VStack(alignment: .leading, spacing: 10) {
+      Text("What's stowed").font(.headline)
+      Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+        row("Stowed folders hold", model.offloadedBytes)
+        if model.savedBySharing > 0 {
+          row("Stored on the drive", model.stowedOnDrive)
+          row("Deduplicated", model.savedBySharing, note: percent)
+        }
+        if model.pendingBytes > 0 {
+          row("Still on this Mac to stow", model.pendingBytes)
+        }
+      }
+      .monospacedDigit()
+      Divider()
+      Text(explanation)
+        .font(.callout).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
-    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-    .contentShape(Rectangle())
-    .help(
-      "Your stowed folders hold \(Format.bytes(model.offloadedBytes)) of files, but take only \(Format.bytes(model.stowedOnDrive)) on the drive. Files that are exactly the same in several folders (the same dependencies built in each worktree, say) are stored on the drive once and shared, using APFS clones. Each folder still works on its own: changing a file in one makes that copy its own again, and never changes it in another. Stowaway finds identical files in the background when it has nothing else to do, and clones a file the drive already has instead of copying it again. Sizes and the free stowage still count every file in full."
-    )
+    .padding(14)
+    .frame(width: 340)
+  }
+
+  private func row(_ label: String, _ bytes: Int64, note: String? = nil) -> some View {
+    GridRow {
+      Text(label)
+      Text(Format.bytes(bytes)).gridColumnAlignment(.trailing)
+      Text(note ?? "").foregroundStyle(.secondary)
+    }
+  }
+
+  /// "37%": the share of what's stowed that deduplication saves.
+  private var percent: String? {
+    guard model.offloadedBytes > 0 else { return nil }
+    return "\(Int((Double(model.savedBySharing) / Double(model.offloadedBytes) * 100).rounded()))%"
+  }
+
+  private var explanation: String {
+    var text =
+      "Files that are exactly the same in several stowed folders (the same dependencies built in each worktree, say) are stored on the drive once and shared, using APFS clones. Each folder still works on its own: changing a file in one makes that copy its own again, and never changes it in another. Stowaway finds identical files in the background when it has nothing else to do, and clones a file the drive already has instead of copying it again."
+    if model.driveCanShare == false {
+      text =
+        "\(model.driveFormat ?? "This drive's format") can't deduplicate: identical files are each stored in full. A drive formatted as APFS stores them once."
+    }
+    return text + " Stowed sizes, and the free stowage, count every file in full."
+  }
+}
+
+extension View {
+  /// Shows `content` in a popover once the pointer has rested on this view for `delay`, and
+  /// hides it when the pointer leaves. (A tooltip's delay can't be set, and tooltips don't show
+  /// in the menu bar's window.)
+  func hoverDetail(after delay: Duration, @ViewBuilder content: @escaping () -> some View)
+    -> some View
+  {
+    modifier(HoverDetail(delay: delay, detail: content))
+  }
+}
+
+private struct HoverDetail<Detail: View>: ViewModifier {
+  let delay: Duration
+  let detail: () -> Detail
+  @State private var showing = false
+  @State private var pending: Task<Void, Never>?
+
+  func body(content: Content) -> some View {
+    content
+      .onHover { inside in
+        pending?.cancel()
+        if inside {
+          pending = Task {
+            try? await Task.sleep(for: delay)
+            if !Task.isCancelled { showing = true }
+          }
+        } else {
+          showing = false
+        }
+      }
+      .popover(isPresented: $showing, arrowEdge: .bottom) { detail() }
   }
 }
 
