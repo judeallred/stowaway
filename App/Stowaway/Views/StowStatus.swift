@@ -36,12 +36,7 @@ struct SharingSavings: View {
 
   var body: some View {
     Label {
-      // The long way where there's room (the main window), the short way in the menu.
-      ViewThatFits(in: .horizontal) {
-        Text("\(Format.bytes(model.savedBySharing)) saved by storing identical files once")
-        Text("\(Format.bytes(model.savedBySharing)) saved by sharing identical files")
-        Text("\(Format.bytes(model.savedBySharing)) saved by sharing")
-      }
+      Text("\(Format.bytes(model.savedBySharing)) saved by deduplication")
     } icon: {
       Image(systemName: "square.on.square.fill")
     }
