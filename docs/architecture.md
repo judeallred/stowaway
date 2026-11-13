@@ -208,14 +208,17 @@ the number marked, less one. It's tied to the drive's volume UUID and the store'
 drive, or the same one reformatted, starts afresh.
 
 **The sweep** (`Engine.sweepSharedFiles`):
-1. *Walk* each stowed folder, comparing stamps with the index; only what changed is written, and
-   what's gone is forgotten. 5 million unchanged files take about half a minute.
+1. *Walk* each stowed folder, comparing stamps with the index; only what changed is written.
+   Then what the index knows is checked against the drive a page at a time, and what's gone is
+   forgotten, so memory stays flat however big a folder is. A sweep resuming after it made way
+   skips the walk if the last one finished in the last 10 minutes.
 2. *Read* only files whose size another file has (biggest first), and never one that changed in
    the last 10 minutes or while being read.
 3. *Share*: clone the file already sharing (or the first) beside each duplicate, give the clone
    the duplicate's own permissions, attributes, ACL, flags and dates, check that neither file
    changed, and rename it over the duplicate in one step. The folder's dates are put back (npm
-   trusts them); a read-only folder is opened and closed again. Anything holding the old file
+   trusts them), unless something else changed the folder meanwhile; a read-only folder is
+   opened and closed again. Anything holding the old file
    open keeps it.
 
 It skips hard links, locked and compressed files, Stowaway's own work in progress, and folders a
@@ -230,6 +233,10 @@ bringing back, deleting, reconciling, a speed test); the next chance carries on 
 It holds the engine's lock only in 0.2-second turns. When the drive is nearly full, getting
 space back is the work: it runs at once, at normal priority, without giving way. Pausing,
 ejecting and stopping use of the drive always stop it (an eject waits for it).
+
+Its progress (files checked, bytes read of those to read, files deduplicated of those to do)
+shows in the status line. Bringing folders back checks the Mac has room for their full size
+first: on the drive they may take less.
 
 **Copying what the drive has**: when stowing, merging or replacing copies a file whose size the
 index has seen, it's hashed first; if the drive already has it, it's cloned from there (with
@@ -250,7 +257,10 @@ Cargo build files have been stowed), Stowaway (`CargoBuildFolder`):
   table, is left alone.
 
 So every project and worktree builds onto the drive from its first build, each in its own
-folder. Cargo's locks in it (`<hash>/<hash>/<profile>/.cargo-lock`) count as busy, as a
+folder. A deleted worktree's folder would stay there for good, so once a day
+(`Engine.pruneCargoBuildFolder`) projects no build has changed anything in for 30 days are
+deleted (a project that builds again just builds from scratch). One a build holds is kept, and
+nothing is touched while the drive is away. Cargo's locks in it (`<hash>/<hash>/<profile>/.cargo-lock`) count as busy, as a
 target's do. Turning it off removes the line and deletes the folder. It needs `~/.cargo` (or
 the home folder) to be granted, and asks for it if not.
 

@@ -194,3 +194,88 @@ extension Engine {
     }
   }
 }
+
+extension Engine {
+  /// Deletes the shared build folder's per-project folders no build has used for `age`
+  /// (30 days unless asked otherwise). Each project gets its own folder there, named after its
+  /// path, so a deleted worktree's stays behind: nothing else ever removes it. A project that
+  /// builds again after its folder went just builds from scratch.
+  ///
+  /// "Used" is the newest change to the project's folder, its profiles and what's directly in
+  /// them (a build that compiles anything changes some of those). A project a build holds right
+  /// now is never touched. While the drive is away the folder is a stand-in, and is left alone.
+  /// Returns how many folders went, and their size.
+  @discardableResult
+  public func pruneCargoBuildFolder(
+    _ folder: URL = CargoBuildFolder.folder, unusedFor age: TimeInterval = 30 * 86_400
+  ) -> (folders: Int, bytes: Int64) {
+    var result = (folders: 0, bytes: Int64(0))
+    _ = try? exclusively {
+      let store = enterGrants()
+      guard isInsideRoot(folder.path) else { return }
+      let entry = entries().first { $0.local == folder.path }
+      if let entry, !entry.online { return }
+      let cutoff = Date().addingTimeInterval(-age)
+      // `<hash>/<hash>` per project, as `{workspace-path-hash}` lays them out.
+      for group in subdirectories(of: folder) {
+        for project in subdirectories(of: group) {
+          guard !Self.cargoProjectIsBusy(project),
+            Self.lastCargoUse(of: project) < cutoff
+          else { continue }
+          let bytes = Measure.allocatedSize(project.path)
+          guard (try? trash(project)) != nil else { continue }
+          result.folders += 1
+          result.bytes += bytes
+          // On the drive, the index's notes on its files go with it.
+          if let entry, let store, let remote = try? storePath(entry.remote, in: store) {
+            let relative = String(remote.path.dropFirst(store.path.count + 1))
+            forgetShared(
+              "\(relative)/\(group.lastPathComponent)/\(project.lastPathComponent)", store: store)
+          }
+        }
+        // A group left empty goes too. (One still being erased in the background goes next
+        // time.)
+        if ((try? FileManager.default.contentsOfDirectory(atPath: group.path)) ?? ["?"]).isEmpty {
+          rmdir(group.path)
+        }
+      }
+      if result.folders > 0 {
+        note(
+          "deleted \(result.folders) unused projects' builds from Cargo's shared build folder (\(ByteCountFormatter.string(fromByteCount: result.bytes, countStyle: .file)))"
+        )
+      }
+    }
+    return result
+  }
+
+  /// When a project in the shared build folder was last built: the newest modification time of
+  /// its folder, its profiles (and cross-compiled targets' profiles), and what they hold.
+  static func lastCargoUse(of project: URL) -> Date {
+    var newest = Date.distantPast
+    func consider(_ path: String) {
+      var st = stat()
+      if lstat(path, &st) == 0 {
+        newest = max(newest, Date(timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec)))
+      }
+    }
+    consider(project.path)
+    let fm = FileManager.default
+    for level in [project] + subdirectories(of: project) {
+      for child in (try? fm.contentsOfDirectory(atPath: level.path)) ?? [] {
+        let path = level.path + "/" + child
+        consider(path)
+        if isRealDirectory(path) {
+          for inner in ((try? fm.contentsOfDirectory(atPath: path)) ?? []).prefix(200) {
+            consider(path + "/" + inner)
+          }
+        }
+      }
+    }
+    return newest
+  }
+
+  /// Whether a build holds any of a project's profiles right now.
+  static func cargoProjectIsBusy(_ project: URL) -> Bool {
+    Measure.isBusy(Candidate(kind: .cargoTarget, path: project.path, project: nil))
+  }
+}

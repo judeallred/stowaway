@@ -35,7 +35,7 @@ extension AppModel {
   static let urgentSweepEvery: TimeInterval = 10 * 60
 
   /// Anything Stowaway is doing, or about to: a sweep waits for it.
-  private var otherWorkPending: Bool {
+  var otherWorkPending: Bool {
     (operation != nil && operation != .scanning) || !queued.isEmpty || !busy.isEmpty
       || autoStowing || reconcilePending || stowsInFlight > 0 || testingSpeed || stopping
   }
@@ -58,11 +58,18 @@ extension AppModel {
     let gate = sweepGate
     // When it's urgent, only stopping for good (or pausing, or an eject) stops it.
     let yield: @Sendable () -> Bool = { urgent ? gate.mustStop : gate.shouldYield }
+    sweepProgress = nil
+    let shown: @Sendable (SweepProgress) -> Void = { [weak self] progress in
+      Task { @MainActor in
+        if self?.sweeping == true { self?.sweepProgress = progress }
+      }
+    }
     sweepTask = Task {
       let report = await Task.detached(priority: urgent ? .utility : .background) {
-        engine.sweepSharedFiles(options, shouldYield: yield)
+        engine.sweepSharedFiles(options, shouldYield: yield, progress: shown)
       }.value
       sweeping = false
+      sweepProgress = nil
       sweepTask = nil
       savedBySharing = engine.savedBySharing()
       switch report.outcome {
@@ -77,6 +84,40 @@ extension AppModel {
         break
       }
       refreshSettings()
+    }
+  }
+
+  /// Once a day, when nothing else is going on, deletes projects' folders from Cargo's shared
+  /// build folder that no build has used in 30 days (deleted worktrees leave theirs behind).
+  func pruneCargoBuildFolderIfDue() {
+    guard cargoBuildFolderOn, !paused, !ejecting, stopIntent == nil, !sweeping,
+      !otherWorkPending, Date.now.timeIntervalSince(lastCargoPrune) > 86_400
+    else { return }
+    lastCargoPrune = .now
+    let engine = engine
+    Task {
+      let result = await Task.detached(priority: .background) {
+        engine.pruneCargoBuildFolder()
+      }.value
+      if result.folders > 0 { refreshSettings() }
+    }
+  }
+
+  /// What the running sweep is doing, for the status line.
+  var sweepStatus: String {
+    let making = driveNearlyFull ? "Making room: " : ""
+    switch sweepProgress {
+    case .walking(let files)?:
+      return files == 0
+        ? "\(making)Looking for identical files on the drive…"
+        : "\(making)Looking for identical files on the drive: \(files.formatted()) checked…"
+    case .reading(let bytes, let total)?:
+      return
+        "\(making)Looking for identical files: \(Format.bytes(bytes)) of \(Format.bytes(total)) read…"
+    case .sharing(let files, let total)?:
+      return "\(making)Deduplicating: \(files.formatted()) of \(total.formatted()) files…"
+    case nil:
+      return "\(making)Looking for identical files on the drive…"
     }
   }
 

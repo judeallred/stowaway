@@ -137,12 +137,7 @@ struct StowStatus: View {
     } else if model.sweeping {
       HStack(spacing: 6) {
         ProgressView().controlSize(.small)
-        Text(
-          model.driveNearlyFull
-            ? "Making room: storing identical files on the drive once…"
-            : "Looking for identical files on the drive to store once…"
-        )
-        .lineLimit(2)
+        Text(model.sweepStatus).lineLimit(2).monospacedDigit()
       }
     } else if model.paused {
       Label("Paused: nothing is stowed automatically until you resume", systemImage: "pause.circle")

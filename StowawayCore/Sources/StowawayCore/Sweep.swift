@@ -46,6 +46,31 @@ public struct SweepReport: Sendable, Equatable {
   public init(outcome: Outcome) { self.outcome = outcome }
 }
 
+/// How far a sweep has got, for the status line.
+public enum SweepProgress: Sendable, Equatable {
+  /// Noting the drive's files: this many so far.
+  case walking(files: Int)
+  /// Reading files that may have a twin: bytes read of those to read.
+  case reading(bytes: Int64, of: Int64)
+  /// Swapping duplicates for clones: files done of those to do.
+  case sharing(files: Int, of: Int)
+}
+
+/// Passes progress on at most twice a second (and always the first time).
+final class Progress: @unchecked Sendable {
+  private let report: @Sendable (SweepProgress) -> Void
+  private var last = Date.distantPast
+
+  init(_ report: @escaping @Sendable (SweepProgress) -> Void) { self.report = report }
+
+  func report(_ progress: SweepProgress, force: Bool = false) {
+    let now = Date()
+    guard force || now.timeIntervalSince(last) >= 0.5 else { return }
+    last = now
+    report(progress)
+  }
+}
+
 extension Engine {
   // MARK: The index
 
@@ -113,8 +138,10 @@ extension Engine {
   /// Stowaway's own work in progress. `shouldYield` is asked between files; once it says yes the
   /// sweep stops, and the next one picks up from what the index has. Never runs while paused.
   public func sweepSharedFiles(
-    _ options: SweepOptions = SweepOptions(), shouldYield: @Sendable () -> Bool = { false }
+    _ options: SweepOptions = SweepOptions(), shouldYield: @Sendable () -> Bool = { false },
+    progress report: @escaping @Sendable (SweepProgress) -> Void = { _ in }
   ) -> SweepReport {
+    let progress = Progress(report)
     guard sweepLock.try() else { return SweepReport(outcome: .busy) }
     defer { sweepLock.unlock() }
     // Pausing (as an eject does) stops it too, whatever the caller says.
@@ -133,11 +160,12 @@ extension Engine {
     let lastWalk = (try? index.meta("walked")).flatMap { $0.flatMap(Double.init) } ?? 0
     var finished = true
     if Date().timeIntervalSince1970 - lastWalk >= options.rewalkAfter {
-      finished = walk(store, index, options, &report, shouldYield)
+      progress.report(.walking(files: 0), force: true)
+      finished = walk(store, index, options, &report, shouldYield, progress)
       if finished { try? index.setMeta("walked", String(Date().timeIntervalSince1970)) }
     }
-    if finished { finished = hashTwins(store, index, options, &report, shouldYield) }
-    if finished { finished = shareTwins(store, index, options, &report, shouldYield) }
+    if finished { finished = hashTwins(store, index, options, &report, shouldYield, progress) }
+    if finished { finished = shareTwins(store, index, options, &report, shouldYield, progress) }
     guard finished else {
       report.outcome = .yielded
       return report
@@ -149,11 +177,13 @@ extension Engine {
   }
 
   /// Brings the index up to date with every stowed folder on the drive. Only what changed is
-  /// written: files new or changed since are noted (unread), and files gone are forgotten.
-  /// False if it stopped early (what it did so far stands).
+  /// written: files new or changed since are noted (unread), and files gone (or no longer worth
+  /// sharing) are forgotten. Memory stays flat however big a folder is: each file is looked up on
+  /// its own, and what the index knows is checked against the drive a page at a time. False if
+  /// it stopped early (what it did so far stands).
   private func walk(
     _ store: URL, _ index: SharedIndex, _ options: SweepOptions, _ report: inout SweepReport,
-    _ shouldYield: () -> Bool
+    _ shouldYield: () -> Bool, _ progress: Progress
   ) -> Bool {
     let base = store.path
     var leftovers: [String] = []
@@ -169,26 +199,18 @@ extension Engine {
       // Not the shared Cargo build folder: every build writes there, so it'd hardly ever be
       // swept. Its profiles' locks, and files' age, keep builds' files alone instead.
       if entry.online, entry.kind != .cargoBuild, isBeingWritten(entry) { continue }
-      var known = (try? index.rows(in: folder)) ?? [:]
       var roots: [UnsafeMutablePointer<CChar>?] = [strdup(remote.path), nil]
       defer { free(roots[0]) }
       guard let fts = fts_open(&roots, FTS_PHYSICAL | FTS_NOCHDIR | FTS_XDEV, nil) else {
         continue
       }
       defer { fts_close(fts) }
-      var complete = true
       do {
         try index.batch {
           while let item = fts_read(fts) {
             let info = Int32(item.pointee.fts_info)
             let path = String(cString: item.pointee.fts_path)
             let name = (path as NSString).lastPathComponent
-            let rel = path.count > base.count ? String(path.dropFirst(base.count + 1)) : ""
-            if info == FTS_DNR || info == FTS_ERR {
-              // Couldn't be read this time: what's known there stands.
-              complete = false
-              continue
-            }
             if info == FTS_D {
               // Stowaway's own work in progress (staging, set aside, trash), and folders a
               // Cargo build holds right now (the shared build folder's profiles are on the
@@ -197,7 +219,6 @@ extension Engine {
                 || isLockedCargoProfile(path)
               {
                 fts_set(fts, item, FTS_SKIP)
-                known = known.filter { !$0.key.hasPrefix(rel + "/") }
               }
               continue
             }
@@ -209,20 +230,37 @@ extension Engine {
             if name.hasPrefix("."), name.contains(".stowaway-") { continue }
             guard Int64(st.st_size) >= options.minimumSize, isShareable(st) else { continue }
             report.filesSeen += 1
+            let rel = String(path.dropFirst(base.count + 1))
             let stamp = FileStamp(st)
-            if known.removeValue(forKey: rel)?.stamp != stamp {
+            if try index.row(rel)?.stamp != stamp {
               try index.put(SharedIndex.Row(path: rel, stamp: stamp))
             }
             counted += 1
-            if counted % 1000 == 0, shouldYield() { throw Yielded() }
+            if counted % 1000 == 0 {
+              progress.report(.walking(files: counted))
+              if shouldYield() { throw Yielded() }
+            }
           }
         }
       } catch {
         return false
       }
-      // Whatever's left wasn't there: gone.
-      if complete {
-        for path in known.keys { try? index.forget(path) }
+      // What the index knows there, checked against the drive: whatever isn't there any more
+      // (or is no longer worth sharing) is forgotten. Files the walk skipped are still there.
+      var after: String?
+      while let page = try? index.rows(in: folder, after: after, limit: 2000), !page.isEmpty {
+        if shouldYield() { return false }
+        try? index.batch {
+          for row in page {
+            var st = stat()
+            if lstat(base + "/" + row.path, &st) != 0 || Int64(st.st_size) < options.minimumSize
+              || !isShareable(st)
+            {
+              try index.forget(row.path)
+            }
+          }
+        }
+        after = page.last?.path
       }
     }
     // Folders no longer stowed (deleted or brought back while the app was away).
@@ -245,9 +283,12 @@ extension Engine {
   /// Reads files that may have a twin (another file has their size). False if it stopped early.
   private func hashTwins(
     _ store: URL, _ index: SharedIndex, _ options: SweepOptions, _ report: inout SweepReport,
-    _ shouldYield: () -> Bool
+    _ shouldYield: () -> Bool, _ progress: Progress
   ) -> Bool {
     let quietSince = Date().addingTimeInterval(-options.minimumAge)
+    let toRead = (try? index.bytesToRead()) ?? 0
+    var read: Int64 = 0
+    if toRead > 0 { progress.report(.reading(bytes: 0, of: toRead), force: true) }
     var lastRead: SharedIndex.Row?
     var rows = ((try? index.unhashedWithTwins()) ?? [])[...]
     var stopped = false
@@ -274,6 +315,8 @@ extension Engine {
         if let (hash, stamp) = Cloning.hash(store.path + "/" + row.path, expected: row.stamp) {
           hashed.append((hash, stamp, row.path))
           bytes += stamp.size
+          read += stamp.size
+          progress.report(.reading(bytes: read, of: toRead))
         } else {
           // Gone or changed: the next walk notes it as it is now.
           gone.append(row.path)
@@ -303,8 +346,10 @@ extension Engine {
   /// stopped early.
   private func shareTwins(
     _ store: URL, _ index: SharedIndex, _ options: SweepOptions, _ report: inout SweepReport,
-    _ shouldYield: () -> Bool
+    _ shouldYield: () -> Bool, _ progress: Progress
   ) -> Bool {
+    let toShare = (try? index.filesToShare()) ?? 0
+    if toShare > 0 { progress.report(.sharing(files: 0, of: toShare), force: true) }
     let quietSince = Date().addingTimeInterval(-options.minimumAge)
     var hashes = ((try? index.hashesToShare()) ?? [])[...]
     var swaps: [Swap] = []
@@ -369,6 +414,7 @@ extension Engine {
               try index.put(shared)
               tally.files += 1
               tally.bytes += swap.duplicate.stamp.allocated
+              progress.report(.sharing(files: tally.files, of: max(toShare, tally.files)))
             } catch SharingError.changed(let changed) {
               try index.forget(changed == keeperPath ? swap.keeper.path : swap.duplicate.path)
               // The keeper changed: the rest of its hash waits for the next sweep.

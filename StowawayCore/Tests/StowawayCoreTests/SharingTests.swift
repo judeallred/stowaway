@@ -124,6 +124,26 @@ final class CloningTests: XCTestCase {
     }
   }
 
+  /// Something else changing the folder during a swap: its change stands, and the folder's
+  /// dates aren't put back over it.
+  func testAnotherChangeToTheFolderDuringASwapStands() throws {
+    let s = try Scratch()
+    let bytes = randomData(90_000)
+    try write(bytes, to: s.path("k"))
+    try write(bytes, to: s.path("d/f"))
+    setModified(s.path("d"), 1_500_000_000)
+    let other = s.path("d/written-meanwhile")
+    Cloning.afterCloning = { folder in
+      if folder == s.path("d") { try? Data("x".utf8).write(to: URL(fileURLWithPath: other)) }
+    }
+    defer { Cloning.afterCloning = nil }
+    _ = try Cloning.share(
+      s.path("d/f"), with: s.path("k"), duplicateStamp: try stamp(s.path("d/f")),
+      keeperStamp: try stamp(s.path("k")))
+    XCTAssertGreaterThan(modified(s.path("d")), 1_500_000_000, "the other change's date stands")
+    XCTAssertEqual(Cloning.privateSize(s.path("d/f")), 0, "and the swap still happened")
+  }
+
   func testAChangedFileIsNeverSwapped() throws {
     let s = try Scratch()
     let bytes = randomData(100_000)
@@ -847,6 +867,36 @@ final class SweepTests: XCTestCase {
     XCTAssertEqual(engine.sweepSharedFiles(eager).filesShared, 1)
   }
 
+  /// Progress is reported for each step, with totals.
+  func testProgressIsReported() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    _ = try twins(engine, s)
+    let seen = Recorder()
+    _ = engine.sweepSharedFiles(eager, progress: { seen.add($0) })
+    let steps = seen.all
+    XCTAssertEqual(steps.first, .walking(files: 0))
+    XCTAssertTrue(steps.contains { if case .reading(0, let of) = $0 { of > 0 } else { false } })
+    XCTAssertTrue(steps.contains(.sharing(files: 0, of: 3)))
+  }
+
+  /// The walk forgets files that went, and files no longer worth sharing, without holding a
+  /// folder's whole list in memory (checked a page at a time).
+  func testTheWalkForgetsWhatsGoneOrNoLongerEligible() throws {
+    let s = try Scratch()
+    let (engine, _, _) = try makeEngine(s)
+    let t = try twins(engine, s)
+    _ = engine.sweepSharedFiles(eager)
+    let saved = engine.savedBySharing()
+    let serde = try stamp(onDrive(t.b, "libserde-1.rlib")).allocated
+    let tokio = try stamp(onDrive(t.b, "libtokio-2.rlib")).allocated
+    // One gone, one hard-linked (no longer safe to swap).
+    unlink(onDrive(t.b, "libserde-1.rlib"))
+    link(onDrive(t.b, "libtokio-2.rlib"), onDrive(t.b, "tokio-link"))
+    _ = engine.sweepSharedFiles(eager)
+    XCTAssertEqual(engine.savedBySharing(), saved - serde - tokio)
+  }
+
   func testOnlyLastingFailuresStopRetries() {
     XCTAssertTrue(SharingError.failed("x", "y", EPERM).isLasting)
     XCTAssertTrue(SharingError.failed("x", "y", EACCES).isLasting)
@@ -854,6 +904,14 @@ final class SweepTests: XCTestCase {
     XCTAssertFalse(SharingError.failed("x", "y", EIO).isLasting)
     XCTAssertFalse(SharingError.changed("x").isLasting)
   }
+}
+
+/// Progress reports, from any thread.
+final class Recorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var items: [SweepProgress] = []
+  var all: [SweepProgress] { lock.withLock { items } }
+  func add(_ item: SweepProgress) { lock.withLock { items.append(item) } }
 }
 
 /// A value set from another thread.

@@ -311,7 +311,9 @@ extension AppModel {
         buttons: ["Bring Everything Back", "Delete Stowed Folders", "Quick Drop"],
         destructive: [1, 2])
       switch choice {
-      case 0: stopIntent = .bringBack
+      case 0:
+        guard hasRoom(toBringBack: stowed) else { return }
+        stopIntent = .bringBack
       case 1: stopIntent = .delete
       case 2: quickDrop()
       default: return
@@ -361,7 +363,13 @@ extension AppModel {
     while stowsInFlight > 0 { try? await Task.sleep(for: .milliseconds(200)) }
     syncRowsWithEngine()
     let stowed = rows.filter { !$0.entryPaths.isEmpty }
-    if intent == .bringBack { await bringBack(stowed) } else { await delete(stowed) }
+    // Room was checked when this was chosen; carrying on (after a relaunch, say) doesn't ask
+    // again, and a folder that doesn't fit fails on its own.
+    if intent == .bringBack {
+      await bringBack(stowed, checkRoom: false)
+    } else {
+      await delete(stowed)
+    }
     guard engine.entries().isEmpty else {
       message = "Some folders couldn't be brought back or deleted yet; Stowaway will keep trying."
       return
@@ -426,8 +434,9 @@ extension AppModel {
       }
       refreshSettings()
       if stopIntent != nil { Task { await continueStopping() } }
-      // Every reconcile (at least every 2 minutes) is a chance for a sweep, if nothing else is
+      // Every reconcile (at least every 2 minutes) is a chance for upkeep, if nothing else is
       // going on.
+      pruneCargoBuildFolderIfDue()
       considerSweeping()
     }
   }

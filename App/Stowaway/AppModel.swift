@@ -63,6 +63,16 @@ final class AppModel {
   /// A sweep for identical files is running (see AppModel+Sharing).
   var sweeping = false
   var sweepTask: Task<Void, Never>?
+  /// How far the running sweep has got, for the status line.
+  var sweepProgress: SweepProgress?
+  /// When Cargo's shared build folder was last cleared of projects no build uses any more.
+  var lastCargoPrune = Date(
+    timeIntervalSince1970: UserDefaults.standard.double(forKey: "lastCargoPrune"))
+  {
+    didSet {
+      UserDefaults.standard.set(lastCargoPrune.timeIntervalSince1970, forKey: "lastCargoPrune")
+    }
+  }
   let sweepGate = SweepGate()
   /// The last sweep stopped early to make way: the next chance carries on, whenever it was.
   var sweepUnfinished = true

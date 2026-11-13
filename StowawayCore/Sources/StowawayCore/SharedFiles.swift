@@ -58,6 +58,9 @@ func isShareable(_ st: stat) -> Bool {
 }
 
 enum Cloning {
+  /// For tests: called with the folder just after a swap's clone is made beside the file.
+  nonisolated(unsafe) static var afterCloning: ((String) -> Void)?
+
   /// SHA-256 of a file's contents, read without following a symlink, or nil if it can't be read
   /// or it changed while being read (or isn't `expected`).
   static func hash(_ path: String, expected: FileStamp? = nil) -> (Data, FileStamp)? {
@@ -117,16 +120,37 @@ enum Cloning {
     if readOnly, chmod(folder, folderStat.st_mode | S_IWUSR) != 0 {
       throw SharingError.failed("opening up", folder)
     }
+    // Making the clone and swapping it in change the folder's dates, and npm trusts its
+    // packages' folder dates: they're put back afterwards, unless something else changed the
+    // folder meanwhile (then its change stands). The folder's modification time is checked
+    // before each change Stowaway makes and noted after it, so another's change shows.
+    var ours = folderStat.st_mtimespec
+    var othersChanged = false
+    func check() {
+      var st = stat()
+      if lstat(folder, &st) != 0 || st.st_mtimespec.tv_sec != ours.tv_sec
+        || st.st_mtimespec.tv_nsec != ours.tv_nsec
+      {
+        othersChanged = true
+      }
+    }
+    func note() {
+      var st = stat()
+      if lstat(folder, &st) == 0 { ours = st.st_mtimespec }
+    }
     defer {
       if readOnly { chmod(folder, folderStat.st_mode & 0o7777) }
-      // Renaming into a folder changes its dates; npm trusts its packages' folder dates.
-      setDates(folder, from: folderStat)
+      check()
+      if !othersChanged { setDates(folder, from: folderStat) }
     }
 
     let temporary = folder + "/" + temporaryPrefix + UUID().uuidString.prefix(8).lowercased()
+    check()
     guard clonefile(keeper, temporary, UInt32(CLONE_NOFOLLOW | CLONE_NOOWNERCOPY)) == 0 else {
       throw SharingError.failed("cloning", keeper)
     }
+    note()
+    afterCloning?(folder)
     do {
       // Written to while it was cloned: the clone may have caught it halfway.
       guard FileStamp.of(keeper) == keeperStamp else { throw SharingError.changed(keeper) }
@@ -135,11 +159,15 @@ enum Cloning {
       guard FileStamp.of(duplicate) == duplicateStamp else {
         throw SharingError.changed(duplicate)
       }
+      check()
       guard rename(temporary, duplicate) == 0 else {
         throw SharingError.failed("swapping", duplicate)
       }
+      note()
     } catch {
+      check()
       unlink(temporary)
+      note()
       throw error
     }
     guard let stamp = FileStamp.of(duplicate) else { throw SharingError.changed(duplicate) }
@@ -467,18 +495,50 @@ final class SharedIndex: @unchecked Sendable {
     }
   }
 
-  /// Every file known in a folder, by path. (`/` is followed by `0`: the range is the folder.)
-  func rows(in folder: String) throws -> [String: Row] {
+  /// Files known in a folder, a page at a time in path order: the next `limit` after `after`.
+  /// (`/` is followed by `0`, so the range is exactly the folder.)
+  func rows(in folder: String, after: String? = nil, limit: Int) throws -> [Row] {
     try lock.withLock {
-      var result: [String: Row] = [:]
+      try rows(
+        "SELECT \(Self.columns) FROM files WHERE path > ? AND path < ? ORDER BY path LIMIT ?",
+        [.text(after ?? folder + "/"), .text(folder + "0"), .int(Int64(limit))])
+    }
+  }
+
+  /// Bytes of the files a sweep would read: not read yet, and another file has their size.
+  func bytesToRead() throws -> Int64 {
+    try lock.withLock {
+      var total: Int64 = 0
       try run(
-        "SELECT \(Self.columns) FROM files WHERE path >= ? AND path < ?",
-        [.text(folder + "/"), .text(folder + "0")]
-      ) { s in
-        let row = Self.readRow(s)
-        result[row.path] = row
-      }
-      return result
+        """
+        SELECT SUM(size) FROM files WHERE hash IS NULL AND size IN
+          (SELECT size FROM files GROUP BY size HAVING COUNT(*) > 1)
+        """
+      ) { total = sqlite3_column_int64($0, 0) }
+      return total
+    }
+  }
+
+  /// Files a sweep would swap for a clone: not sharing yet, with a twin that can share.
+  func filesToShare() throws -> Int {
+    try lock.withLock {
+      var total = 0
+      try run(
+        """
+        SELECT COUNT(*) FROM files WHERE shared = 0 AND hash IN
+          (SELECT hash FROM files WHERE hash IS NOT NULL GROUP BY hash
+           HAVING SUM(shared != 2) > 1 AND SUM(shared = 0) > 0)
+        """
+      ) { total = Int(sqlite3_column_int64($0, 0)) }
+      // One file of each hash not sharing yet is the one the others are cloned from.
+      var hashes = 0
+      try run(
+        """
+        SELECT COUNT(*) FROM (SELECT hash FROM files WHERE hash IS NOT NULL GROUP BY hash
+          HAVING SUM(shared != 2) > 1 AND SUM(shared = 0) > 0 AND SUM(shared = 1) = 0)
+        """
+      ) { hashes = Int(sqlite3_column_int64($0, 0)) }
+      return max(0, total - hashes)
     }
   }
 

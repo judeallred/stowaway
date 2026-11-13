@@ -32,7 +32,8 @@ extension AppModel {
 
   /// Brings folders back. With `keep`, they stay on this Mac until stowed by hand; otherwise
   /// automatic stowing takes them again once they've changed and gone quiet.
-  func bringBack(_ rows: [Row], keep: Bool = false) async {
+  func bringBack(_ rows: [Row], keep: Bool = false, checkRoom: Bool = true) async {
+    if checkRoom, !hasRoom(toBringBack: rows.filter { $0.place != .mac }) { return }
     if keep {
       keptOnMac.formUnion(rows.map(\.path))
     } else {
@@ -41,6 +42,33 @@ extension AppModel {
     await bulk(rows, .bringingBack) { row, engine, _ in
       for path in row.entryPaths { try engine.release(path) }
     }
+  }
+
+  /// Free space on this Mac's disk (the app's container is on it).
+  var macFreeBytes: Int64? {
+    (try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [
+      .volumeAvailableCapacityForImportantUsageKey
+    ]))?.volumeAvailableCapacityForImportantUsage
+  }
+
+  /// Whether this Mac has room for folders coming back, keeping 5 GB spare; says why not if it
+  /// hasn't. A folder takes its full size on the Mac, even where identical files share their
+  /// storage on the drive.
+  func hasRoom(toBringBack rows: [Row]) -> Bool {
+    let needed = rows.map(\.driveBytes).reduce(0, +)
+    guard needed > 0, let free = macFreeBytes else { return true }
+    let spare: Int64 = 5_000_000_000
+    guard needed + spare > free else { return true }
+    let what = rows.count == 1 ? rows[0].kind.label : Format.count(rows.count, "folder")
+    let shared =
+      savedBySharing > 0
+      ? " On the drive they may take less, because identical files are stored there once; on this Mac each copy takes its full size."
+      : ""
+    Panels.tell(
+      "Not enough room on this Mac",
+      "Bringing back \(what) needs \(Format.bytes(needed)) on this Mac, plus some to spare, and it has \(Format.bytes(free)) free.\(shared) Free up some space, or bring back fewer folders."
+    )
+    return false
   }
 
   /// Keeps folders on this Mac, out of automatic stowing; stowed ones are brought back first.
