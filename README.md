@@ -12,7 +12,7 @@ space they take, and lets you delete them, or keep them on an external drive ins
 - **Plug back in:** everything moves back to the drive, including anything built while it was
   away.
 
-Finding and deleting folders is free, and so is stowing up to 100 GB. Any purchase, at a price
+Finding and deleting folders is free, and so is stowing up to 512 GB. Any purchase, at a price
 you choose, makes stowing unlimited.
 
 **Website:** brooklynspaceport.com/stowaway (coming soon)

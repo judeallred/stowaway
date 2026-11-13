@@ -290,5 +290,5 @@ valid. Deleting a stowed folder (`Engine.discard`) removes the link and its copy
 ## Purchases
 
 `Store` uses StoreKit 2. Thirteen non-consumable products (seven personal, six business) all unlock
-the same thing: no stowing limit. The app passes a limit to `Engine.adopt` (100 GB unless
+the same thing: no stowing limit. The app passes a limit to `Engine.adopt` (512 GB unless
 something's been bought) when adopting. Only verified, unrevoked transactions count.

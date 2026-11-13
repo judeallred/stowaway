@@ -6,7 +6,7 @@ Connect before relying on it.
 ## What's built
 
 Stowaway is free to download. Finding and deleting folders is free, and so is stowing up to
-**100 GB**. **Any** purchase, at any price, makes stowing unlimited for good. The upgrade sheet
+**512 GB**. **Any** purchase, at any price, makes stowing unlimited for good. The upgrade sheet
 offers two groups of prices, picked with a "For Me / For Work" switch:
 
 | Group | Product IDs | Family Sharing | Message |
@@ -20,7 +20,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
   exist in App Store Connect are simply not shown.
 - **Everything is non-consumable.** A purchase is restorable and applies on every Mac signed in
   to the same Apple Account.
-- **The limit:** 100 GB is `Store.freeOffloadLimit`. The limit only stops *new* offloads: nothing
+- **The limit:** 512 GB is `Store.freeOffloadLimit`. The limit only stops *new* offloads: nothing
   already on the drive stops working, and bringing folders back and deleting are never limited.
   That last point matters for App Review and for trust.
 
@@ -64,7 +64,7 @@ offers two groups of prices, picked with a "For Me / For Work" switch:
 - **Sanity check:** a 1 TB external SSD costs about $80–120, and Apple typically charges around $200
   to go from 512 GB to 1 TB at purchase. A personal price well below the drive and a business price below
   the internal upgrade is an easy story.
-- **Later:** run an offer code for launch press, and revisit the 100 GB free limit once you see
+- **Later:** run an offer code for launch press, and revisit the 512 GB free limit once you see
   real usage. It's one constant.
 
 ## Copy

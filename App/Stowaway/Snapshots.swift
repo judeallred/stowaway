@@ -56,7 +56,7 @@
           CGSize(width: 560, height: 460)
         ),
         (
-          "4-support", "Stow 100 GB free. Then pay what you want.",
+          "4-support", "Stow 512 GB free. Then pay what you want.",
           AnyView(SupportView(model: model, store: model.store)), CGSize(width: 560, height: 700)
         ),
       ]

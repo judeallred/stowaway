@@ -22,7 +22,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 ## Promotional text (170)
 
 > Your Mac fills up with node_modules, build files and caches. Stowaway finds them, deletes them
-> on request, or keeps them on an external drive. Free up to 100 GB.
+> on request, or keeps them on an external drive. Free up to 512 GB.
 
 ## Description (4,000)
 
@@ -56,7 +56,7 @@ Everything App Store Connect asks for, with character limits. Drafts: edit freel
 > • No accounts, no tracking, no data collected.
 >
 > FREE, WITH UNLIMITED STOWING WHEN YOU'RE READY
-> Finding and deleting folders is free, and so is stowing up to 100 GB. Are we helping you
+> Finding and deleting folders is free, and so is stowing up to 512 GB. Are we helping you
 > avoid an expensive storage upgrade? Any purchase, at a price you choose, makes stowing
 > unlimited. Using it at work? Please choose a business price: business purchases keep prices
 > low for everyone using it personally.

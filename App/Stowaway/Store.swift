@@ -13,8 +13,8 @@ final class Store {
     case business
   }
 
-  /// 100 GB, counted the way macOS counts disk space.
-  static let freeOffloadLimit: Int64 = 100_000_000_000
+  /// 512 GB, counted the way macOS counts disk space.
+  static let freeOffloadLimit: Int64 = 512_000_000_000
 
   static let productIDs: [Audience: [String]] = [
     .personal: (1...7).map { "com.brooklynspaceport.stowaway.personal.\($0)" },

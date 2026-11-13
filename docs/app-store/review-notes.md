@@ -52,7 +52,7 @@ never). Nothing is
 stowed automatically before the user chooses a location, and nothing is ever deleted
 automatically.
 
-Stowing is free up to 100 GB. The in-app purchases lift that limit; every purchase unlocks
+Stowing is free up to 512 GB. The in-app purchases lift that limit; every purchase unlocks
 the same thing (unlimited stowing), at the price the user chooses. Folders already stowed keep
 working, and bringing them back or deleting them is never limited.
 
