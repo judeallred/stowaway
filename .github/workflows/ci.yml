@@ -52,6 +52,29 @@ jobs:
       - run: App/scripts/build.sh
       - run: App/scripts/check-release.sh
 
+  # After every check passes on main: the "latest-main" pre-release, replaced each time.
+  release-main:
+    needs: [core, app, workflows]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    # Only the newest push's release matters.
+    concurrency:
+      group: release-main
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The version counts commits on main.
+          fetch-depth: 0
+      - run: App/scripts/release.sh main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: "1"
+
   workflows:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

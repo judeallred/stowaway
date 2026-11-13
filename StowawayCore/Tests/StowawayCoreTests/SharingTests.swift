@@ -754,8 +754,11 @@ final class SweepTests: XCTestCase {
       try write(t.serde, to: s.path("code/\(project)/target/debug/deps/libserde-1.rlib"))
       try write(t.tokio, to: s.path("code/\(project)/target/debug/deps/libtokio-2.rlib"))
     }
-    var slow = eager
-    slow.lockSlice = 0.001
+    let slow = {
+      var options = eager
+      options.lockSlice = 0.001
+      return options
+    }()
     let group = DispatchGroup()
     for _ in 0..<3 {
       DispatchQueue.global().async(group: group) { _ = engine.sweepSharedFiles(slow) }

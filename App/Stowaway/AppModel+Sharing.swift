@@ -52,8 +52,11 @@ extension AppModel {
     guard sweepUnfinished || Date.now.timeIntervalSince(lastSweep) > every else { return }
     sweeping = true
     sweepGate.reset()
-    var options = SweepOptions()
-    options.lowPriority = !urgent
+    let options = {
+      var options = SweepOptions()
+      options.lowPriority = !urgent
+      return options
+    }()
     let engine = engine
     let gate = sweepGate
     // When it's urgent, only stopping for good (or pausing, or an eject) stops it.

@@ -1,0 +1,35 @@
+name: Nightly
+
+# A pre-release every night there's something new on main: "nightly-<version>", built from the
+# newest main commit CI passed. The 14 newest are kept. Run it by hand from the Actions tab too.
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      # To find the newest commit CI passed.
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+          # The version counts commits on main.
+          fetch-depth: 0
+      - run: App/scripts/release.sh nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: "1"

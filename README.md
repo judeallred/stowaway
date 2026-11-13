@@ -17,6 +17,19 @@ you choose, makes stowing unlimited.
 
 **Website:** brooklynspaceport.com/stowaway (coming soon)
 
+## Download
+
+Until it's on the App Store, builds are on [GitHub Releases](https://github.com/judeallred/stowaway/releases):
+
+- **[latest-main](https://github.com/judeallred/stowaway/releases/tag/latest-main)**: the newest
+  commit on `main` that passed CI, replaced on every push.
+- **nightly-…**: a build each night there's something new, numbered `1.0.<commits on main>`. The
+  14 newest are kept.
+
+They're signed ad hoc, not with a Developer ID: macOS asks before the first launch (System
+Settings → Privacy & Security → Open Anyway). They can't make purchases, so stowing stops at the
+free limit. Or build it yourself with `./install.sh`.
+
 ## What it manages
 
 | Kind | Folder |
